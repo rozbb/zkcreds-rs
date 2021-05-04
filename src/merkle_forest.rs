@@ -8,14 +8,16 @@ use ark_ff::ToBytes;
 ///
 /// Invariant: All trees in this forest have the same height
 pub struct MerkleForest<P: Config> {
-    trees: Vec<MerkleTree<P>>,
+    pub trees: Vec<MerkleTree<P>>,
+    pub(crate) leaf_crh_param: LeafParam<P>,
+    pub(crate) two_to_one_crh_param: TwoToOneParam<P>,
 }
 
 impl<P: Config> MerkleForest<P> {
     /// Creates a new forest. Requirements: `leaves.len()` must equal `num_trees * 2^k` for some k.
     pub fn new<L: ToBytes>(
-        leaf_hash_param: &LeafParam<P>,
-        two_to_one_hash_param: &TwoToOneParam<P>,
+        leaf_crh_param: &LeafParam<P>,
+        two_to_one_crh_param: &TwoToOneParam<P>,
         leaves: &[L],
         num_trees: usize,
     ) -> Result<MerkleForest<P>, ArkError> {
@@ -34,11 +36,15 @@ impl<P: Config> MerkleForest<P> {
         let trees: Result<Vec<MerkleTree<P>>, ArkError> = leaves
             .chunks(num_leaves_per_tree)
             .map(|tree_leaves| {
-                MerkleTree::<P>::new(leaf_hash_param, two_to_one_hash_param, tree_leaves)
+                MerkleTree::<P>::new(leaf_crh_param, two_to_one_crh_param, tree_leaves)
             })
             .collect();
 
-        Ok(MerkleForest { trees: trees? })
+        Ok(MerkleForest {
+            trees: trees?,
+            leaf_crh_param: leaf_crh_param.clone(),
+            two_to_one_crh_param: two_to_one_crh_param.clone(),
+        })
     }
 
     /// Returns the roots of the trees in the forest
@@ -46,6 +52,9 @@ impl<P: Config> MerkleForest<P> {
         self.trees.iter().map(|t| t.root()).collect()
     }
 }
+
+/// Re-export of arkworks' Merkle path
+pub type Path<P> = ark_crypto_primitives::merkle_tree::Path<P>;
 
 #[cfg(test)]
 mod tests {
@@ -76,14 +85,18 @@ mod tests {
     fn merkle_tree_test() {
         let mut rng = ark_std::test_rng();
 
+        // Setup hashing params
         let leaf_crh_params = <H as CRH>::setup(&mut rng).unwrap();
         let two_to_one_crh_params = <H as TwoToOneCRH>::setup(&mut rng).unwrap();
 
+        // num_trees can be arbitrary, and num_leaves has to be num_trees * 2^k for some k
         let num_trees = 5;
         let num_leaves = num_trees * 2usize.pow(8);
 
+        // Randomly generate the appropriate number of leaves
         let leaves: Vec<Leaf> = (0..num_leaves).map(|_| rng.gen()).collect();
 
+        // Create the forest
         let forest = JubJubMerkleForest::new(
             &leaf_crh_params.clone(),
             &two_to_one_crh_params.clone(),
@@ -91,8 +104,9 @@ mod tests {
             num_trees,
         )
         .unwrap();
-        let roots = forest.roots();
 
-        println!("Forest roots: {:?}", roots);
+        // Make sure we can calculate roots and generate auth paths
+        forest.roots();
+        forest.trees[2].generate_proof(233).unwrap();
     }
 }
