@@ -17,16 +17,29 @@ ark-std = "0.2"
 
 [dependencies.ark-crypto-primitives]
 git = "https://github.com/rozbb/crypto-primitives.git"
+#path = "/tmp/crypto-primitives"
 branch = "merkle-changes"
 features = ["r1cs"]
 
 [features]
 default = ["asm", "parallel"]
+asm = ["ark-ff/asm"]
 parallel = [
+    "ark-crypto-primitives/parallel",
     "ark-groth16/parallel",
     "ark-std/parallel",
     "ark-ec/parallel",
     "ark-ff/parallel",
     "ark-r1cs-std/parallel"
 ]
-asm = ["ark-ff/asm"]
+
+[dev-dependencies]
+ark-bls12-381 = { version = "0.2" }
+criterion = { version = "0.3", features = [ "html_reports" ] }
+
+[profile.release]
+debug = true
+
+[[bench]]
+name = "bench"
+harness = false

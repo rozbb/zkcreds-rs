@@ -1,5 +1,3 @@
 pub mod constraints;
 pub mod merkle_forest;
-
-#[cfg(test)]
-mod test_util;
+pub mod test_util;
