@@ -53,23 +53,27 @@ impl<P: Config> MerkleForest<P> {
     }
 }
 
+/// Given a leaf index and forest info, return the corresponding tree index leaf-within-tree index
+pub fn idx_1d_to_2d(leaf_idx: usize, num_trees: usize, num_leaves: usize) -> (usize, usize) {
+    let num_leaves_per_tree = num_leaves / num_trees;
+
+    let tree_idx = leaf_idx / num_leaves_per_tree;
+    let leaf_within_tree_idx = leaf_idx % num_leaves_per_tree;
+
+    (tree_idx, leaf_within_tree_idx)
+}
+
 /// Re-export of arkworks' Merkle path
 pub type Path<P> = ark_crypto_primitives::merkle_tree::Path<P>;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::Window4x256;
 
     use ark_crypto_primitives::crh::{pedersen, *};
     use ark_ed_on_bls12_381::EdwardsProjective as JubJub;
     use ark_std::rand::Rng;
-
-    #[derive(Clone)]
-    pub(super) struct Window4x256;
-    impl pedersen::Window for Window4x256 {
-        const WINDOW_SIZE: usize = 4;
-        const NUM_WINDOWS: usize = 256;
-    }
 
     type Leaf = [u8; 8];
 

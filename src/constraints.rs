@@ -129,3 +129,72 @@ where
         proof_is_valid.enforce_equal(&Boolean::constant(true))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{merkle_forest::idx_1d_to_2d, test_util::Window4x256};
+
+    use ark_crypto_primitives::crh::{pedersen, *};
+    use ark_ed_on_bls12_381::{constraints::EdwardsVar, EdwardsProjective as JubJub, Fq};
+    use ark_relations::r1cs::ConstraintSystem;
+    use ark_std::rand::Rng;
+
+    type Leaf = [u8; 8];
+
+    type H = pedersen::CRH<JubJub, Window4x256>;
+    type HG = pedersen::constraints::CRHGadget<JubJub, EdwardsVar, Window4x256>;
+
+    struct JubJubMerkleTreeParams;
+    impl Config for JubJubMerkleTreeParams {
+        type LeafHash = H;
+        type TwoToOneHash = H;
+    }
+    type JubJubMerkleForest = MerkleForest<JubJubMerkleTreeParams>;
+
+    #[test]
+    fn constraint_test() {
+        let mut rng = ark_std::test_rng();
+
+        // Setup hashing params
+        let leaf_crh_params = <H as CRH>::setup(&mut rng).unwrap();
+        let two_to_one_crh_params = <H as TwoToOneCRH>::setup(&mut rng).unwrap();
+
+        // num_trees can be arbitrary, and num_leaves has to be num_trees * 2^k for some k
+        let num_trees = 5;
+        let num_leaves = num_trees * 2usize.pow(8);
+
+        // Randomly generate the appropriate number of leaves
+        let leaves: Vec<Leaf> = (0..num_leaves).map(|_| rng.gen()).collect();
+
+        // Create the forest
+        let forest = JubJubMerkleForest::new(
+            &leaf_crh_params.clone(),
+            &two_to_one_crh_params.clone(),
+            &leaves,
+            num_trees,
+        )
+        .unwrap();
+
+        // Pick the leaf at index 106 to make a proof of
+        let (leaf, auth_path) = {
+            let i = 106;
+            let (tree_idx, leaf_idx) = idx_1d_to_2d(i, num_trees, num_leaves);
+            let tree = &forest.trees[tree_idx];
+            let leaf = &leaves[i];
+            let auth_path = tree.generate_proof(leaf_idx).unwrap();
+
+            (leaf, auth_path)
+        };
+
+        // Construct the circuit which will prove the membership of leaf i
+        let circuit = MerkleProofCircuit::<Fq, HG, JubJubMerkleTreeParams, HG>::new(
+            &forest, &auth_path, leaf,
+        );
+
+        // Run the circuit and check that the constraints are satisfied
+        let cs = ConstraintSystem::<Fq>::new_ref();
+        circuit.generate_constraints(cs.clone()).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+    }
+}

@@ -10,7 +10,7 @@ edition = "2018"
 ark-ff = "0.2"
 ark-ec = "0.2"
 ark-groth16 = "0.2"
-ark-ed-on-bls12-381 = "0.2"
+ark-ed-on-bls12-381 = { version = "0.2", features = ["r1cs"] }
 ark-relations = "0.2"
 ark-r1cs-std = "0.2"
 ark-std = "0.2"
