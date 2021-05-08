@@ -53,6 +53,16 @@ impl<P: Config> MerkleForest<P> {
     }
 }
 
+impl<P: Config + Clone> Clone for MerkleForest<P> {
+    fn clone(&self) -> MerkleForest<P> {
+        MerkleForest {
+            trees: self.trees.clone(),
+            leaf_crh_param: self.leaf_crh_param.clone(),
+            two_to_one_crh_param: self.two_to_one_crh_param.clone(),
+        }
+    }
+}
+
 /// Given a leaf index and forest info, return the corresponding tree index leaf-within-tree index
 pub fn idx_1d_to_2d(leaf_idx: usize, num_trees: usize, num_leaves: usize) -> (usize, usize) {
     let num_leaves_per_tree = num_leaves / num_trees;

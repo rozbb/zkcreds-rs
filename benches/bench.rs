@@ -22,6 +22,7 @@ type Leaf = [u8; LEAF_SIZE];
 type H = pedersen::CRH<JubJub, Window4x256>;
 type HG = pedersen::constraints::CRHGadget<JubJub, EdwardsVar, Window4x256>;
 
+#[derive(Clone)]
 struct JubJubMerkleTreeParams;
 impl Config for JubJubMerkleTreeParams {
     type LeafHash = H;
@@ -29,7 +30,7 @@ impl Config for JubJubMerkleTreeParams {
 }
 type JubJubMerkleForest = MerkleForest<JubJubMerkleTreeParams>;
 
-fn merkle_forest(_c: &mut Criterion) {
+fn merkle_forest(c: &mut Criterion) {
     let mut rng = ark_std::test_rng();
 
     // Setup hashing params
@@ -65,19 +66,12 @@ fn merkle_forest(_c: &mut Criterion) {
 
     // Due to a bug, the path can never be None
     let placeholder_path = &forest.trees[0].generate_proof(0).unwrap();
-
-    // Construct the circuit which will prove the membership of leaf i
-    let circuit = MerkleProofCircuit::<Fq, HG, JubJubMerkleTreeParams, HG>::new(
-        &forest,
-        &auth_path,
-        &leaf.clone(),
-    );
     let param_gen_circuit = MerkleProofCircuit::<Fq, HG, JubJubMerkleTreeParams, HG>::new(
         &forest,
         placeholder_path,
         &[0u8; LEAF_SIZE],
     );
-    /*
+    /* This doesn't work because you can't make a ZK PathVar
     let param_gen_circuit =
         MerkleProofCircuit::<Fq, HG, JubJubMerkleTreeParams, HG>::new_placeholder(
             &forest, LEAF_SIZE,
@@ -86,13 +80,33 @@ fn merkle_forest(_c: &mut Criterion) {
 
     let (pk, vk) = Groth16::<E>::circuit_specific_setup(param_gen_circuit, &mut rng).unwrap();
 
+    // Construct the circuit which will prove the membership of leaf i, and prove it
+    let circuit = MerkleProofCircuit::<Fq, HG, JubJubMerkleTreeParams, HG>::new(
+        &forest,
+        &auth_path,
+        &leaf.clone(),
+    );
+
+    c.bench_function(
+        &format!(
+            "Merkle proof on {} trees of {} leaves",
+            num_trees,
+            num_leaves / num_trees
+        ),
+        |b| {
+            b.iter(|| {
+                Groth16::<E>::prove(&pk, circuit.clone(), &mut rng).unwrap();
+            });
+        },
+    );
+    let proof = Groth16::<E>::prove(&pk, circuit, &mut rng).unwrap();
+
+    // Now construct the verification information
     let roots: Vec<Fr> = forest
         .roots()
         .into_iter()
         .flat_map(|root| root.to_field_elements().unwrap())
         .collect();
-
-    let proof = Groth16::<E>::prove(&pk, circuit, &mut rng).unwrap();
     assert!(Groth16::<E>::verify(&vk, &roots, &proof).unwrap());
 }
 

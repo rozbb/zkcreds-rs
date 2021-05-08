@@ -30,6 +30,25 @@ where
     _marker: PhantomData<(ConstraintF, LeafH, TwoToOneH)>,
 }
 
+impl<'a, ConstraintF, LeafH, P, TwoToOneH> Clone
+    for MerkleProofCircuit<'a, ConstraintF, LeafH, P, TwoToOneH>
+where
+    ConstraintF: Field,
+    P: Config + Clone,
+    LeafH: CRHGadget<P::LeafHash, ConstraintF>,
+    TwoToOneH: TwoToOneCRHGadget<P::TwoToOneHash, ConstraintF>,
+    TwoToOneH::OutputVar: EqGadget<ConstraintF>,
+{
+    fn clone(&self) -> MerkleProofCircuit<'a, ConstraintF, LeafH, P, TwoToOneH> {
+        MerkleProofCircuit {
+            forest: &self.forest,
+            auth_path: self.auth_path.clone(),
+            leaf_val: self.leaf_val.clone(),
+            _marker: PhantomData,
+        }
+    }
+}
+
 impl<'a, ConstraintF, LeafH, P, TwoToOneH> MerkleProofCircuit<'a, ConstraintF, LeafH, P, TwoToOneH>
 where
     ConstraintF: Field,
@@ -196,5 +215,11 @@ mod tests {
         let cs = ConstraintSystem::<Fq>::new_ref();
         circuit.generate_constraints(cs.clone()).unwrap();
         assert!(cs.is_satisfied().unwrap());
+        println!(
+            "{} trees of {} leaves has {} constraints",
+            num_trees,
+            num_leaves / num_trees,
+            cs.num_constraints()
+        );
     }
 }
