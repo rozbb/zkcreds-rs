@@ -1,10 +1,10 @@
-use crate::merkle_forest::{MerkleForest, Path};
+use crate::merkle_forest::Path;
 
 use core::marker::PhantomData;
 
 use ark_crypto_primitives::{
     crh::{CRHGadget, TwoToOneCRHGadget},
-    merkle_tree::{constraints::PathVar, Config},
+    merkle_tree::{constraints::PathVar, Config, LeafParam, TwoToOneDigest, TwoToOneParam},
 };
 use ark_ff::Field;
 use ark_r1cs_std::{alloc::AllocVar, bits::uint8::UInt8, boolean::Boolean, eq::EqGadget};
@@ -22,7 +22,9 @@ where
     TwoToOneH::OutputVar: EqGadget<ConstraintF>,
 {
     // Public inputs
-    forest: &'a MerkleForest<P>,
+    roots: &'a [TwoToOneDigest<P>],
+    leaf_crh_param: LeafParam<P>,
+    two_to_one_crh_param: TwoToOneParam<P>,
     // Private inputs
     auth_path: Option<&'a Path<P>>,
     leaf_val: Vec<Option<u8>>,
@@ -41,7 +43,9 @@ where
 {
     fn clone(&self) -> MerkleProofCircuit<'a, ConstraintF, LeafH, P, TwoToOneH> {
         MerkleProofCircuit {
-            forest: &self.forest,
+            roots: self.roots,
+            leaf_crh_param: self.leaf_crh_param.clone(),
+            two_to_one_crh_param: self.two_to_one_crh_param.clone(),
             auth_path: self.auth_path.clone(),
             leaf_val: self.leaf_val.clone(),
             _marker: PhantomData,
@@ -57,27 +61,19 @@ where
     TwoToOneH: TwoToOneCRHGadget<P::TwoToOneHash, ConstraintF>,
     TwoToOneH::OutputVar: EqGadget<ConstraintF>,
 {
-    pub fn new_placeholder(
-        forest: &MerkleForest<P>,
-        num_leaf_bytes: usize,
-    ) -> MerkleProofCircuit<ConstraintF, LeafH, P, TwoToOneH> {
-        MerkleProofCircuit {
-            forest,
-            auth_path: None,
-            leaf_val: vec![None; num_leaf_bytes],
-            _marker: PhantomData,
-        }
-    }
-
     pub fn new(
-        forest: &'a MerkleForest<P>,
+        roots: &'a [TwoToOneDigest<P>],
+        leaf_crh_param: &LeafParam<P>,
+        two_to_one_crh_param: &TwoToOneParam<P>,
         auth_path: &'a Path<P>,
         leaf_val_slice: &[u8],
     ) -> MerkleProofCircuit<'a, ConstraintF, LeafH, P, TwoToOneH> {
         let leaf_val: Vec<Option<u8>> = leaf_val_slice.iter().map(|b| Some(*b)).collect();
 
         MerkleProofCircuit {
-            forest,
+            roots,
+            leaf_crh_param: leaf_crh_param.clone(),
+            two_to_one_crh_param: two_to_one_crh_param.clone(),
             auth_path: Some(auth_path),
             leaf_val,
             _marker: PhantomData,
@@ -101,11 +97,11 @@ where
         // Get param vars
         let leaf_crh_param_var = LeafH::ParametersVar::new_constant(
             ark_relations::ns!(cs, "leaf_crh_parameter"),
-            &self.forest.leaf_crh_param,
+            &self.leaf_crh_param,
         )?;
         let two_to_one_crh_param_var = TwoToOneH::ParametersVar::new_constant(
             ark_relations::ns!(cs, "two_to_one_crh_parameter"),
-            &self.forest.two_to_one_crh_param,
+            &self.two_to_one_crh_param,
         )?;
 
         // Witness the leaf and path values
@@ -127,8 +123,7 @@ where
             Vec<<TwoToOneH as TwoToOneCRHGadget<_, _>>::OutputVar>,
             SynthesisError,
         > = self
-            .forest
-            .roots()
+            .roots
             .into_iter()
             .map(|root| {
                 <TwoToOneH as TwoToOneCRHGadget<_, _>>::OutputVar::new_input(
@@ -152,7 +147,10 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{merkle_forest::idx_1d_to_2d, test_util::Window4x256};
+    use crate::{
+        merkle_forest::{idx_1d_to_2d, MerkleForest},
+        test_util::Window4x256,
+    };
 
     use ark_crypto_primitives::crh::{pedersen, *};
     use ark_ed_on_bls12_381::{constraints::EdwardsVar, EdwardsProjective as JubJub, Fq};
@@ -187,13 +185,9 @@ mod tests {
         let leaves: Vec<Leaf> = (0..num_leaves).map(|_| rng.gen()).collect();
 
         // Create the forest
-        let forest = JubJubMerkleForest::new(
-            &leaf_crh_params.clone(),
-            &two_to_one_crh_params.clone(),
-            &leaves,
-            num_trees,
-        )
-        .unwrap();
+        let forest =
+            JubJubMerkleForest::new(&leaf_crh_params, &two_to_one_crh_params, &leaves, num_trees)
+                .unwrap();
 
         // Pick the leaf at index 106 to make a proof of
         let (leaf, auth_path) = {
@@ -207,8 +201,13 @@ mod tests {
         };
 
         // Construct the circuit which will prove the membership of leaf i
+        let roots = forest.roots();
         let circuit = MerkleProofCircuit::<Fq, HG, JubJubMerkleTreeParams, HG>::new(
-            &forest, &auth_path, leaf,
+            &roots,
+            &leaf_crh_params,
+            &two_to_one_crh_params,
+            &auth_path,
+            leaf,
         );
 
         // Run the circuit and check that the constraints are satisfied

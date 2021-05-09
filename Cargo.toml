@@ -9,7 +9,8 @@ edition = "2018"
 [dependencies]
 ark-ff = "0.2"
 ark-ec = "0.2"
-ark-groth16 = "0.2"
+#ark-groth16 = "0.2"
+ark-groth16 = { git = "https://github.com/rozbb/groth16.git", branch = "verif-preprocess" }
 ark-ed-on-bls12-381 = { version = "0.2", features = ["r1cs"] }
 ark-relations = "0.2"
 ark-r1cs-std = "0.2"
@@ -39,6 +40,9 @@ criterion = { version = "0.3", features = [ "html_reports" ] }
 
 [profile.release]
 debug = true
+
+[lib]
+bench = false
 
 [[bench]]
 name = "bench"

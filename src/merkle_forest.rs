@@ -47,6 +47,18 @@ impl<P: Config> MerkleForest<P> {
         })
     }
 
+    /// Returns an empty forest
+    pub fn empty(
+        leaf_crh_param: &LeafParam<P>,
+        two_to_one_crh_param: &TwoToOneParam<P>,
+    ) -> Result<MerkleForest<P>, ArkError> {
+        Ok(MerkleForest {
+            trees: Vec::new(),
+            leaf_crh_param: leaf_crh_param.clone(),
+            two_to_one_crh_param: two_to_one_crh_param.clone(),
+        })
+    }
+
     /// Returns the roots of the trees in the forest
     pub fn roots(&self) -> Vec<TwoToOneDigest<P>> {
         self.trees.iter().map(|t| t.root()).collect()
