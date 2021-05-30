@@ -91,7 +91,6 @@ pub type Path<P> = ark_crypto_primitives::merkle_tree::Path<P>;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_util::Window4x256;
 
     use ark_crypto_primitives::crh::{pedersen, *};
     use ark_ed_on_bls12_381::EdwardsProjective as JubJub;
@@ -99,7 +98,15 @@ mod tests {
 
     type Leaf = [u8; 8];
 
-    type H = pedersen::CRH<JubJub, Window4x256>;
+    #[derive(Clone, PartialEq, Eq, Hash)]
+    struct Window;
+
+    impl pedersen::Window for Window {
+        const WINDOW_SIZE: usize = 4;
+        const NUM_WINDOWS: usize = 256;
+    }
+
+    type H = pedersen::CRH<JubJub, Window>;
     struct JubJubMerkleTreeParams;
     impl Config for JubJubMerkleTreeParams {
         type LeafHash = H;

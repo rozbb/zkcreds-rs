@@ -199,7 +199,6 @@ mod tests {
 
             (leaf, auth_path)
         };
-        println!("auth path len == {}", auth_path.len());
 
         // Construct the circuit which will prove the membership of leaf i
         let roots = forest.roots();

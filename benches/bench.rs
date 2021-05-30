@@ -1,4 +1,4 @@
-use merkle_bench::{constraints::MerkleProofCircuit, test_util::Window4x256};
+use merkle_bench::constraints::MerkleProofCircuit;
 
 use ark_bls12_381::{Bls12_381 as E, Fr};
 use ark_crypto_primitives::{
@@ -245,13 +245,21 @@ where
 }
 
 fn bench_pedersen(c: &mut Criterion) {
-    type HG = pedersen::constraints::CRHGadget<JubJub, EdwardsVar, Window4x256>;
+    #[derive(Clone, PartialEq, Eq, Hash)]
+    struct Window;
+
+    impl pedersen::Window for Window {
+        const WINDOW_SIZE: usize = 4;
+        const NUM_WINDOWS: usize = 256;
+    }
+
+    type HG = pedersen::constraints::CRHGadget<JubJub, EdwardsVar, Window>;
 
     #[derive(Clone)]
     struct JubJubMerkleTreeParams;
     impl Config for JubJubMerkleTreeParams {
-        type LeafHash = pedersen::CRH<JubJub, Window4x256>;
-        type TwoToOneHash = pedersen::CRH<JubJub, Window4x256>;
+        type LeafHash = pedersen::CRH<JubJub, Window>;
+        type TwoToOneHash = pedersen::CRH<JubJub, Window>;
     }
 
     bench_with_hash::<JubJubMerkleTreeParams, HG>("Pedersen", c);
@@ -260,16 +268,16 @@ fn bench_pedersen(c: &mut Criterion) {
 fn bench_bowe_hopwood(c: &mut Criterion) {
     use ark_ed_on_bls12_381::constraints::FqVar;
 
-    type H = bowe_hopwood::CRH<EdwardsParameters, Window>;
-    type HG = bowe_hopwood::constraints::CRHGadget<EdwardsParameters, FqVar>;
-
     #[derive(Clone, PartialEq, Eq, Hash)]
     struct Window;
 
     impl pedersen::Window for Window {
         const WINDOW_SIZE: usize = 63;
-        const NUM_WINDOWS: usize = 8;
+        const NUM_WINDOWS: usize = 17;
     }
+
+    type H = bowe_hopwood::CRH<EdwardsParameters, Window>;
+    type HG = bowe_hopwood::constraints::CRHGadget<EdwardsParameters, FqVar>;
 
     #[derive(Clone)]
     struct JubJubMerkleTreeParams;
@@ -281,5 +289,5 @@ fn bench_bowe_hopwood(c: &mut Criterion) {
     bench_with_hash::<JubJubMerkleTreeParams, HG>("Bowe-Hopwood", c);
 }
 
-criterion_group!(benches, /*bench_pedersen ,*/ bench_bowe_hopwood*/);
+criterion_group!(benches, /*bench_pedersen ,*/ bench_bowe_hopwood);
 criterion_main!(benches);
