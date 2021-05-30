@@ -7,7 +7,13 @@ use ark_crypto_primitives::{
     merkle_tree::{constraints::PathVar, Config, LeafParam, TwoToOneDigest, TwoToOneParam},
 };
 use ark_ff::Field;
-use ark_r1cs_std::{alloc::AllocVar, bits::uint8::UInt8, boolean::Boolean, eq::EqGadget};
+use ark_r1cs_std::{
+    alloc::AllocVar,
+    bits::{uint8::UInt8, ToBytesGadget},
+    boolean::Boolean,
+    eq::EqGadget,
+    R1CSVar,
+};
 use ark_relations::{
     ns,
     r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError},
@@ -117,6 +123,14 @@ where
             &two_to_one_crh_param_var,
             &leaf_var.as_slice(),
         )?;
+        println!(
+            "var auth path root: {:?}",
+            path_root_var
+                .to_bytes()?
+                .into_iter()
+                .map(|b| b.value())
+                .collect::<Result<Vec<u8>, SynthesisError>>()
+        );
 
         // Collect all the Merkle roots into vars
         let forest_root_vars: Result<

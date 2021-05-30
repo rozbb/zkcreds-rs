@@ -91,7 +91,11 @@ fn rand_path<C: Config, R: Rng>(
         &to_bytes!(leaf_hash)?,
         &to_bytes!(leaf_sibling_hash)?,
     )?;
-    for sibling in &auth_path {
+    // Calculate the root digest. Remember the auth path goes root -> leaf, so iterate in reverse
+    for (i, sibling) in auth_path.iter().rev().enumerate() {
+        println!("Iteration {}", i);
+        println!("left hash {:?}", to_bytes!(cur_digest));
+        println!("right hash {:?}", to_bytes!(sibling));
         cur_digest = C::TwoToOneHash::evaluate(
             &two_to_one_crh_params,
             &to_bytes!(cur_digest)?,
@@ -100,6 +104,7 @@ fn rand_path<C: Config, R: Rng>(
     }
 
     let root = cur_digest;
+    println!("auth path root: {:?}", to_bytes!(root)?);
     let path = Path {
         leaf_sibling_hash,
         auth_path,
@@ -203,6 +208,7 @@ where
         );
 
         // Prove
+        /*
         c.bench_function(
             &format!(
                 "Proving membership over 2^{:0.0} trees of 2^{:0.0} leaves, using {}",
@@ -216,6 +222,7 @@ where
                 });
             },
         );
+        */
         let proof = create_random_proof::<E, _, _>(circuit.clone(), &pk, &mut rng).unwrap();
 
         // Now construct the verification information. Serialize the roots into field elems
@@ -289,5 +296,5 @@ fn bench_bowe_hopwood(c: &mut Criterion) {
     bench_with_hash::<JubJubMerkleTreeParams, HG>("Bowe-Hopwood", c);
 }
 
-criterion_group!(benches, /*bench_pedersen ,*/ bench_bowe_hopwood);
+criterion_group!(benches, bench_pedersen /*, bench_bowe_hopwood*/);
 criterion_main!(benches);
