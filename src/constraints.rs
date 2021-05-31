@@ -161,20 +161,24 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        merkle_forest::{idx_1d_to_2d, MerkleForest},
-        test_util::Window4x256,
-    };
+    use crate::merkle_forest::{idx_1d_to_2d, MerkleForest};
 
-    use ark_crypto_primitives::crh::{pedersen, *};
-    use ark_ed_on_bls12_381::{constraints::EdwardsVar, EdwardsProjective as JubJub, Fq};
+    use ark_crypto_primitives::crh::{bowe_hopwood, pedersen, TwoToOneCRH, CRH};
+    use ark_ed_on_bls12_381::{constraints::FqVar, EdwardsParameters, Fq};
     use ark_relations::r1cs::ConstraintSystem;
-    use ark_std::rand::Rng;
+    use ark_std::rand::{Rng, RngCore};
 
     type Leaf = [u8; 8];
 
-    type H = pedersen::CRH<JubJub, Window4x256>;
-    type HG = pedersen::constraints::CRHGadget<JubJub, EdwardsVar, Window4x256>;
+    type H = bowe_hopwood::CRH<EdwardsParameters, Window>;
+    type HG = bowe_hopwood::constraints::CRHGadget<EdwardsParameters, FqVar>;
+
+    #[derive(Clone)]
+    pub struct Window;
+    impl pedersen::Window for Window {
+        const WINDOW_SIZE: usize = 63;
+        const NUM_WINDOWS: usize = 17;
+    }
 
     struct JubJubMerkleTreeParams;
     impl Config for JubJubMerkleTreeParams {
@@ -234,5 +238,66 @@ mod tests {
             num_leaves / num_trees,
             cs.num_constraints()
         );
+    }
+
+    pub struct SingleHashCircuit<ConstraintF, LeafH, P>
+    where
+        ConstraintF: Field,
+        P: Config,
+        LeafH: CRHGadget<P::LeafHash, ConstraintF>,
+    {
+        // Public inputs
+        leaf_crh_param: LeafParam<P>,
+        // Private inputs
+        hash_input: Vec<Option<u8>>,
+        // Marker
+        _marker: PhantomData<(ConstraintF, LeafH)>,
+    }
+
+    impl<ConstraintF, LeafH, P> ConstraintSynthesizer<ConstraintF>
+        for SingleHashCircuit<ConstraintF, LeafH, P>
+    where
+        ConstraintF: Field,
+        P: Config,
+        LeafH: CRHGadget<P::LeafHash, ConstraintF>,
+    {
+        fn generate_constraints(
+            self,
+            cs: ConstraintSystemRef<ConstraintF>,
+        ) -> Result<(), SynthesisError> {
+            // Get param vars
+            let leaf_crh_param_var = LeafH::ParametersVar::new_constant(
+                ark_relations::ns!(cs, "leaf_crh_parameter"),
+                &self.leaf_crh_param,
+            )?;
+
+            let hash_input = UInt8::new_witness_vec(ns!(cs, "hash input"), &self.hash_input)?;
+            LeafH::evaluate(&leaf_crh_param_var, &hash_input)?;
+
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn single_hash_test() {
+        let mut rng = ark_std::test_rng();
+
+        // Setup hashing params
+        let leaf_crh_param = <H as CRH>::setup(&mut rng).unwrap();
+
+        let mut hash_input = [0u8; 64];
+        rng.fill_bytes(&mut hash_input);
+
+        let circuit = SingleHashCircuit::<Fq, HG, JubJubMerkleTreeParams> {
+            leaf_crh_param,
+            hash_input: hash_input.iter().map(|b| Some(*b)).collect(),
+            _marker: PhantomData,
+        };
+
+        // Run the circuit and check that the constraints are satisfied
+        let cs = ConstraintSystem::<Fq>::new_ref();
+        circuit.generate_constraints(cs.clone()).unwrap();
+
+        println!("single hash is {} constraints", cs.num_constraints());
     }
 }
