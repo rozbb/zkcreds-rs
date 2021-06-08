@@ -17,8 +17,8 @@ ark-r1cs-std = "0.2"
 ark-std = "0.2"
 
 [dependencies.ark-crypto-primitives]
-#git = "https://github.com/rozbb/crypto-primitives.git"
-path = "../crypto-primitives"
+git = "https://github.com/rozbb/crypto-primitives.git"
+#path = "../crypto-primitives"
 branch = "merkle-changes"
 features = ["r1cs"]
 

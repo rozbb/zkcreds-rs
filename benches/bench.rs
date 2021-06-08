@@ -19,6 +19,7 @@ use ark_groth16::{
     prover::create_random_proof,
     verifier::{prepare_inputs, prepare_verifying_key, verify_proof_with_prepared_inputs},
 };
+use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem, OptimizationGoal};
 use ark_std::rand::Rng;
 use criterion::{criterion_group, criterion_main, Criterion};
 
@@ -28,7 +29,7 @@ const LEAF_SIZE: usize = 1;
 type Leaf = [u8; LEAF_SIZE];
 
 // The number of leaves in the Merkle forest
-const LOG_NUM_LEAVES: u32 = 3;
+const LOG_NUM_LEAVES: u32 = 1;
 
 #[inline]
 fn tree_height(num_leaves: usize) -> usize {
@@ -84,6 +85,9 @@ fn rand_path<C: Config, R: Rng>(
     //let leaf_index = 2usize.pow(height as u32 - 1) - 1;
     let leaf_index = 0;
     println!("leaf index {:b}", leaf_index);
+
+    println!("left hash {:?}", to_bytes!(leaf_hash));
+    println!("right hash {:?}", to_bytes!(leaf_sibling_hash));
 
     // Calculate the root digest. Every sibling is a right-sibling
     let mut cur_digest = C::TwoToOneHash::evaluate(
@@ -207,6 +211,17 @@ where
             &leaf.clone(),
         );
 
+        let num_constraints = {
+            let cs = ConstraintSystem::new_ref();
+            // Set the optimization goal
+            cs.set_optimization_goal(OptimizationGoal::Constraints);
+
+            // Synthesize the circuit.
+            circuit.clone().generate_constraints(cs.clone()).unwrap();
+            cs.num_constraints()
+        };
+        println!("num constraints: {}", num_constraints);
+
         // Prove
         /*
         c.bench_function(
@@ -296,5 +311,5 @@ fn bench_bowe_hopwood(c: &mut Criterion) {
     bench_with_hash::<JubJubMerkleTreeParams, HG>("Bowe-Hopwood", c);
 }
 
-criterion_group!(benches, bench_pedersen /*, bench_bowe_hopwood*/);
+criterion_group!(benches, bench_pedersen, bench_bowe_hopwood);
 criterion_main!(benches);
