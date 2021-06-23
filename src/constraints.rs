@@ -1,5 +1,3 @@
-use crate::merkle_forest::Path;
-
 use core::marker::PhantomData;
 
 use ark_crypto_primitives::{
@@ -18,6 +16,8 @@ use ark_relations::{
     ns,
     r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError},
 };
+
+pub type Path<P> = ark_crypto_primitives::merkle_tree::Path<P>;
 
 pub struct MerkleProofCircuit<'a, ConstraintF, LeafH, P, TwoToOneH>
 where
@@ -123,6 +123,7 @@ where
             &two_to_one_crh_param_var,
             &leaf_var.as_slice(),
         )?;
+        /*
         println!(
             "var auth path root: {:?}",
             path_root_var
@@ -131,6 +132,7 @@ where
                 .map(|b| b.value())
                 .collect::<Result<Vec<u8>, SynthesisError>>()
         );
+        */
 
         // Collect all the Merkle roots into vars
         let forest_root_vars: Result<
@@ -177,7 +179,7 @@ mod tests {
     pub struct Window;
     impl pedersen::Window for Window {
         const WINDOW_SIZE: usize = 63;
-        const NUM_WINDOWS: usize = 17;
+        const NUM_WINDOWS: usize = 9;
     }
 
     struct JubJubMerkleTreeParams;
@@ -207,7 +209,7 @@ mod tests {
             JubJubMerkleForest::new(&leaf_crh_params, &two_to_one_crh_params, &leaves, num_trees)
                 .unwrap();
 
-        // Pick the leaf at index 106 to make a proof of
+        // Pick the leaf at index 106 to make a proof of. 106 is arbitrary
         let (leaf, auth_path) = {
             let i = 106;
             let (tree_idx, leaf_idx) = idx_1d_to_2d(i, num_trees, num_leaves);
@@ -285,7 +287,7 @@ mod tests {
         // Setup hashing params
         let leaf_crh_param = <H as CRH>::setup(&mut rng).unwrap();
 
-        let mut hash_input = [0u8; 64];
+        let mut hash_input = [0u8; 32];
         rng.fill_bytes(&mut hash_input);
 
         let circuit = SingleHashCircuit::<Fq, HG, JubJubMerkleTreeParams> {

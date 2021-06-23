@@ -29,7 +29,7 @@ const LEAF_SIZE: usize = 1;
 type Leaf = [u8; LEAF_SIZE];
 
 // The number of leaves in the Merkle forest
-const LOG_NUM_LEAVES: u32 = 1;
+const LOG_NUM_LEAVES: u32 = 32;
 
 #[inline]
 fn tree_height(num_leaves: usize) -> usize {
@@ -79,15 +79,15 @@ fn rand_path<C: Config, R: Rng>(
     let auth_path = (0..height - 2)
         .map(|_| rand_two_to_one_hash::<C, _>(&two_to_one_crh_params, rng))
         .collect::<Result<Vec<TwoToOneDigest<C>>, ArkError>>()?;
-    println!("auth path len == {}", auth_path.len());
+    //println!("auth path len == {}", auth_path.len());
 
     // Use index 0 so that all siblings to the root are right-siblings
     //let leaf_index = 2usize.pow(height as u32 - 1) - 1;
     let leaf_index = 0;
-    println!("leaf index {:b}", leaf_index);
+    //println!("leaf index {:b}", leaf_index);
 
-    println!("left hash {:?}", to_bytes!(leaf_hash));
-    println!("right hash {:?}", to_bytes!(leaf_sibling_hash));
+    //println!("left hash {:?}", to_bytes!(leaf_hash));
+    //println!("right hash {:?}", to_bytes!(leaf_sibling_hash));
 
     // Calculate the root digest. Every sibling is a right-sibling
     let mut cur_digest = C::TwoToOneHash::evaluate(
@@ -96,10 +96,10 @@ fn rand_path<C: Config, R: Rng>(
         &to_bytes!(leaf_sibling_hash)?,
     )?;
     // Calculate the root digest. Remember the auth path goes root -> leaf, so iterate in reverse
-    for (i, sibling) in auth_path.iter().rev().enumerate() {
-        println!("Iteration {}", i);
-        println!("left hash {:?}", to_bytes!(cur_digest));
-        println!("right hash {:?}", to_bytes!(sibling));
+    for (_i, sibling) in auth_path.iter().rev().enumerate() {
+        //println!("Iteration {}", i);
+        //println!("left hash {:?}", to_bytes!(cur_digest));
+        //println!("right hash {:?}", to_bytes!(sibling));
         cur_digest = C::TwoToOneHash::evaluate(
             &two_to_one_crh_params,
             &to_bytes!(cur_digest)?,
@@ -108,7 +108,7 @@ fn rand_path<C: Config, R: Rng>(
     }
 
     let root = cur_digest;
-    println!("auth path root: {:?}", to_bytes!(root)?);
+    //println!("auth path root: {:?}", to_bytes!(root)?);
     let path = Path {
         leaf_sibling_hash,
         auth_path,
@@ -176,7 +176,7 @@ where
             .collect();
 
         let roots = &[vec![first_root], remaining_roots].concat();
-        println!("num_roots == {}", roots.len());
+        //println!("num_roots == {}", roots.len());
 
         // Due to a bug, the path can never be None. It can be any vec of the correct length
         let (placeholder_path, _) = rand_path(
@@ -223,7 +223,6 @@ where
         println!("num constraints: {}", num_constraints);
 
         // Prove
-        /*
         c.bench_function(
             &format!(
                 "Proving membership over 2^{:0.0} trees of 2^{:0.0} leaves, using {}",
@@ -237,7 +236,6 @@ where
                 });
             },
         );
-        */
         let proof = create_random_proof::<E, _, _>(circuit.clone(), &pk, &mut rng).unwrap();
 
         // Now construct the verification information. Serialize the roots into field elems
@@ -252,9 +250,9 @@ where
         assert!(verify_proof_with_prepared_inputs(&pvk, &proof, &prepared_inputs).unwrap());
         c.bench_function(
             &format!(
-                "Verifying membership over {} trees of {} leaves, using {}",
-                num_trees,
-                num_leaves / num_trees,
+                "Verifying membership over 2^{:0.0} trees of 2^{:0.0} leaves, using {}",
+                (num_trees as f32).log2(),
+                ((num_leaves / num_trees) as f32).log2(),
                 hash_name
             ),
             |b| {
