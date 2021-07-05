@@ -15,6 +15,7 @@ ark-ed-on-bls12-381 = { version = "0.3", features = ["r1cs"] }
 ark-relations = "0.3"
 ark-r1cs-std = "0.3"
 ark-std = "0.3"
+arkworks-gadgets = { git = "https://github.com/webb-tools/arkworks-gadgets.git", branch = "master" }
 
 [dependencies.ark-crypto-primitives]
 git = "https://github.com/arkworks-rs/crypto-primitives.git"
@@ -23,6 +24,11 @@ features = ["r1cs"]
 #path = "../crypto-primitives"
 #branch = "merkle-changes"
 #version = "0.3"
+
+[patch.crates-io.ark-crypto-primitives]
+git = "https://github.com/arkworks-rs/crypto-primitives.git"
+branch = "main"
+features = ["r1cs"]
 
 [features]
 default = ["asm", "parallel"]

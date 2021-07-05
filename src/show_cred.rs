@@ -1,17 +1,15 @@
-use core::cmp::Ordering;
+use core::{cmp::Ordering, marker::PhantomData};
 
-use ark_crypto_primitives::crh::{
-    poseidon::{
-        constraints::{CRHGadget as PoseidonGadget, PoseidonRoundParamsVar},
-        Poseidon, PoseidonRoundParams,
-    },
-    CRHGadget,
-};
+use ark_crypto_primitives::crh::constraints::CRHGadget;
 use ark_ff::PrimeField;
 use ark_r1cs_std::{alloc::AllocVar, bits::ToBytesGadget, eq::EqGadget, fields::fp::FpVar};
 use ark_relations::{
     ns,
     r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError},
+};
+use arkworks_gadgets::poseidon::{
+    constraints::{CRHGadget as PoseidonGadget, PoseidonParametersVar},
+    PoseidonParameters, Rounds as PoseidonRounds, CRH as PoseidonCRH,
 };
 
 /// A credential is a 128 bit bitstring
@@ -20,7 +18,7 @@ struct Credential([u8; 16]);
 pub struct NShowCircuit<ConstraintF, P>
 where
     ConstraintF: PrimeField,
-    P: PoseidonRoundParams<ConstraintF>,
+    P: PoseidonRounds,
 {
     // Public inputs //
     /// The nonce associated to this presentation
@@ -37,20 +35,21 @@ where
     /// Number of times this credential can be shown
     n: u16,
     /// Poseidon parameters
-    params: Poseidon<ConstraintF, P>,
+    params: PoseidonParameters<ConstraintF>,
+    _rounds: PhantomData<P>,
 }
 
 impl<ConstraintF, P> ConstraintSynthesizer<ConstraintF> for NShowCircuit<ConstraintF, P>
 where
     ConstraintF: PrimeField,
-    P: PoseidonRoundParams<ConstraintF>,
+    P: PoseidonRounds,
 {
     fn generate_constraints(
         self,
         cs: ConstraintSystemRef<ConstraintF>,
     ) -> Result<(), SynthesisError> {
         // Witness Poseidon and counter bound constants
-        let params_var = PoseidonRoundParamsVar::new_constant(ns!(cs, "prf param"), &self.params)?;
+        let params_var = PoseidonParametersVar::new_constant(ns!(cs, "prf param"), &self.params)?;
         let n_var = {
             // Convert the u16 to a field element first. Then witness it.
             let n: ConstraintF = self.n.into();
@@ -91,7 +90,7 @@ where
             let counter_bytes = counter_var.to_bytes()?;
             let hash_input = &[cred_bytes, counter_bytes].concat();
 
-            PoseidonGadget::evaluate(&params_var, &hash_input)?
+            PoseidonGadget::<ConstraintF, P>::evaluate(&params_var, &hash_input)?
         };
         hash.enforce_equal(&presentation_nonce_var)
     }

@@ -309,5 +309,5 @@ fn bench_bowe_hopwood(c: &mut Criterion) {
     bench_with_hash::<JubJubMerkleTreeParams, HG>("Bowe-Hopwood", c);
 }
 
-criterion_group!(benches, bench_pedersen, bench_bowe_hopwood);
+criterion_group!(benches, /*bench_pedersen,*/ bench_bowe_hopwood);
 criterion_main!(benches);
