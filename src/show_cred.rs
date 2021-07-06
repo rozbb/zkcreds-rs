@@ -1,21 +1,40 @@
 use core::{cmp::Ordering, marker::PhantomData};
+use std::io::Write;
 
-use ark_crypto_primitives::crh::constraints::CRHGadget;
+use ark_crypto_primitives::{
+    crh::{constraints::CRHGadget, CRH as CRHTrait},
+    Error as ArkError,
+};
 use ark_ff::PrimeField;
-use ark_r1cs_std::{alloc::AllocVar, bits::ToBytesGadget, eq::EqGadget, fields::fp::FpVar};
+use ark_r1cs_std::{
+    alloc::AllocVar, bits::ToBytesGadget, eq::EqGadget, fields::fp::FpVar, uint8::UInt8, R1CSVar,
+};
 use ark_relations::{
     ns,
     r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError},
 };
+use ark_std::rand::RngCore;
 use arkworks_gadgets::poseidon::{
     constraints::{CRHGadget as PoseidonGadget, PoseidonParametersVar},
     PoseidonParameters, Rounds as PoseidonRounds, CRH as PoseidonCRH,
 };
 
-/// A credential is a 128 bit bitstring
-struct Credential([u8; 16]);
+use byteorder::{LittleEndian, WriteBytesExt};
 
-pub struct NShowCircuit<ConstraintF, P>
+/// A credential is a 128 bit bitstring
+const CRED_SIZE: usize = 16;
+pub struct Credential([u8; CRED_SIZE]);
+
+impl Credential {
+    pub fn gen<R: RngCore>(rng: &mut R) -> Credential {
+        let mut buf = [0u8; CRED_SIZE];
+        rng.fill_bytes(&mut buf);
+
+        Credential(buf)
+    }
+}
+
+pub struct MultishowCircuit<ConstraintF, P>
 where
     ConstraintF: PrimeField,
     P: PoseidonRounds,
@@ -23,6 +42,8 @@ where
     // Public inputs //
     /// The nonce associated to this presentation
     presentation_nonce: ConstraintF,
+    /// Number of times this credential can be shown
+    max_num_presentations: u16,
 
     // Private inputs //
     /// The user's credential
@@ -32,14 +53,35 @@ where
     counter: Option<u16>,
 
     // Constants //
-    /// Number of times this credential can be shown
-    n: u16,
     /// Poseidon parameters
     params: PoseidonParameters<ConstraintF>,
     _rounds: PhantomData<P>,
 }
 
-impl<ConstraintF, P> ConstraintSynthesizer<ConstraintF> for NShowCircuit<ConstraintF, P>
+impl<ConstraintF, P> MultishowCircuit<ConstraintF, P>
+where
+    ConstraintF: PrimeField,
+    P: PoseidonRounds,
+{
+    pub fn new(
+        presentation_nonce: ConstraintF,
+        cred: Credential,
+        counter: u16,
+        max_num_presentations: u16,
+        params: PoseidonParameters<ConstraintF>,
+    ) -> Self {
+        MultishowCircuit {
+            presentation_nonce,
+            max_num_presentations,
+            cred: Some(cred),
+            counter: Some(counter),
+            params,
+            _rounds: PhantomData,
+        }
+    }
+}
+
+impl<ConstraintF, P> ConstraintSynthesizer<ConstraintF> for MultishowCircuit<ConstraintF, P>
 where
     ConstraintF: PrimeField,
     P: PoseidonRounds,
@@ -50,10 +92,10 @@ where
     ) -> Result<(), SynthesisError> {
         // Witness Poseidon and counter bound constants
         let params_var = PoseidonParametersVar::new_constant(ns!(cs, "prf param"), &self.params)?;
-        let n_var = {
+        let max_num_presentations_var = {
             // Convert the u16 to a field element first. Then witness it.
-            let n: ConstraintF = self.n.into();
-            FpVar::new_constant(ns!(cs, "n param"), &n)?
+            let n: ConstraintF = self.max_num_presentations.into();
+            FpVar::new_input(ns!(cs, "max_num_presentations param"), || Ok(n.clone()))?
         };
 
         // Witness the nonce, credential, and counter
@@ -62,11 +104,11 @@ where
             || Ok(self.presentation_nonce),
         )?;
         // Convert the credential bytes to a field element
-        let cred_var = FpVar::<ConstraintF>::new_witness(ns!(cs, "cred wit"), || {
+        let cred_var = <Vec<UInt8<ConstraintF>>>::new_witness(ns!(cs, "cred wit"), || {
             self.cred
                 .as_ref()
-                .map(|c| ConstraintF::from_be_bytes_mod_order(&c.0))
                 .ok_or(SynthesisError::AssignmentMissing)
+                .map(|c| c.0.clone())
         })?;
         let counter_var = {
             // Convert the u16 to a field element first. Then witness it
@@ -81,17 +123,90 @@ where
         })?;
         */
 
-        // Assert that counter < n
-        counter_var.enforce_cmp(&n_var, Ordering::Less, false)?;
+        // Assert that counter < max_num_presentations
+        counter_var.enforce_cmp(&max_num_presentations_var, Ordering::Less, false)?;
 
-        // Finally, assert presentation_nonce == H(cred, counter)
+        // Finally, assert presentation_nonce == H(cred, counter, n)
         let hash = {
-            let cred_bytes = cred_var.to_bytes()?;
-            let counter_bytes = counter_var.to_bytes()?;
-            let hash_input = &[cred_bytes, counter_bytes].concat();
+            // Only use the first two bytes of the counter. This is legal because already checked
+            // that counter < max_num_presentations, and n: u16 is a public input.
+            let counter_bytes_var = counter_var.to_bytes()?;
+            let hash_input = &[cred_var.as_slice(), &counter_bytes_var[..2]].concat();
+
+            println!(
+                "hash var input {:x?}",
+                hash_input
+                    .iter()
+                    .map(|c| c.value())
+                    .collect::<Result<Vec<u8>, _>>()
+            );
 
             PoseidonGadget::<ConstraintF, P>::evaluate(&params_var, &hash_input)?
         };
         hash.enforce_equal(&presentation_nonce_var)
+    }
+}
+
+pub fn compute_presentation_nonce<F, P>(
+    params: &PoseidonParameters<F>,
+    cred: &Credential,
+    counter: u16,
+) -> Result<F, ArkError>
+where
+    F: PrimeField,
+    P: PoseidonRounds,
+{
+    let mut hash_input = [0u8; CRED_SIZE + 2];
+    let mut buf = &mut hash_input[..];
+
+    // Presentation nonce is H(cred, counter, n)
+    buf.write(&cred.0)
+        .expect("couldn't write credential to buf");
+    buf.write_u16::<LittleEndian>(counter)
+        .expect("couldn't write show counter to buf");
+
+    println!("hash input {:x?}", hash_input);
+
+    PoseidonCRH::<F, P>::evaluate(params, &hash_input)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    use ark_bls12_381::Fr;
+    use ark_relations::r1cs::ConstraintSystem;
+    use arkworks_gadgets::setup::common::{
+        setup_params_3 as setup_params, PoseidonRounds3 as PoseidonRounds,
+    };
+
+    #[test]
+    fn test_show_cred() {
+        let mut rng = ark_std::test_rng();
+
+        let params = setup_params::<Fr>();
+        let cred = Credential::gen(&mut rng);
+        let counter = 1u16;
+        let max_num_presentations = 128u16;
+
+        let presentation_nonce =
+            compute_presentation_nonce::<_, PoseidonRounds>(&params, &cred, counter).unwrap();
+
+        let cs = ConstraintSystem::<Fr>::new_ref();
+        let circuit = MultishowCircuit::<_, PoseidonRounds>::new(
+            presentation_nonce,
+            cred,
+            counter,
+            max_num_presentations,
+            params,
+        );
+        circuit.generate_constraints(cs.clone()).unwrap();
+
+        println!("multishow circuit is {} constraints", cs.num_constraints());
+        println!(
+            "multishow circuit nonce is {} bytes",
+            ark_ff::to_bytes![presentation_nonce].unwrap().len()
+        );
+        assert!(cs.is_satisfied().unwrap());
     }
 }
