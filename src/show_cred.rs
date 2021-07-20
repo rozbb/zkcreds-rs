@@ -177,14 +177,14 @@ mod test {
     use ark_bls12_381::Fr;
     use ark_relations::r1cs::ConstraintSystem;
     use arkworks_gadgets::setup::common::{
-        setup_params_3 as setup_params, PoseidonRounds3 as PoseidonRounds,
+        setup_params_x5_3 as setup_params, Curve, PoseidonRounds_x5_3 as PoseidonRounds,
     };
 
     #[test]
     fn test_show_cred() {
         let mut rng = ark_std::test_rng();
 
-        let params = setup_params::<Fr>();
+        let params = setup_params::<Fr>(Curve::Bls381);
         let cred = Credential::gen(&mut rng);
         let counter = 1u16;
         let max_num_presentations = 128u16;
