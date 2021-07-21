@@ -4,10 +4,7 @@
 
 use crate::Error;
 
-use core::{
-    convert::{TryFrom, TryInto},
-    marker::PhantomData,
-};
+use core::convert::{TryFrom, TryInto};
 
 use ark_crypto_primitives::{
     crh::{TwoToOneCRH, CRH},
@@ -24,63 +21,71 @@ use ark_std::{
 /// constraints for the Merkle sparse tree
 //pub mod constraints;
 
+type LeafDigest<P> = <<P as TreeConfig>::LeafHash as CRH>::Output;
+type TwoToOneDigest<P> = <<P as TreeConfig>::TwoToOneHash as TwoToOneCRH>::Output;
+
 pub struct SparseMerkleTreePath<P: TreeConfig> {
-    pub(crate) path: Vec<(Vec<u8>, Vec<u8>)>,
-    _marker: PhantomData<P>,
+    pub(crate) leaf_hashes: (LeafDigest<P>, LeafDigest<P>),
+    pub(crate) inner_hashes: Vec<(TwoToOneDigest<P>, TwoToOneDigest<P>)>,
+}
+
+impl<P> Default for SparseMerkleTreePath<P>
+where
+    P: TreeConfig,
+{
+    fn default() -> SparseMerkleTreePath<P> {
+        SparseMerkleTreePath {
+            leaf_hashes: (LeafDigest::<P>::default(), LeafDigest::<P>::default()),
+            inner_hashes: vec![],
+        }
+    }
 }
 
 impl<P> SparseMerkleTreePath<P>
 where
     P: TreeConfig,
+    TwoToOneDigest<P>: Eq,
 {
     /// verify the lookup proof, just checking the membership
     pub fn verify<L: ToBytes>(
         &self,
         leaf_param: &LeafParam<P>,
         two_to_one_param: &TwoToOneParam<P>,
-        root_hash: &[u8],
+        root_hash: &TwoToOneDigest<P>,
         leaf: &L,
     ) -> Result<bool, Error> {
         // Check that the given leaf matches the leaf in the membership proof.
-        if !self.path.is_empty() {
-            let claimed_leaf_hash = P::LeafHash::evaluate(&leaf_param, &to_bytes!(leaf)?)?;
-            let claimed_leaf_hash = to_bytes!(claimed_leaf_hash)?;
+        let claimed_leaf_hash = P::LeafHash::evaluate(&leaf_param, &to_bytes!(leaf)?)?;
 
-            if claimed_leaf_hash != self.path[0].0 && claimed_leaf_hash != self.path[0].1 {
-                return Ok(false);
-            }
-
-            let mut prev = claimed_leaf_hash;
-            // Check levels between leaf level and root.
-            for &(ref left_hash, ref right_hash) in &self.path {
-                // Check if the previous hash matches the correct current hash.
-                if &prev != left_hash && &prev != right_hash {
-                    return Ok(false);
-                }
-                prev = {
-                    let digest =
-                        P::TwoToOneHash::evaluate(&two_to_one_param, left_hash, right_hash)?;
-                    to_bytes!(digest)?
-                };
-            }
-
-            if root_hash != &prev {
-                return Ok(false);
-            }
-            Ok(true)
-        } else {
-            Ok(false)
+        if claimed_leaf_hash != self.leaf_hashes.0 && claimed_leaf_hash != self.leaf_hashes.1 {
+            return Ok(false);
         }
-    }
 
-    pub fn height(&self) -> usize {
-        self.path.len() + 1
+        // Check levels between leaf level and root
+        let mut prev = P::TwoToOneHash::evaluate(
+            &two_to_one_param,
+            &to_bytes!(self.leaf_hashes.0)?,
+            &to_bytes!(self.leaf_hashes.1)?,
+        )?;
+        for (ref left_hash, ref right_hash) in self.inner_hashes.iter() {
+            // Check if the previous hash matches the correct current hash.
+            if &prev != left_hash && &prev != right_hash {
+                return Ok(false);
+            }
+            prev = P::TwoToOneHash::evaluate(
+                &two_to_one_param,
+                &to_bytes!(left_hash)?,
+                &to_bytes!(right_hash)?,
+            )?;
+        }
+
+        Ok(root_hash == &prev)
     }
 }
 /*
 
     /// verify the lookup proof, given the location
-    pub fn verify_with_index<L: ToBytes>(
+    pub fn verify_with_idx<L: ToBytes>(
         &self,
         parameters: &<P::H as CRH>::Parameters,
         root_hash: &<P::H as CRH>::Output,
@@ -91,16 +96,16 @@ where
             return Ok(false);
         }
         // Check that the given leaf matches the leaf in the membership proof.
-        let last_level_index: u64 = (1u64 << (P::HEIGHT - 1)) - 1;
-        let tree_index: u64 = last_level_index + index;
+        let first_level_idx: u64 = (1u64 << (P::HEIGHT - 1)) - 1;
+        let tree_idx: u64 = first_level_idx + index;
 
-        let mut index_from_path: u64 = last_level_index;
+        let mut index_from_path: u64 = first_level_idx;
         let mut index_offset: u64 = 1;
 
         if !self.path.is_empty() {
             let claimed_leaf_hash = hash_leaf::<P::H, L>(parameters, leaf)?;
 
-            if tree_index % 2 == 1 {
+            if tree_idx % 2 == 1 {
                 if claimed_leaf_hash != self.path[0].0 {
                     return Ok(false);
                 }
@@ -109,11 +114,11 @@ where
             }
 
             let mut prev = claimed_leaf_hash;
-            let mut prev_index = tree_index;
+            let mut prev_idx = tree_idx;
             // Check levels between leaf level and root.
             for &(ref left_hash, ref right_hash) in &self.path {
                 // Check if the previous hash matches the correct current hash.
-                if prev_index % 2 == 1 {
+                if prev_idx % 2 == 1 {
                     if &prev != left_hash {
                         return Ok(false);
                     }
@@ -124,7 +129,7 @@ where
                     index_from_path += index_offset;
                 }
                 index_offset *= 2;
-                prev_index = (prev_index - 1) / 2;
+                prev_idx = (prev_idx - 1) / 2;
                 prev = hash_inner_node::<P::H>(parameters, left_hash, right_hash)?;
             }
 
@@ -132,7 +137,7 @@ where
                 return Ok(false);
             }
 
-            if index_from_path != tree_index {
+            if index_from_path != tree_idx {
                 return Ok(false);
             }
 
@@ -145,192 +150,287 @@ where
 */
 
 /// Merkle sparse tree
-pub struct SparseMerkleTree<P: TreeConfig> {
-    /// data of the tree
-    height: u64,
-    pub tree: BTreeMap<u64, Vec<u8>>,
+pub struct SparseMerkleTree<P>
+where
+    P: TreeConfig,
+    TwoToOneDigest<P>: Eq,
+{
+    // Tree params
     leaf_param: LeafParam<P>,
     two_to_one_param: TwoToOneParam<P>,
-    root: Option<Vec<u8>>,
-    empty_hashes: Vec<Vec<u8>>,
+    height: u32,
+    // Tree contents
+    leaf_hashes: BTreeMap<u64, LeafDigest<P>>,
+    inner_hashes: BTreeMap<u64, TwoToOneDigest<P>>,
+    // Cached empty hashes
+    empty_hashes: EmptyHashes<P>,
 }
 
-impl<P: TreeConfig> SparseMerkleTree<P> {
-    /// obtain an empty tree
+struct EmptyHashes<P: TreeConfig> {
+    leaf_hash: LeafDigest<P>,
+    inner_hashes: Vec<TwoToOneDigest<P>>,
+}
+
+impl<P> SparseMerkleTree<P>
+where
+    P: TreeConfig,
+    TwoToOneDigest<P>: Eq,
+{
+    /// Obtain an empty tree of a given height. Height MUST be at least 2.
     pub fn blank<L: Default + ToBytes>(
         leaf_param: LeafParam<P>,
         two_to_one_param: TwoToOneParam<P>,
-        height: u64,
+        height: u32,
     ) -> Self {
+        assert!(height >= 2, "Tree height must be at least 2");
+
         let empty_hashes =
             gen_empty_hashes::<P, L>(&leaf_param, &two_to_one_param, height).unwrap();
-        let root = empty_hashes[usize::try_from(height - 1).unwrap()].clone();
 
         SparseMerkleTree {
-            height,
-            tree: BTreeMap::new(),
             leaf_param,
             two_to_one_param,
-            root: Some(root),
+            height,
+            leaf_hashes: BTreeMap::new(),
+            inner_hashes: BTreeMap::new(),
             empty_hashes,
         }
     }
 
-    /// initialize a tree (with optional data)
+    /// Given leaf hashes, does the rest of the computations to fill out the tree. If `root_only`
+    /// is true, then this will return just the root value at index 0 of the `BTreeMap`. Otherwise
+    /// it will return the full inner tree.
+    fn calculate_inner_hashes(
+        two_to_one_param: &TwoToOneParam<P>,
+        height: u32,
+        leaf_hashes: &BTreeMap<u64, LeafDigest<P>>,
+        empty_hashes: &EmptyHashes<P>,
+        root_only: bool,
+    ) -> Result<BTreeMap<u64, TwoToOneDigest<P>>, Error> {
+        // Calculate the indices of the leaf parents
+        let leaf_parents: BTreeSet<u64> = leaf_hashes.keys().map(|&i| parent(i).unwrap()).collect();
+
+        // Construct the hashes for all the leaf parents
+        let mut inner_hashes: BTreeMap<u64, TwoToOneDigest<P>> = BTreeMap::new();
+        for &parent_idx in leaf_parents.iter() {
+            let left_idx = left_child(parent_idx);
+            let right_idx = right_child(parent_idx);
+
+            let left_hash = leaf_hashes
+                .get(&left_idx)
+                .unwrap_or(&empty_hashes.leaf_hash);
+            let right_hash = leaf_hashes
+                .get(&right_idx)
+                .unwrap_or(&empty_hashes.leaf_hash);
+
+            // Compute H(left || right).
+            let left_hash_bytes = to_bytes![left_hash]?;
+            let right_hash_bytes = to_bytes![right_hash]?;
+            let hash =
+                P::TwoToOneHash::evaluate(&two_to_one_param, &left_hash_bytes, &right_hash_bytes)?;
+
+            // Insert the digest
+            inner_hashes.insert(parent_idx, hash);
+        }
+
+        // Now compute the parents of all the leaf parents
+        let mut inner_nodes = BTreeSet::new();
+        for i in leaf_parents {
+            if !is_root(i) {
+                inner_nodes.insert(parent(i).unwrap());
+            }
+        }
+
+        // Compute the hash values for every remaining node with a non-null child
+        for level in 1..height {
+            let level: usize = level.try_into().unwrap();
+
+            // Iterate over the current level.
+            for &current_idx in &inner_nodes {
+                let left_idx = left_child(current_idx);
+                let right_idx = right_child(current_idx);
+
+                let left_hash = inner_hashes
+                    .get(&left_idx)
+                    .unwrap_or(&empty_hashes.inner_hashes[level - 1]);
+                let right_hash = inner_hashes
+                    .get(&right_idx)
+                    .unwrap_or(&empty_hashes.inner_hashes[level - 1]);
+
+                // Compute H(left || right).
+                let left_hash_bytes = to_bytes![left_hash]?;
+                let right_hash_bytes = to_bytes![right_hash]?;
+                let hash = P::TwoToOneHash::evaluate(
+                    &two_to_one_param,
+                    &left_hash_bytes,
+                    &right_hash_bytes,
+                )?;
+
+                // Insert the digest
+                inner_hashes.insert(current_idx, hash);
+
+                // If root_only is selected, we don't have to keep the child hashes
+                if root_only {
+                    inner_hashes.remove(&left_idx);
+                    inner_hashes.remove(&right_idx);
+                }
+            }
+
+            // Make the next iteration all the parents of the nodes in this level
+            let tmp_inner_nodes = inner_nodes.clone();
+            inner_nodes.clear();
+            for i in tmp_inner_nodes {
+                if !is_root(i) {
+                    inner_nodes.insert(parent(i).unwrap());
+                }
+            }
+        }
+
+        Ok(inner_hashes)
+    }
+
+    /// Initialize a tree with optional data. Tree height MUST be at least 2.
     pub fn new<L: Default + ToBytes>(
         leaf_param: LeafParam<P>,
         two_to_one_param: TwoToOneParam<P>,
-        height: u64,
+        height: u32,
         leaves: &BTreeMap<u64, L>,
     ) -> Result<Self, Error> {
-        let last_level_size = leaves.len().next_power_of_two();
-        let tree_size = 2 * last_level_size - 1;
-        let min_height = tree_height(tree_size as u64);
+        assert!(height >= 2, "Tree height must be at least 2");
 
-        assert!(min_height <= height);
+        let min_height = {
+            let last_level_size = leaves.len().next_power_of_two();
+            let tree_size = 2 * last_level_size - 1;
+            tree_height(tree_size as u64)
+        };
+        assert!(min_height <= height.try_into().unwrap());
 
-        // Initialize the merkle tree.
-        let mut tree: BTreeMap<u64, Vec<u8>> = BTreeMap::new();
+        // Get empty hashes
         let empty_hashes =
             gen_empty_hashes::<P, L>(&leaf_param, &two_to_one_param, height).unwrap();
 
         // Compute and store the hash values for each leaf.
-        let last_level_index: u64 = (1u64 << (height - 1)) - 1;
+        let mut leaf_hashes: BTreeMap<u64, LeafDigest<P>> = BTreeMap::new();
+        let first_level_idx: u64 = 2u64.pow(height - 1) - 1;
         for (&i, leaf) in leaves.iter() {
             let leaf_bytes = to_bytes!(leaf)?;
             let leaf_hash = P::LeafHash::evaluate(&leaf_param, &leaf_bytes)?;
 
-            tree.insert(last_level_index + i, to_bytes!(leaf_hash)?);
+            leaf_hashes.insert(first_level_idx + i, leaf_hash);
         }
 
-        let mut middle_nodes: BTreeSet<u64> = leaves
-            .keys()
-            .map(|&i| parent(last_level_index + i).unwrap())
-            .collect();
-
-        // Compute the hash values for every node in parts of the tree.
-        for level in 0..height {
-            let level = usize::try_from(level).unwrap();
-
-            // Iterate over the current level.
-            for &current_index in middle_nodes.iter() {
-                let left_index = left_child(current_index);
-                let right_index = right_child(current_index);
-
-                let mut left_hash = &empty_hashes[level];
-                let mut right_hash = &empty_hashes[level];
-
-                if tree.contains_key(&left_index) {
-                    match tree.get(&left_index) {
-                        Some(x) => left_hash = x,
-                        _ => return Err(SparseMerkleTreeError::IncorrectTreeStructure.into()),
-                    }
-                }
-
-                if tree.contains_key(&right_index) {
-                    match tree.get(&right_index) {
-                        Some(x) => right_hash = x,
-                        _ => return Err(SparseMerkleTreeError::IncorrectTreeStructure.into()),
-                    }
-                }
-
-                // Compute Hash(left || right).
-                let hash = P::TwoToOneHash::evaluate(&two_to_one_param, &left_hash, &right_hash)?;
-                tree.insert(current_index, to_bytes!(hash)?);
-            }
-
-            let tmp_middle_nodes = middle_nodes.clone();
-            middle_nodes.clear();
-            for i in tmp_middle_nodes {
-                if !is_root(i) {
-                    middle_nodes.insert(parent(i).unwrap());
-                }
-            }
-        }
-
-        let root_hash;
-        match tree.get(&0) {
-            Some(x) => root_hash = (*x).clone(),
-            _ => return Err(SparseMerkleTreeError::IncorrectTreeStructure.into()),
-        }
+        // Calculate the rest of the tree
+        let inner_hashes = Self::calculate_inner_hashes(
+            &two_to_one_param,
+            height,
+            &leaf_hashes,
+            &empty_hashes,
+            false,
+        )?;
 
         Ok(SparseMerkleTree {
-            height,
-            tree,
             leaf_param,
             two_to_one_param,
-            root: Some(root_hash),
+            height,
+            leaf_hashes,
+            inner_hashes,
             empty_hashes,
         })
     }
 
-    /// obtain the root hash
+    /// Obtain the root hash
     #[inline]
-    pub fn root(&self) -> Vec<u8> {
-        self.root.clone().unwrap()
+    pub fn root(&self) -> TwoToOneDigest<P> {
+        // If this tree is completely empty, then the root hash is the last empty hash. Otherwise,
+        // it's the root node of inner_hashes
+        if self.is_empty() {
+            self.empty_hashes.inner_hashes.last().cloned().unwrap()
+        } else {
+            self.inner_hashes.get(&0).cloned().unwrap()
+        }
+    }
+
+    /// Returns true if no leaves were ever inserted into this tree
+    pub fn is_empty(&self) -> bool {
+        self.leaf_hashes.is_empty()
     }
 
     /// generate a membership proof (does not check the data point)
     pub fn generate_membership_proof(&self, index: u64) -> Result<SparseMerkleTreePath<P>, Error> {
-        let mut path = Vec::new();
+        let mut path = SparseMerkleTreePath::default();
 
-        let tree_index = convert_index_to_last_level(index, self.height);
+        let mut current_node = convert_idx_to_last_level(index, self.height);
 
-        // Iterate from the leaf up to the root, storing all intermediate hash values.
-        let mut current_node = tree_index;
-        let mut empty_hashes_iter = self.empty_hashes.iter();
+        // Get the leaf hashes
+        let sibling_node = sibling(current_node).unwrap();
+        let my_leaf_hash = self
+            .leaf_hashes
+            .get(&current_node)
+            .unwrap_or(&self.empty_hashes.leaf_hash);
+        let sibling_leaf_hash = self
+            .leaf_hashes
+            .get(&sibling_node)
+            .unwrap_or(&self.empty_hashes.leaf_hash);
+
+        // Store the leaf hashes in the correct order
+        if is_left_child(current_node) {
+            path.leaf_hashes = (my_leaf_hash.clone(), sibling_leaf_hash.clone());
+        } else {
+            path.leaf_hashes = (sibling_leaf_hash.clone(), my_leaf_hash.clone());
+        }
+
+        // Push up one level
+        current_node = parent(current_node).unwrap();
+
+        // Iterate from the leaf's parents up to the root, storing all intermediate hash values.
+        let mut empty_hash_iter = self.empty_hashes.inner_hashes.iter();
         while !is_root(current_node) {
             let sibling_node = sibling(current_node).unwrap();
 
-            let mut current_hash = empty_hashes_iter.next().unwrap().clone();
-            let mut sibling_hash = current_hash.clone();
+            // The empty hash corresponding to this level in the tree
+            let level_empty_hash = empty_hash_iter.next().unwrap();
 
-            if self.tree.contains_key(&current_node) {
-                match self.tree.get(&current_node) {
-                    Some(x) => current_hash = x.clone(),
-                    _ => return Err(SparseMerkleTreeError::IncorrectTreeStructure.into()),
-                }
-            }
+            // Get the hashes of the current node and its sibling
+            let current_hash = self
+                .inner_hashes
+                .get(&current_node)
+                .unwrap_or(level_empty_hash);
+            let sibling_hash = self
+                .inner_hashes
+                .get(&sibling_node)
+                .unwrap_or(level_empty_hash);
 
-            if self.tree.contains_key(&sibling_node) {
-                match self.tree.get(&sibling_node) {
-                    Some(x) => sibling_hash = x.clone(),
-                    _ => return Err(SparseMerkleTreeError::IncorrectTreeStructure.into()),
-                }
-            }
-
+            // Store the hashes in the correct order
             if is_left_child(current_node) {
-                path.push((current_hash, sibling_hash));
+                path.inner_hashes
+                    .push((current_hash.clone(), sibling_hash.clone()));
             } else {
-                path.push((sibling_hash, current_hash));
+                path.inner_hashes
+                    .push((sibling_hash.clone(), current_hash.clone()));
             }
             current_node = parent(current_node).unwrap();
         }
 
-        if path.len() != (self.height - 1) as usize {
-            Err(SparseMerkleTreeError::IncorrectPathLength(path.len()).into())
+        if path.inner_hashes.len() != (self.height - 2) as usize {
+            Err(SparseMerkleTreeError::IncorrectPathLength(path.inner_hashes.len()).into())
         } else {
-            Ok(SparseMerkleTreePath {
-                path,
-                _marker: PhantomData,
-            })
+            Ok(path)
         }
     }
 
-    /// generate a lookup proof
+    /// Generates a lookup proof. Errors when the given leaf is not found at the given index.
     pub fn generate_proof<L: ToBytes>(
         &self,
         index: u64,
         leaf: &L,
     ) -> Result<SparseMerkleTreePath<P>, Error> {
         let leaf_hash = P::LeafHash::evaluate(&self.leaf_param, &to_bytes!(leaf)?)?;
-        let tree_height = self.height;
-        let tree_index = convert_index_to_last_level(index, tree_height);
+        let tree_idx = convert_idx_to_last_level(index, self.height);
 
         // Check that the given index corresponds to the correct leaf.
-        if let Some(x) = self.tree.get(&tree_index) {
-            if &to_bytes!(leaf_hash)? != x {
-                return Err(SparseMerkleTreeError::IncorrectTreeStructure.into());
+        if let Some(x) = self.leaf_hashes.get(&tree_idx) {
+            if &leaf_hash != x {
+                Err(SparseMerkleTreeError::IncorrectTreeStructure)?;
             }
         }
 
@@ -349,13 +449,13 @@ impl<P: TreeConfig> SparseMerkleTree<P> {
         let new_leaf_hash = P::LeafHash::evaluate(&self.leaf_param, to_bytes!(new_leaf)?)?;
 
         let tree_height = self.height;
-        let tree_index = convert_index_to_last_level(index, tree_height);
+        let tree_idx = convert_idx_to_last_level(index, tree_height);
 
         // Update the leaf and update the parents
-        self.tree.insert(tree_index, to_bytes!(new_leaf_hash)?);
+        self.tree.insert(tree_idx, to_bytes!(new_leaf_hash)?);
 
         // Iterate from the leaf up to the root, storing all intermediate hash values.
-        let mut current_node = tree_index;
+        let mut current_node = tree_idx;
         current_node = parent(current_node).unwrap();
 
         let mut empty_hashes_iter = self.empty_hashes.iter();
@@ -404,67 +504,25 @@ impl<P: TreeConfig> SparseMerkleTree<P> {
 
     /// Check if the tree is structurally valid
     pub fn validate(&self) -> Result<bool, Error> {
-        /* Finding the leaf nodes */
-        let last_level_index: u64 = (1u64 << (self.height - 1)) - 1;
-        let mut middle_nodes: BTreeSet<u64> = BTreeSet::new();
+        // If this tree is empty, then it's valid by default. Otherwise, recalculate the root and
+        // compare it to
+        if self.is_empty() {
+            Ok(true)
+        } else {
+            let expected_root = self.root();
+            let calculated_root = Self::calculate_inner_hashes(
+                &self.two_to_one_param,
+                self.height,
+                &self.leaf_hashes,
+                &self.empty_hashes,
+                true,
+            )?
+            .get(&0)
+            .cloned()
+            .unwrap();
 
-        for key in self.tree.keys() {
-            if *key >= last_level_index && !is_root(*key) {
-                middle_nodes.insert(parent(*key).unwrap());
-            }
+            Ok(expected_root == calculated_root)
         }
-
-        for level in 0..self.height {
-            for current_index in &middle_nodes {
-                let left_index = left_child(*current_index);
-                let right_index = right_child(*current_index);
-
-                let mut left_hash = to_bytes!(self.empty_hashes[level as usize])?;
-                let mut right_hash = to_bytes!(self.empty_hashes[level as usize])?;
-
-                if self.tree.contains_key(&left_index) {
-                    match self.tree.get(&left_index) {
-                        Some(x) => left_hash = to_bytes!(x)?,
-                        _ => {
-                            return Ok(false);
-                        }
-                    }
-                }
-
-                if self.tree.contains_key(&right_index) {
-                    match self.tree.get(&right_index) {
-                        Some(x) => right_hash = to_bytes!(x)?,
-                        _ => {
-                            return Ok(false);
-                        }
-                    }
-                }
-
-                let hash =
-                    P::TwoToOneHash::evaluate(&self.two_to_one_param, &left_hash, &right_hash)?;
-
-                match self.tree.get(current_index) {
-                    Some(x) => {
-                        if x != &to_bytes!(hash)? {
-                            return Ok(false);
-                        }
-                    }
-                    _ => {
-                        return Ok(false);
-                    }
-                }
-            }
-
-            let tmp_middle_nodes = middle_nodes.clone();
-            middle_nodes.clear();
-            for i in tmp_middle_nodes {
-                if !is_root(i) {
-                    middle_nodes.insert(parent(i).unwrap());
-                }
-            }
-        }
-
-        Ok(true)
     }
 }
 
@@ -473,7 +531,7 @@ impl<P: TreeConfig> SparseMerkleTree<P> {
 pub enum SparseMerkleTreeError {
     /// the path's length does not work for this tree
     IncorrectPathLength(usize),
-    /// tree structure is incorrect, some nodes are missing
+    /// Tree structure is incorrect, some nodes are missing
     IncorrectTreeStructure,
 }
 
@@ -550,35 +608,46 @@ fn parent(index: u64) -> Option<u64> {
 }
 
 #[inline]
-fn convert_index_to_last_level(index: u64, tree_height: u64) -> u64 {
-    index + (1 << (tree_height - 1)) - 1
+fn convert_idx_to_last_level(index: u64, tree_height: u32) -> u64 {
+    index + 2u64.pow(tree_height - 1) - 1
 }
 
-/// Returns the byte representation of H(empty), H(H(empty), H(empty)), etc.
+/// Returns the digests H(nil), H(H(nil), H(nil)), etc.
 fn gen_empty_hashes<P: TreeConfig, L: ToBytes + Default>(
     leaf_param: &LeafParam<P>,
     two_to_one_param: &TwoToOneParam<P>,
-    height: u64,
-) -> Result<Vec<Vec<u8>>, Error> {
-    let mut empty_hashes = Vec::with_capacity(height.try_into().unwrap());
+    height: u32,
+) -> Result<EmptyHashes<P>, Error> {
+    assert!(height >= 2);
 
-    // Compute and store v := H(empty)
-    let mut empty_hash_bytes = {
+    let empty_leaf_hash = {
         let empty_leaf_bytes = to_bytes!(L::default())?;
-        let empty_hash = P::LeafHash::evaluate(&leaf_param, &empty_leaf_bytes)?;
-        to_bytes!(empty_hash)?
+        P::LeafHash::evaluate(&leaf_param, &empty_leaf_bytes)?
     };
-    empty_hashes.push(empty_hash_bytes.clone());
+
+    let mut empty_inner_hashes = Vec::with_capacity(usize::try_from(height).unwrap() - 1);
+    let mut running_inner_hash = {
+        let empty_leaf_hash_bytes = to_bytes!(empty_leaf_hash)?;
+        P::TwoToOneHash::evaluate(
+            two_to_one_param,
+            &empty_leaf_hash_bytes,
+            &empty_leaf_hash_bytes,
+        )?
+    };
+    empty_inner_hashes.push(running_inner_hash.clone());
 
     // Compute v := H(v, v) iteratively, storing intermediate results
     for _ in 1..=height {
-        let empty_hash =
-            P::TwoToOneHash::evaluate(two_to_one_param, &empty_hash_bytes, &empty_hash_bytes)?;
-        empty_hash_bytes = to_bytes!(empty_hash)?;
-        empty_hashes.push(empty_hash_bytes.clone());
+        let running_bytes = to_bytes![running_inner_hash]?;
+        running_inner_hash =
+            P::TwoToOneHash::evaluate(two_to_one_param, &running_bytes, &running_bytes)?;
+        empty_inner_hashes.push(running_inner_hash.clone());
     }
 
-    Ok(empty_hashes)
+    Ok(EmptyHashes {
+        leaf_hash: empty_leaf_hash,
+        inner_hashes: empty_inner_hashes,
+    })
 }
 
 #[cfg(test)]
@@ -612,11 +681,12 @@ mod tests {
     }
     type JubJubMerkleTree = SparseMerkleTree<JubJubMerkleTreeParams>;
 
-    const HEIGHT: u64 = 32;
+    const HEIGHT: u32 = 3;
 
     #[test]
     fn test_membership() {
         let mut rng = ark_std::test_rng();
+        let num_leaves = 2;
 
         // Setup hashing params
         let leaf_param = <H as CRH>::setup(&mut rng).unwrap();
@@ -624,7 +694,7 @@ mod tests {
 
         // Construct a tree of size 4
         let mut leaves: BTreeMap<u64, Leaf> = BTreeMap::new();
-        for i in 0..4u8 {
+        for i in 0..num_leaves {
             let mut leaf = Leaf::default();
             rng.fill_bytes(&mut leaf);
             leaves.insert(i as u64, leaf);
@@ -649,13 +719,13 @@ mod tests {
                 .unwrap());
             /*
             assert!(proof
-                .verify_with_index(&crh_parameters, &root, &leaf, *i)
+                .verify_with_idx(&crh_parameters, &root, &leaf, *i)
                 .unwrap());
             */
         }
 
         // Now generate proofs and verify that they don't validate under an incorrect root
-        let root = vec![0u8; root.len()];
+        let root = TwoToOneDigest::<JubJubMerkleTreeParams>::default();
         for (i, leaf) in leaves.iter() {
             let proof = tree.generate_proof(*i, &leaf).unwrap();
             assert!(!proof
@@ -663,7 +733,7 @@ mod tests {
                 .unwrap());
             /*
             assert!(proof
-                .verify_with_index(&crh_parameters, &root, &leaf, *i)
+                .verify_with_idx(&crh_parameters, &root, &leaf, *i)
                 .unwrap());
             */
         }
@@ -705,7 +775,7 @@ mod test {
             let proof = tree.generate_proof(*i, &leaf).unwrap();
             assert!(proof.verify(&crh_parameters, &root, &leaf).unwrap());
             assert!(proof
-                .verify_with_index(&crh_parameters, &root, &leaf, *i)
+                .verify_with_idx(&crh_parameters, &root, &leaf, *i)
                 .unwrap());
         }
 
@@ -738,7 +808,7 @@ mod test {
             let proof = tree.generate_proof(*i, &leaf).unwrap();
             assert!(proof.verify(&crh_parameters, &root, &leaf).unwrap());
             assert!(proof
-                .verify_with_index(&crh_parameters, &root, &leaf, *i)
+                .verify_with_idx(&crh_parameters, &root, &leaf, *i)
                 .unwrap());
         }
     }
@@ -773,19 +843,19 @@ mod test {
                     let new_root = tree.root.unwrap();
 
                     assert!(old_leaf_membership_proof
-                        .verify_with_index(&crh_parameters, &old_root, &old_leaf, *i)
+                        .verify_with_idx(&crh_parameters, &old_root, &old_leaf, *i)
                         .unwrap());
                     assert!(
                         !(old_leaf_membership_proof
-                            .verify_with_index(&crh_parameters, &new_root, &old_leaf, *i)
+                            .verify_with_idx(&crh_parameters, &new_root, &old_leaf, *i)
                             .unwrap())
                     );
                     assert!(new_leaf_membership_proof
-                        .verify_with_index(&crh_parameters, &new_root, &new_leaf, *i)
+                        .verify_with_idx(&crh_parameters, &new_root, &new_leaf, *i)
                         .unwrap());
                     assert!(
                         !(new_leaf_membership_proof
-                            .verify_with_index(&crh_parameters, &new_root, &old_leaf, *i)
+                            .verify_with_idx(&crh_parameters, &new_root, &old_leaf, *i)
                             .unwrap())
                     );
 
@@ -799,7 +869,7 @@ mod test {
                     let new_root = tree.root.unwrap();
 
                     assert!(new_leaf_membership_proof
-                        .verify_with_index(&crh_parameters, &new_root, &new_leaf, *i)
+                        .verify_with_idx(&crh_parameters, &new_root, &new_leaf, *i)
                         .unwrap());
                     assert!(update_proof
                         .verify(&crh_parameters, &old_root, &new_root, &new_leaf, *i)
