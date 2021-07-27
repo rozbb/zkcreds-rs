@@ -395,14 +395,18 @@ where
         }
     }
 
-    /// Insert a leaf into the tree
-    pub fn insert<L: Default + ToBytes>(&mut self, idx: u64, leaf: &L) -> Result<(), Error> {
+    /// Recomputes the path-to-root starting at the given leaf index
+    fn recompute_path(&mut self, idx: u64) -> Result<(), Error> {
+        // Get the starting two indices
         let leaf_node = convert_idx_to_last_level(idx, self.height);
-        let leaf_hash = P::LeafHash::evaluate(&self.leaf_param, &to_bytes!(leaf)?)?;
-        self.leaf_hashes.insert(leaf_node, leaf_hash.clone());
-
-        // Get the sibling data and decide whether it's left or right
         let sibling_node = sibling(leaf_node).unwrap();
+
+        // Get the leaf and sibling data and decide whether it's left or right
+        let leaf_hash = self
+            .leaf_hashes
+            .get(&leaf_node)
+            .unwrap_or(&self.empty_hashes.leaf_hash)
+            .clone();
         let sibling_leaf_hash = self
             .leaf_hashes
             .get(&sibling_node)
@@ -461,6 +465,29 @@ where
         }
 
         Ok(())
+    }
+
+    /// Insert a leaf into the tree at index `idx`
+    pub fn insert<L: ToBytes>(&mut self, idx: u64, leaf: &L) -> Result<(), Error> {
+        // Compute the leaf's tree index and insert it into the leaf_hashes map
+        let leaf_node = convert_idx_to_last_level(idx, self.height);
+        let leaf_hash = P::LeafHash::evaluate(&self.leaf_param, &to_bytes!(leaf)?)?;
+        self.leaf_hashes.insert(leaf_node, leaf_hash.clone());
+
+        // Recompute all the nodes above the leaf
+        self.recompute_path(idx)
+    }
+
+    /// Remove a leaf from the tree. Does nothing if there was nothing at that index.
+    pub fn remove(&mut self, idx: u64) -> Result<(), Error> {
+        let leaf_node = convert_idx_to_last_level(idx, self.height);
+
+        // Try to remove the leaf hash. If there was nothing to remove, do nothing. Otherwise,
+        // recompute the hashes upwards, starting at the removed leaf hash.
+        match self.leaf_hashes.remove(&leaf_node) {
+            None => Ok(()),
+            Some(_) => self.recompute_path(idx),
+        }
     }
 }
 
@@ -666,9 +693,9 @@ mod tests {
         }
     }
 
-    // Test insertion into an existing tree
+    // Test insertion and removal on an existing tree
     #[test]
-    fn test_insert() {
+    fn test_insert_remove() {
         let mut rng = ark_std::test_rng();
         let num_leaves = 50;
 
@@ -712,170 +739,31 @@ mod tests {
                 .unwrap());
         }
 
-        // Now generate proofs and verify that they don't validate under an incorrect root
-        let root = TwoToOneDigest::<JubJubMerkleTreeParams>::default();
-        for (i, leaf) in leaves.iter() {
-            let proof = tree.generate_proof(*i, &leaf).unwrap();
-            assert!(!proof
-                .verify(&leaf_param, &two_to_one_param, &root, &leaf)
-                .unwrap());
-        }
+        // Remove a leaf and check that the old proof doesn't verify wrt the new root
+        let remove_idx = 1;
+        let removed_leaf = leaves.get(&remove_idx).unwrap();
+        let old_proof = tree.generate_proof(remove_idx, removed_leaf).unwrap();
+        tree.remove(remove_idx).unwrap();
+        let root = tree.root();
+        assert!(!old_proof
+            .verify(&leaf_param, &two_to_one_param, &root, &removed_leaf,)
+            .unwrap());
+
+        // Insert a new leaf in the same spot and make a valid proof
+        let insert_idx = remove_idx;
+        let inserted_leaf = {
+            let mut buf = Leaf::default();
+            rng.fill_bytes(&mut buf);
+            buf
+        };
+        tree.insert(insert_idx, &inserted_leaf).unwrap();
+        let new_proof = tree.generate_proof(insert_idx, &inserted_leaf).unwrap();
+        let root = tree.root();
+        assert!(new_proof
+            .verify(&leaf_param, &two_to_one_param, &root, &inserted_leaf,)
+            .unwrap());
 
         // Validate the whole tree again
         assert!(tree.validate().unwrap());
     }
 }
-
-/*
-#[cfg(test)]
-mod test {
-    use crate::building_blocks::mt::merkle_sparse_tree::*;
-
-    use ark_ed_on_bls12_381::Fr;
-    use ark_ff::{ToBytes, Zero};
-
-    use crate::building_blocks::crh::poseidon::PoseidonCRH;
-    use ark_std::collections::BTreeMap;
-    use rand_chacha::ChaChaRng;
-
-    type H = PoseidonCRH<ChaChaRng, Fr>;
-
-    #[derive(Debug)]
-    struct JubJubMerkleTreeParams;
-
-    impl TreeConfig for JubJubMerkleTreeParams {
-        const HEIGHT: u64 = 32;
-        type H = H;
-    }
-    type JubJubMerkleTree = SparseMerkleTree<JubJubMerkleTreeParams>;
-
-    fn generate_merkle_tree_and_test_membership<L: Default + ToBytes + Clone + Eq>(
-        leaves: &BTreeMap<u64, L>,
-    ) {
-        let mut rng = ark_std::test_rng();
-
-        let crh_parameters = H::setup(&mut rng).unwrap();
-        let tree = JubJubMerkleTree::new(crh_parameters.clone(), leaves).unwrap();
-        let root = tree.root();
-        for (i, leaf) in leaves.iter() {
-            let proof = tree.generate_proof(*i, &leaf).unwrap();
-            assert!(proof.verify(&crh_parameters, &root, &leaf).unwrap());
-            assert!(proof
-                .verify_with_idx(&crh_parameters, &root, &leaf, *i)
-                .unwrap());
-        }
-
-        assert!(tree.validate().unwrap());
-    }
-
-    #[test]
-    fn good_root_membership_test() {
-        let mut leaves: BTreeMap<u64, u8> = BTreeMap::new();
-        for i in 0..4u8 {
-            leaves.insert(i as u64, i);
-        }
-        generate_merkle_tree_and_test_membership(&leaves);
-        let mut leaves: BTreeMap<u64, u8> = BTreeMap::new();
-        for i in 0..100u8 {
-            leaves.insert(i as u64, i);
-        }
-        generate_merkle_tree_and_test_membership(&leaves);
-    }
-
-    fn generate_merkle_tree_with_bad_root_and_test_membership<L: Default + ToBytes + Clone + Eq>(
-        leaves: &BTreeMap<u64, L>,
-    ) {
-        let mut rng = ark_std::test_rng();
-
-        let crh_parameters = H::setup(&mut rng).unwrap();
-        let tree = JubJubMerkleTree::new(crh_parameters.clone(), leaves).unwrap();
-        let root = Fr::zero();
-        for (i, leaf) in leaves.iter() {
-            let proof = tree.generate_proof(*i, &leaf).unwrap();
-            assert!(proof.verify(&crh_parameters, &root, &leaf).unwrap());
-            assert!(proof
-                .verify_with_idx(&crh_parameters, &root, &leaf, *i)
-                .unwrap());
-        }
-    }
-
-    #[should_panic]
-    #[test]
-    fn bad_root_membership_test() {
-        let mut leaves: BTreeMap<u64, u8> = BTreeMap::new();
-        for i in 0..100u8 {
-            leaves.insert(i as u64, i);
-        }
-        generate_merkle_tree_with_bad_root_and_test_membership(&leaves);
-    }
-
-    fn generate_merkle_tree_and_test_update<L: Default + ToBytes + Clone + Eq>(
-        old_leaves: &BTreeMap<u64, L>,
-        new_leaves: &BTreeMap<u64, L>,
-    ) {
-        let mut rng = ark_std::test_rng();
-
-        let crh_parameters = H::setup(&mut rng).unwrap();
-        let mut tree = JubJubMerkleTree::new(crh_parameters.clone(), old_leaves).unwrap();
-        for (i, new_leaf) in new_leaves.iter() {
-            let old_root = tree.root.unwrap();
-            let old_leaf_option = old_leaves.get(i);
-
-            match old_leaf_option {
-                Some(old_leaf) => {
-                    let old_leaf_membership_proof = tree.generate_proof(*i, &old_leaf).unwrap();
-                    let update_proof = tree.update_and_prove(*i, &new_leaf).unwrap();
-                    let new_leaf_membership_proof = tree.generate_proof(*i, &new_leaf).unwrap();
-                    let new_root = tree.root.unwrap();
-
-                    assert!(old_leaf_membership_proof
-                        .verify_with_idx(&crh_parameters, &old_root, &old_leaf, *i)
-                        .unwrap());
-                    assert!(
-                        !(old_leaf_membership_proof
-                            .verify_with_idx(&crh_parameters, &new_root, &old_leaf, *i)
-                            .unwrap())
-                    );
-                    assert!(new_leaf_membership_proof
-                        .verify_with_idx(&crh_parameters, &new_root, &new_leaf, *i)
-                        .unwrap());
-                    assert!(
-                        !(new_leaf_membership_proof
-                            .verify_with_idx(&crh_parameters, &new_root, &old_leaf, *i)
-                            .unwrap())
-                    );
-
-                    assert!(update_proof
-                        .verify(&crh_parameters, &old_root, &new_root, &new_leaf, *i)
-                        .unwrap());
-                }
-                None => {
-                    let update_proof = tree.update_and_prove(*i, &new_leaf).unwrap();
-                    let new_leaf_membership_proof = tree.generate_proof(*i, &new_leaf).unwrap();
-                    let new_root = tree.root.unwrap();
-
-                    assert!(new_leaf_membership_proof
-                        .verify_with_idx(&crh_parameters, &new_root, &new_leaf, *i)
-                        .unwrap());
-                    assert!(update_proof
-                        .verify(&crh_parameters, &old_root, &new_root, &new_leaf, *i)
-                        .unwrap());
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn good_root_update_test() {
-        let mut old_leaves: BTreeMap<u64, u8> = BTreeMap::new();
-        for i in 0..10u8 {
-            old_leaves.insert(i as u64, i);
-        }
-        let mut new_leaves: BTreeMap<u64, u8> = BTreeMap::new();
-        for i in 0..20u8 {
-            new_leaves.insert(i as u64, i + 1);
-        }
-        generate_merkle_tree_and_test_update(&old_leaves, &new_leaves);
-    }
-}
-*/
