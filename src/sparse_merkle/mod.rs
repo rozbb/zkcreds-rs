@@ -83,72 +83,6 @@ where
         Ok(root_hash == &previous_hash)
     }
 }
-/*
-
-    /// verify the lookup proof, given the location
-    pub fn verify_with_idx<L: ToBytes>(
-        &self,
-        parameters: &<P::H as CRH>::Parameters,
-        root_hash: &<P::H as CRH>::Output,
-        leaf: &L,
-        index: u64,
-    ) -> Result<bool, Error> {
-        if self.path.len() != (P::HEIGHT - 1) as usize {
-            return Ok(false);
-        }
-        // Check that the given leaf matches the leaf in the membership proof.
-        let first_level_idx: u64 = (1u64 << (P::HEIGHT - 1)) - 1;
-        let tree_idx: u64 = first_level_idx + index;
-
-        let mut index_from_path: u64 = first_level_idx;
-        let mut index_offset: u64 = 1;
-
-        if !self.path.is_empty() {
-            let claimed_leaf_hash = hash_leaf::<P::H, L>(parameters, leaf)?;
-
-            if tree_idx % 2 == 1 {
-                if claimed_leaf_hash != self.path[0].0 {
-                    return Ok(false);
-                }
-            } else if claimed_leaf_hash != self.path[0].1 {
-                return Ok(false);
-            }
-
-            let mut prev = claimed_leaf_hash;
-            let mut prev_idx = tree_idx;
-            // Check levels between leaf level and root.
-            for &(ref left_hash, ref right_hash) in &self.path {
-                // Check if the previous hash matches the correct current hash.
-                if prev_idx % 2 == 1 {
-                    if &prev != left_hash {
-                        return Ok(false);
-                    }
-                } else {
-                    if &prev != right_hash {
-                        return Ok(false);
-                    }
-                    index_from_path += index_offset;
-                }
-                index_offset *= 2;
-                prev_idx = (prev_idx - 1) / 2;
-                prev = hash_inner_node::<P::H>(parameters, left_hash, right_hash)?;
-            }
-
-            if root_hash != &prev {
-                return Ok(false);
-            }
-
-            if index_from_path != tree_idx {
-                return Ok(false);
-            }
-
-            Ok(true)
-        } else {
-            Ok(false)
-        }
-    }
-}
-*/
 
 /// Merkle sparse tree
 pub struct SparseMerkleTree<P>
@@ -312,7 +246,7 @@ where
 
         // Compute and store the hash values for each leaf.
         let mut leaf_hashes: BTreeMap<u64, LeafDigest<P>> = BTreeMap::new();
-        let first_level_idx: u64 = 2u64.pow(height - 1) - 1;
+        let first_level_idx: u64 = convert_idx_to_last_level(0, height);
         for (&i, leaf) in leaves.iter() {
             let leaf_bytes = to_bytes!(leaf)?;
             let leaf_hash = P::LeafHash::evaluate(&leaf_param, &leaf_bytes)?;
@@ -459,6 +393,74 @@ where
 
             Ok(expected_root == calculated_root)
         }
+    }
+
+    /// Insert a leaf into the tree
+    pub fn insert<L: Default + ToBytes>(&mut self, idx: u64, leaf: &L) -> Result<(), Error> {
+        let leaf_node = convert_idx_to_last_level(idx, self.height);
+        let leaf_hash = P::LeafHash::evaluate(&self.leaf_param, &to_bytes!(leaf)?)?;
+        self.leaf_hashes.insert(leaf_node, leaf_hash.clone());
+
+        // Get the sibling data and decide whether it's left or right
+        let sibling_node = sibling(leaf_node).unwrap();
+        let sibling_leaf_hash = self
+            .leaf_hashes
+            .get(&sibling_node)
+            .unwrap_or(&self.empty_hashes.leaf_hash)
+            .clone();
+        let (left_hash, right_hash) = if is_left_child(leaf_node) {
+            (leaf_hash, sibling_leaf_hash)
+        } else {
+            (sibling_leaf_hash, leaf_hash)
+        };
+
+        // Compute the leaf's parent hash and save it
+        let leaf_parent_node = parent(leaf_node).unwrap();
+        let leaf_parent_hash = P::TwoToOneHash::evaluate(
+            &self.two_to_one_param,
+            &to_bytes!(left_hash)?,
+            &to_bytes!(right_hash)?,
+        )?;
+        self.inner_hashes.insert(leaf_parent_node, leaf_parent_hash);
+
+        // Iterate from the leaf's parents up to the root, storing all intermediate hash values.
+        let mut current_node = leaf_parent_node;
+        let mut empty_hash_iter = self.empty_hashes.inner_hashes.iter();
+        while !is_root(current_node) {
+            let sibling_node = sibling(current_node).unwrap();
+
+            // The empty hash corresponding to this level in the tree
+            let level_empty_hash = empty_hash_iter.next().unwrap();
+
+            // Get the hashes of the current node and its sibling
+            let current_hash = self
+                .inner_hashes
+                .get(&current_node)
+                .unwrap_or(level_empty_hash);
+            let sibling_hash = self
+                .inner_hashes
+                .get(&sibling_node)
+                .unwrap_or(level_empty_hash);
+
+            // Compute the hash of this node and its sibling and store it
+            let (left_hash, right_hash) = if is_left_child(current_node) {
+                (current_hash.clone(), sibling_hash.clone())
+            } else {
+                (sibling_hash.clone(), current_hash.clone())
+            };
+            let parent_node = parent(current_node).unwrap();
+            let parent_hash = P::TwoToOneHash::evaluate(
+                &self.two_to_one_param,
+                &to_bytes!(left_hash)?,
+                &to_bytes!(right_hash)?,
+            )?;
+            self.inner_hashes.insert(parent_node, parent_hash);
+
+            // Go up one level
+            current_node = parent_node;
+        }
+
+        Ok(())
     }
 }
 
@@ -662,6 +664,65 @@ mod tests {
                 .verify(&leaf_param, &two_to_one_param, &root, &leaf)
                 .unwrap());
         }
+    }
+
+    // Test insertion into an existing tree
+    #[test]
+    fn test_insert() {
+        let mut rng = ark_std::test_rng();
+        let num_leaves = 50;
+
+        // Setup hashing params
+        let leaf_param = <H as CRH>::setup(&mut rng).unwrap();
+        let two_to_one_param = <H as TwoToOneCRH>::setup(&mut rng).unwrap();
+
+        // Make an empty tree
+        /*
+        let mut tree =
+            JubJubMerkleTree::blank::<Leaf>(leaf_param.clone(), two_to_one_param.clone(), HEIGHT);
+        */
+        let mut tree = JubJubMerkleTree::new::<Leaf>(
+            leaf_param.clone(),
+            two_to_one_param.clone(),
+            HEIGHT,
+            &BTreeMap::new(),
+        )
+        .unwrap();
+
+        // Iteratively insert leaves into the tree
+        let mut leaves: BTreeMap<u64, Leaf> = BTreeMap::new();
+        for i in 0..num_leaves {
+            let mut leaf = Leaf::default();
+            rng.fill_bytes(&mut leaf);
+
+            // Insert into the tree and also store in `leaves`
+            tree.insert(i as u64, &leaf).unwrap();
+            leaves.insert(i as u64, leaf);
+        }
+
+        // Validate the whole tree
+        assert!(tree.validate().unwrap());
+
+        // Generate proofs and verify that they're valid
+        let root = tree.root();
+        for (i, leaf) in leaves.iter() {
+            let proof = tree.generate_proof(*i, &leaf).unwrap();
+            assert!(proof
+                .verify(&leaf_param, &two_to_one_param, &root, &leaf)
+                .unwrap());
+        }
+
+        // Now generate proofs and verify that they don't validate under an incorrect root
+        let root = TwoToOneDigest::<JubJubMerkleTreeParams>::default();
+        for (i, leaf) in leaves.iter() {
+            let proof = tree.generate_proof(*i, &leaf).unwrap();
+            assert!(!proof
+                .verify(&leaf_param, &two_to_one_param, &root, &leaf)
+                .unwrap());
+        }
+
+        // Validate the whole tree again
+        assert!(tree.validate().unwrap());
     }
 }
 
