@@ -23,11 +23,12 @@ byteorder = "1.4"
 [patch.crates-io.ark-crypto-primitives]
 git = "https://github.com/arkworks-rs/crypto-primitives.git"
 #branch = "main"
+#path = "../crypto-primitives"
 rev = "3402a729b7104983c9779714ab8580de5187bbdd"
 features = ["r1cs"]
 
 [features]
-default = ["asm", "parallel"]
+default = ["asm", "parallel", "std"]
 asm = ["ark-ff/asm"]
 parallel = [
     "ark-crypto-primitives/parallel",
@@ -36,6 +37,14 @@ parallel = [
     "ark-ec/parallel",
     "ark-ff/parallel",
     "ark-r1cs-std/parallel"
+]
+std = [
+    "ark-crypto-primitives/std",
+    "ark-groth16/std",
+    "ark-std/std",
+    "ark-ec/std",
+    "ark-ff/std",
+    "ark-r1cs-std/std"
 ]
 
 [dev-dependencies]

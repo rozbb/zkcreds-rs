@@ -18,8 +18,8 @@ use ark_std::{
     vec::Vec,
 };
 
-/// constraints for the Merkle sparse tree
-//pub mod constraints;
+/// Constraints for the Merkle sparse tree
+pub mod constraints;
 
 type LeafDigest<P> = <<P as TreeConfig>::LeafHash as CRH>::Output;
 type TwoToOneDigest<P> = <<P as TreeConfig>::TwoToOneHash as TwoToOneCRH>::Output;
@@ -46,7 +46,8 @@ where
     P: TreeConfig,
     TwoToOneDigest<P>: Eq,
 {
-    /// verify the lookup proof, just checking the membership
+    // TODO: Make this constant time if you want to store secrets in the Merkle tree
+    /// Verify the lookup proof, just checking the membership
     pub fn verify<L: ToBytes>(
         &self,
         leaf_param: &LeafParam<P>,
@@ -62,24 +63,24 @@ where
         }
 
         // Check levels between leaf level and root
-        let mut prev = P::TwoToOneHash::evaluate(
+        let mut previous_hash = P::TwoToOneHash::evaluate(
             &two_to_one_param,
             &to_bytes!(self.leaf_hashes.0)?,
             &to_bytes!(self.leaf_hashes.1)?,
         )?;
-        for (ref left_hash, ref right_hash) in self.inner_hashes.iter() {
+        for (ref left_hash, ref right_hash) in &self.inner_hashes {
             // Check if the previous hash matches the correct current hash.
-            if &prev != left_hash && &prev != right_hash {
+            if &previous_hash != left_hash && &previous_hash != right_hash {
                 return Ok(false);
             }
-            prev = P::TwoToOneHash::evaluate(
+            previous_hash = P::TwoToOneHash::evaluate(
                 &two_to_one_param,
                 &to_bytes!(left_hash)?,
                 &to_bytes!(right_hash)?,
             )?;
         }
 
-        Ok(root_hash == &prev)
+        Ok(root_hash == &previous_hash)
     }
 }
 /*
@@ -437,71 +438,6 @@ where
         self.generate_membership_proof(index)
     }
 
-    /*
-    /// update the tree and provide a modifying proof
-    pub fn update_and_prove<L: ToBytes>(
-        &mut self,
-        index: u64,
-        new_leaf: &L,
-    ) -> Result<SparseMerkleTreeTwoPaths<P>, Error> {
-        let old_path = self.generate_membership_proof(index)?;
-
-        let new_leaf_hash = P::LeafHash::evaluate(&self.leaf_param, to_bytes!(new_leaf)?)?;
-
-        let tree_height = self.height;
-        let tree_idx = convert_idx_to_last_level(index, tree_height);
-
-        // Update the leaf and update the parents
-        self.tree.insert(tree_idx, to_bytes!(new_leaf_hash)?);
-
-        // Iterate from the leaf up to the root, storing all intermediate hash values.
-        let mut current_node = tree_idx;
-        current_node = parent(current_node).unwrap();
-
-        let mut empty_hashes_iter = self.empty_hashes.iter();
-        loop {
-            let left_node = left_child(current_node);
-            let right_node = right_child(current_node);
-
-            let mut left_hash = empty_hashes_iter.next().unwrap().clone();
-            let mut right_hash = left_hash.clone();
-
-            if self.tree.contains_key(&left_node) {
-                match self.tree.get(&left_node) {
-                    Some(x) => left_hash = x.clone(),
-                    _ => return Err(SparseMerkleTreeError::IncorrectTreeStructure.into()),
-                }
-            }
-
-            if self.tree.contains_key(&right_node) {
-                match self.tree.get(&right_node) {
-                    Some(x) => right_hash = x.clone(),
-                    _ => return Err(SparseMerkleTreeError::IncorrectTreeStructure.into()),
-                }
-            }
-
-            let node_hash =
-                P::TwoToOneHash::evaluate(&self.two_to_one_param, left_hash, right_hash)?;
-            self.tree.insert(current_node, to_bytes!(node_hash));
-
-            if is_root(current_node) {
-                break;
-            }
-
-            current_node = parent(current_node).unwrap();
-        }
-
-        match self.tree.get(&0) {
-            Some(x) => self.root = Some((*x).clone()),
-            None => return Err(SparseMerkleTreeError::IncorrectTreeStructure.into()),
-        }
-
-        let new_path = self.generate_proof(index, new_leaf)?;
-
-        Ok(SparseMerkleTreeTwoPaths { old_path, new_path })
-    }
-    */
-
     /// Check if the tree is structurally valid
     pub fn validate(&self) -> Result<bool, Error> {
         // If this tree is empty, then it's valid by default. Otherwise, recalculate the root and
@@ -661,17 +597,13 @@ mod tests {
     use ark_ed_on_bls12_381::EdwardsParameters;
     use ark_std::rand::RngCore;
 
-    type Leaf = [u8; 8];
-
     #[derive(Clone, PartialEq, Eq, Hash)]
     struct Window;
 
     impl pedersen::Window for Window {
         const WINDOW_SIZE: usize = 63;
-        const NUM_WINDOWS: usize = 17;
+        const NUM_WINDOWS: usize = 9;
     }
-
-    type H = bowe_hopwood::CRH<EdwardsParameters, Window>;
 
     #[derive(Clone)]
     struct JubJubMerkleTreeParams;
@@ -679,14 +611,17 @@ mod tests {
         type LeafHash = H;
         type TwoToOneHash = H;
     }
-    type JubJubMerkleTree = SparseMerkleTree<JubJubMerkleTreeParams>;
 
-    const HEIGHT: u32 = 3;
+    type JubJubMerkleTree = SparseMerkleTree<JubJubMerkleTreeParams>;
+    type H = bowe_hopwood::CRH<EdwardsParameters, Window>;
+
+    type Leaf = [u8; 8];
+    const HEIGHT: u32 = 32;
 
     #[test]
     fn test_membership() {
         let mut rng = ark_std::test_rng();
-        let num_leaves = 2;
+        let num_leaves = 5;
 
         // Setup hashing params
         let leaf_param = <H as CRH>::setup(&mut rng).unwrap();
@@ -717,11 +652,6 @@ mod tests {
             assert!(proof
                 .verify(&leaf_param, &two_to_one_param, &root, &leaf)
                 .unwrap());
-            /*
-            assert!(proof
-                .verify_with_idx(&crh_parameters, &root, &leaf, *i)
-                .unwrap());
-            */
         }
 
         // Now generate proofs and verify that they don't validate under an incorrect root
@@ -731,11 +661,6 @@ mod tests {
             assert!(!proof
                 .verify(&leaf_param, &two_to_one_param, &root, &leaf)
                 .unwrap());
-            /*
-            assert!(proof
-                .verify_with_idx(&crh_parameters, &root, &leaf, *i)
-                .unwrap());
-            */
         }
     }
 }
