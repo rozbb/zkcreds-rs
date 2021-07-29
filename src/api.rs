@@ -16,9 +16,9 @@ use ark_ed_on_bls12_381::{constraints::FqVar, EdwardsParameters};
 use ark_ff::{to_bytes, ToBytes, ToConstraintField};
 use ark_groth16::{
     generator::generate_random_parameters,
-    prover::create_random_proof,
+    prover::{create_random_proof, rerandomize_proof},
     verifier::{prepare_verifying_key, verify_proof},
-    PreparedVerifyingKey, Proof, ProvingKey,
+    Proof, ProvingKey, VerifyingKey,
 };
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError};
 use ark_std::{
@@ -131,34 +131,47 @@ impl CanonicalDeserialize for SparseMerkleTree<P> {
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct ZkProvingKey {
     groth_pk: ProvingKey<E>,
-    tree_height: u32,
+    log_capacity: u32,
 }
 /// The verifying key for zero-knowledge membership proofs
-pub type ZkVerifyingKey = PreparedVerifyingKey<E>;
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
+pub struct ZkVerifyingKey(VerifyingKey<E>);
 /// A zero-knowledge membership proof
-pub type ZkProof = Proof<E>;
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
+pub struct ZkProof(Proof<E>);
 
-/// Sets up the proving and verifying keys for the membership proofs. `tree_height` is the height
-/// of the [`IssuanceList`] tree that will be used. That is, `2^tree_height` is the number of
+impl ZkProof {
+    /// Rerandomizes the `ZkProof` so it looks like a fresh proof
+    pub fn rerandomize<R>(&mut self, rng: &mut R, pk: &ZkProvingKey)
+    where
+        R: Rng + CryptoRng,
+    {
+        let new_proof = rerandomize_proof(rng, &pk.groth_pk.vk, &self.0);
+        self.0 = new_proof;
+    }
+}
+
+/// Sets up the proving and verifying keys for the membership proofs. `log_capacity` is the height
+/// of the [`IssuanceList`] tree that will be used. That is, `2^log_capacity` is the number of
 /// commitments that can be stored in a single [`IssuanceList`].
-pub fn zk_proof_setup<R>(rng: &mut R, tree_height: u32) -> (ZkProvingKey, ZkVerifyingKey)
+pub fn zk_proof_setup<R>(rng: &mut R, log_capacity: u32) -> (ZkProvingKey, ZkVerifyingKey)
 where
     R: Rng + CryptoRng,
 {
     let param_gen_circuit = ProofOfIssuanceCircuit::<P, Fr, HG, HG>::new_placeholder(
-        tree_height,
+        log_capacity,
         LEAF_PARAM.clone(),
         TWO_TO_ONE_PARAM.clone(),
     );
     let groth_pk = generate_random_parameters::<E, _, _>(param_gen_circuit, rng).unwrap();
-    let groth_pvk = prepare_verifying_key(&groth_pk.vk);
 
+    let vk = ZkVerifyingKey(groth_pk.vk.clone());
     let pk = ZkProvingKey {
         groth_pk,
-        tree_height,
+        log_capacity,
     };
 
-    (pk, groth_pvk)
+    (pk, vk)
 }
 
 // Wrapper structs for the sake of a simple API
@@ -292,7 +305,7 @@ impl AuthPath {
         let root_hash = self.0.root(&*TWO_TO_ONE_PARAM)?;
 
         let circuit = ProofOfIssuanceCircuit::<P, Fr, HG, HG>::new(
-            pk.tree_height,
+            pk.log_capacity,
             LEAF_PARAM.clone(),
             TWO_TO_ONE_PARAM.clone(),
             root_hash,
@@ -301,23 +314,30 @@ impl AuthPath {
         );
 
         let proof = create_random_proof::<E, _, _>(circuit, &pk.groth_pk, rng)?;
-        Ok(proof)
+        Ok(ZkProof(proof))
     }
 }
 
+// TODO: Small optimization: if PreparedVerifyingKey implemented CanonicalSerialize, we'd be able
+// to use that instead of preparing on every verification. Currently it does not, because
+// PairingEngine::G2Prepared does not impl CanonicalSerialize.
 /// Verifies a zero-knowledge proof of membership
 #[must_use]
 pub fn zk_verify(vk: &ZkVerifyingKey, root: &IssuanceListRoot, proof: &ZkProof) -> bool {
+    // Serialize the tree root
     let root_input = root.0.to_field_elements().unwrap();
-    verify_proof(vk, proof, &root_input).expect("circuit verification failed")
+
+    // Prepare the verifying key and verify
+    let pvk = prepare_verifying_key(&vk.0);
+    verify_proof(&pvk, &proof.0, &root_input).expect("circuit verification failed")
 }
 
 #[test]
 fn test_api_correctness() {
     // Set up the RNG and CRS
     let mut rng = StdRng::from_entropy();
-    let tree_height: u32 = 32;
-    let (pk, vk) = zk_proof_setup(&mut rng, tree_height);
+    let log_capacity: u32 = 32;
+    let (pk, vk) = zk_proof_setup(&mut rng, log_capacity);
 
     // Client: Make a credential and commit to it. Send commitment to the list holder
     let cred = Cred::gen(&mut rng);
@@ -325,8 +345,9 @@ fn test_api_correctness() {
 
     // Make a list and insert the commitment in a free space. Share the list with the world.
     let first_free_idx = 0u64;
-    let mut global_list = IssuanceList::empty(tree_height);
+    let mut global_list = IssuanceList::empty(log_capacity);
     global_list.insert(first_free_idx, &com);
+    let inserted_cred_idx = first_free_idx;
 
     // Client: Get the auth path in the list and use it to make a ZK proof
     let auth_path = global_list
@@ -340,4 +361,9 @@ fn test_api_correctness() {
     // Observer: Verify proof wrt the issuance list
     let list_root = global_list.root();
     assert!(zk_verify(&vk, &list_root, &membership_proof));
+
+    // Now remove the credential from the list and ensure that the proof no longer works
+    global_list.remove(inserted_cred_idx);
+    let list_root = global_list.root();
+    assert!(!zk_verify(&vk, &list_root, &membership_proof));
 }
