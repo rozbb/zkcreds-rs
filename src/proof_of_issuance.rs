@@ -18,7 +18,9 @@ use ark_relations::{
 /// The randomness used to commit to a credential
 type ComNonce = Credential;
 
-pub struct MerkleMembershipCircuit<P, ConstraintF, LeafH, TwoToOneH>
+/// A circuit that proves that a commitment to `cred` appears in the merkle tree of height `height`
+/// defined by root hash `root`.
+pub struct ProofOfIssuanceCircuit<P, ConstraintF, LeafH, TwoToOneH>
 where
     ConstraintF: PrimeField,
     LeafH: CRHGadget<P::LeafHash, ConstraintF>,
@@ -45,7 +47,7 @@ where
     _marker: PhantomData<(ConstraintF, LeafH, TwoToOneH)>,
 }
 
-impl<P, ConstraintF, LeafH, TwoToOneH> MerkleMembershipCircuit<P, ConstraintF, LeafH, TwoToOneH>
+impl<P, ConstraintF, LeafH, TwoToOneH> ProofOfIssuanceCircuit<P, ConstraintF, LeafH, TwoToOneH>
 where
     ConstraintF: PrimeField,
     LeafH: CRHGadget<P::LeafHash, ConstraintF>,
@@ -60,7 +62,7 @@ where
         opening: (Credential, ComNonce),
         path: SparseMerkleTreePath<P>,
     ) -> Self {
-        MerkleMembershipCircuit {
+        ProofOfIssuanceCircuit {
             height,
             leaf_param,
             two_to_one_param,
@@ -72,12 +74,13 @@ where
         }
     }
 
+    /// Makes a circuit with placeholder data. This is used for the purpose of CRS generation.
     pub fn new_placeholder(
         height: u32,
         leaf_param: LeafParam<P>,
         two_to_one_param: TwoToOneParam<P>,
     ) -> Self {
-        MerkleMembershipCircuit {
+        ProofOfIssuanceCircuit {
             height,
             leaf_param,
             two_to_one_param,
@@ -91,7 +94,7 @@ where
 }
 
 impl<P, ConstraintF, LeafH, TwoToOneH> ConstraintSynthesizer<ConstraintF>
-    for MerkleMembershipCircuit<P, ConstraintF, LeafH, TwoToOneH>
+    for ProofOfIssuanceCircuit<P, ConstraintF, LeafH, TwoToOneH>
 where
     ConstraintF: PrimeField,
     LeafH: CRHGadget<P::LeafHash, ConstraintF>,

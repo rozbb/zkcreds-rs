@@ -131,7 +131,7 @@ where
     TwoToOneDigest<P>: Eq,
 {
     /// Obtain an empty tree of a given height. Height MUST be at least 2.
-    pub fn blank<L: Default + ToBytes>(
+    pub fn empty<L: Default + ToBytes>(
         leaf_param: LeafParam<P>,
         two_to_one_param: TwoToOneParam<P>,
         height: u32,
@@ -391,29 +391,6 @@ where
         self.generate_proof_helper(index)
     }
 
-    /// Check if the tree is structurally valid
-    pub fn validate(&self) -> Result<bool, Error> {
-        // If this tree is empty, then it's valid by default. Otherwise, recalculate the root and
-        // compare it to
-        if self.is_empty() {
-            Ok(true)
-        } else {
-            let expected_root = self.root();
-            let calculated_root = Self::calculate_inner_hashes(
-                &self.two_to_one_param,
-                self.height,
-                &self.leaf_hashes,
-                &self.empty_hashes,
-                true,
-            )?
-            .get(&0)
-            .cloned()
-            .unwrap();
-
-            Ok(expected_root == calculated_root)
-        }
-    }
-
     /// Recomputes the path-to-root starting at the given leaf index
     fn recalculate_leaf_ancestors(&mut self, idx: u64) -> Result<(), Error> {
         // Get the starting two indices
@@ -486,7 +463,7 @@ where
         Ok(())
     }
 
-    /// Insert a leaf into the tree at index `idx`
+    /// Inserts a leaf into the tree at index `idx`
     pub fn insert<L: ToBytes>(&mut self, idx: u64, leaf: &L) -> Result<(), Error> {
         // Compute the leaf's tree index and insert it into the leaf_hashes map
         let leaf_node = convert_idx_to_last_level(idx, self.height);
@@ -497,7 +474,7 @@ where
         self.recalculate_leaf_ancestors(idx)
     }
 
-    /// Remove a leaf from the tree. Does nothing if there was nothing at that index.
+    /// Removes a leaf from the tree. Does nothing if there was nothing at that index.
     pub fn remove(&mut self, idx: u64) -> Result<(), Error> {
         let leaf_node = convert_idx_to_last_level(idx, self.height);
 
@@ -592,8 +569,10 @@ fn parent(index: u64) -> Option<u64> {
 }
 
 #[inline]
-fn convert_idx_to_last_level(index: u64, tree_height: u32) -> u64 {
-    index + 2u64.pow(tree_height - 1) - 1
+fn convert_idx_to_last_level(idx: u64, tree_height: u32) -> u64 {
+    // A tree of height n has 2^(n-1) leaves
+    assert!(idx < 2u64.pow(tree_height - 1), "idx exceeds capacity");
+    idx + 2u64.pow(tree_height - 1) - 1
 }
 
 /// Returns the digests H(nil), H(H(nil), H(nil)), etc.
@@ -666,6 +645,29 @@ mod tests {
     type Leaf = [u8; 8];
     const HEIGHT: u32 = 32;
 
+    /// Check if the tree is structurally valid
+    fn validate_tree<P: TreeConfig>(tree: &SparseMerkleTree<P>) -> Result<bool, Error> {
+        // If this tree is empty, then it's valid by default. Otherwise, recalculate the root and
+        // compare it to
+        if tree.is_empty() {
+            Ok(true)
+        } else {
+            let expected_root = tree.root();
+            let calculated_root = SparseMerkleTree::calculate_inner_hashes(
+                &tree.two_to_one_param,
+                tree.height,
+                &tree.leaf_hashes,
+                &tree.empty_hashes,
+                true,
+            )?
+            .get(&0)
+            .cloned()
+            .unwrap();
+
+            Ok(expected_root == calculated_root)
+        }
+    }
+
     #[test]
     fn test_membership() {
         let mut rng = ark_std::test_rng();
@@ -691,7 +693,7 @@ mod tests {
         .unwrap();
 
         // Validate the whole tree
-        assert!(tree.validate().unwrap());
+        assert!(validate_tree(&tree).unwrap());
 
         // Generate proofs and verify that they're valid
         let root = tree.root();
@@ -725,7 +727,7 @@ mod tests {
         // Make an empty tree
         /*
         let mut tree =
-            JubJubMerkleTree::blank::<Leaf>(leaf_param.clone(), two_to_one_param.clone(), HEIGHT);
+            JubJubMerkleTree::empty::<Leaf>(leaf_param.clone(), two_to_one_param.clone(), HEIGHT);
         */
         let mut tree = JubJubMerkleTree::new::<Leaf>(
             leaf_param.clone(),
@@ -747,7 +749,7 @@ mod tests {
         }
 
         // Validate the whole tree
-        assert!(tree.validate().unwrap());
+        assert!(validate_tree(&tree).unwrap());
 
         // Generate proofs and verify that they're valid
         let root = tree.root();
@@ -783,6 +785,6 @@ mod tests {
             .unwrap());
 
         // Validate the whole tree again
-        assert!(tree.validate().unwrap());
+        assert!(validate_tree(&tree).unwrap());
     }
 }

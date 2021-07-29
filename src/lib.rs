@@ -1,10 +1,9 @@
 pub mod api;
 mod common;
-pub mod constraints;
-pub mod membership_circuit;
 pub mod merkle_forest;
-pub mod show_cred;
-pub mod sparse_merkle;
-pub mod test_util;
+mod multishow;
+mod proof_of_issuance;
+mod sparse_merkle;
+mod test_util;
 
 pub type Error = Box<dyn ark_std::error::Error>;
