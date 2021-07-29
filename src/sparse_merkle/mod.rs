@@ -21,12 +21,21 @@ use ark_std::{
 /// Constraints for the Merkle sparse tree
 pub mod constraints;
 
-type LeafDigest<P> = <<P as TreeConfig>::LeafHash as CRH>::Output;
-type TwoToOneDigest<P> = <<P as TreeConfig>::TwoToOneHash as TwoToOneCRH>::Output;
+pub(crate) type LeafDigest<P> = <<P as TreeConfig>::LeafHash as CRH>::Output;
+pub(crate) type TwoToOneDigest<P> = <<P as TreeConfig>::TwoToOneHash as TwoToOneCRH>::Output;
 
 pub struct SparseMerkleTreePath<P: TreeConfig> {
     pub(crate) leaf_hashes: (LeafDigest<P>, LeafDigest<P>),
     pub(crate) inner_hashes: Vec<(TwoToOneDigest<P>, TwoToOneDigest<P>)>,
+}
+
+impl<P: TreeConfig> Clone for SparseMerkleTreePath<P> {
+    fn clone(&self) -> Self {
+        SparseMerkleTreePath {
+            leaf_hashes: self.leaf_hashes.clone(),
+            inner_hashes: self.inner_hashes.clone(),
+        }
+    }
 }
 
 impl<P> Default for SparseMerkleTreePath<P>
@@ -81,6 +90,16 @@ where
         }
 
         Ok(root_hash == &previous_hash)
+    }
+
+    /// Returns the root hash corresponding to this path
+    pub fn root(&self, two_to_one_param: &TwoToOneParam<P>) -> Result<TwoToOneDigest<P>, Error> {
+        let (final_left_hash, final_right_hash) = &self.inner_hashes.last().unwrap();
+        P::TwoToOneHash::evaluate(
+            &two_to_one_param,
+            &to_bytes!(final_left_hash)?,
+            &to_bytes!(final_right_hash)?,
+        )
     }
 }
 
@@ -290,8 +309,8 @@ where
         self.leaf_hashes.is_empty()
     }
 
-    /// generate a membership proof (does not check the data point)
-    pub fn generate_membership_proof(&self, index: u64) -> Result<SparseMerkleTreePath<P>, Error> {
+    /// Generate a membership proof (does not check the leaf value)
+    fn generate_proof_helper(&self, index: u64) -> Result<SparseMerkleTreePath<P>, Error> {
         let mut path = SparseMerkleTreePath::default();
 
         let mut current_node = convert_idx_to_last_level(index, self.height);
@@ -369,7 +388,7 @@ where
             }
         }
 
-        self.generate_membership_proof(index)
+        self.generate_proof_helper(index)
     }
 
     /// Check if the tree is structurally valid
@@ -396,7 +415,7 @@ where
     }
 
     /// Recomputes the path-to-root starting at the given leaf index
-    fn recompute_path(&mut self, idx: u64) -> Result<(), Error> {
+    fn recalculate_leaf_ancestors(&mut self, idx: u64) -> Result<(), Error> {
         // Get the starting two indices
         let leaf_node = convert_idx_to_last_level(idx, self.height);
         let sibling_node = sibling(leaf_node).unwrap();
@@ -475,7 +494,7 @@ where
         self.leaf_hashes.insert(leaf_node, leaf_hash.clone());
 
         // Recompute all the nodes above the leaf
-        self.recompute_path(idx)
+        self.recalculate_leaf_ancestors(idx)
     }
 
     /// Remove a leaf from the tree. Does nothing if there was nothing at that index.
@@ -486,7 +505,7 @@ where
         // recompute the hashes upwards, starting at the removed leaf hash.
         match self.leaf_hashes.remove(&leaf_node) {
             None => Ok(()),
-            Some(_) => self.recompute_path(idx),
+            Some(_) => self.recalculate_leaf_ancestors(idx),
         }
     }
 }

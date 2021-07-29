@@ -1,3 +1,5 @@
+use crate::common::{Credential, CredentialVar, CRED_SIZE};
+
 use core::{cmp::Ordering, marker::PhantomData};
 use std::io::Write;
 
@@ -5,34 +7,20 @@ use ark_crypto_primitives::{
     crh::{constraints::CRHGadget, CRH as CRHTrait},
     Error as ArkError,
 };
-use ark_ff::PrimeField;
+use ark_ff::{to_bytes, PrimeField};
 use ark_r1cs_std::{
-    alloc::AllocVar, bits::ToBytesGadget, eq::EqGadget, fields::fp::FpVar, uint8::UInt8, R1CSVar,
+    alloc::AllocVar, bits::ToBytesGadget, eq::EqGadget, fields::fp::FpVar, R1CSVar,
 };
 use ark_relations::{
     ns,
     r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError},
 };
-use ark_std::rand::RngCore;
 use arkworks_gadgets::poseidon::{
     constraints::{CRHGadget as PoseidonGadget, PoseidonParametersVar},
     PoseidonParameters, Rounds as PoseidonRounds, CRH as PoseidonCRH,
 };
 
 use byteorder::{LittleEndian, WriteBytesExt};
-
-/// A credential is a 128 bit bitstring
-const CRED_SIZE: usize = 16;
-pub struct Credential([u8; CRED_SIZE]);
-
-impl Credential {
-    pub fn gen<R: RngCore>(rng: &mut R) -> Credential {
-        let mut buf = [0u8; CRED_SIZE];
-        rng.fill_bytes(&mut buf);
-
-        Credential(buf)
-    }
-}
 
 pub struct MultishowCircuit<ConstraintF, P>
 where
@@ -99,16 +87,13 @@ where
         };
 
         // Witness the nonce, credential, and counter
-        let presentation_nonce_var = FpVar::<ConstraintF>::new_input(
-            ns!(cs, "nonce input"),
-            || Ok(self.presentation_nonce),
-        )?;
+        let presentation_nonce_var =
+            FpVar::<ConstraintF>::new_input(ns!(cs, "nonce input"), || {
+                Ok(&self.presentation_nonce)
+            })?;
         // Convert the credential bytes to a field element
-        let cred_var = <Vec<UInt8<ConstraintF>>>::new_witness(ns!(cs, "cred wit"), || {
-            self.cred
-                .as_ref()
-                .ok_or(SynthesisError::AssignmentMissing)
-                .map(|c| c.0.clone())
+        let cred_var = CredentialVar::new_witness(ns!(cs, "cred wit"), || {
+            self.cred.as_ref().ok_or(SynthesisError::AssignmentMissing)
         })?;
         let counter_var = {
             // Convert the u16 to a field element first. Then witness it
@@ -131,7 +116,7 @@ where
             // Only use the first two bytes of the counter. This is legal because already checked
             // that counter < max_num_presentations, and n: u16 is a public input.
             let counter_bytes_var = counter_var.to_bytes()?;
-            let hash_input = &[cred_var.as_slice(), &counter_bytes_var[..2]].concat();
+            let hash_input = &[&cred_var.to_bytes()?, &counter_bytes_var[..2]].concat();
 
             println!(
                 "hash var input {:x?}",
@@ -160,12 +145,10 @@ where
     let mut buf = &mut hash_input[..];
 
     // Presentation nonce is H(cred, counter, n)
-    buf.write(&cred.0)
-        .expect("couldn't write credential to buf");
+    buf.write(&to_bytes!(cred).unwrap())
+        .expect("couldn't write cred to buf");
     buf.write_u16::<LittleEndian>(counter)
         .expect("couldn't write show counter to buf");
-
-    println!("hash input {:x?}", hash_input);
 
     PoseidonCRH::<F, P>::evaluate(params, &hash_input)
 }

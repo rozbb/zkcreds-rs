@@ -2,7 +2,7 @@
 // https://github.com/arkworks-rs/ivls/blob/57325dc45db4f1b5d42bed4796cd9ba2cd1fbd3c/src/building_blocks/mt/merkle_sparse_tree/constraints.rs
 // under dual MIT/APACHE license.
 
-use crate::sparse_merkle::{SparseMerkleTreePath, TreeConfig};
+use crate::sparse_merkle::{SparseMerkleTreePath, TreeConfig, TwoToOneDigest};
 
 use ark_crypto_primitives::crh::{CRHGadget, TwoToOneCRHGadget};
 use ark_ff::PrimeField;
@@ -73,10 +73,10 @@ where
         let claimed_leaf_hash = LeafH::evaluate(leaf_param, &leaf.to_bytes()?)?;
 
         // Check if leaf is one of the bottom-most siblings.
-        let leaf_is_left = Boolean::Is(AllocatedBool::new_witness(
-            ark_relations::ns!(cs, "leaf_is_left"),
-            || Ok(claimed_leaf_hash.value()? == self.leaf_hashes.0.value()?),
-        )?);
+        let leaf_is_left =
+            Boolean::Is(AllocatedBool::new_witness(ns!(cs, "leaf_is_left"), || {
+                Ok(claimed_leaf_hash.value()? == self.leaf_hashes.0.value()?)
+            })?);
 
         claimed_leaf_hash.conditional_enforce_equal(
             &LeafH::OutputVar::conditionally_select(
@@ -118,58 +118,90 @@ where
 
         root.conditional_enforce_equal(&previous_hash, should_enforce)
     }
-}
 
-impl<P, LeafH, TwoToOneH, ConstraintF> AllocVar<SparseMerkleTreePath<P>, ConstraintF>
-    for SparseMerkleTreePathVar<P, LeafH, TwoToOneH, ConstraintF>
-where
-    P: TreeConfig,
-    LeafH: CRHGadget<P::LeafHash, ConstraintF>,
-    TwoToOneH: TwoToOneCRHGadget<P::TwoToOneHash, ConstraintF>,
-    ConstraintF: PrimeField,
-{
     fn new_variable<T: Borrow<SparseMerkleTreePath<P>>>(
         cs: impl Into<Namespace<ConstraintF>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
         mode: AllocationMode,
+        height: u32,
     ) -> Result<Self, SynthesisError> {
         let ns = cs.into();
         let cs = ns.cs();
 
         // Compute the given closure to get a path
-        let path_val = f()?;
-        let path = path_val.borrow();
+        let path_val = f().ok();
+        let path: Option<&SparseMerkleTreePath<P>> = path_val.as_ref().map(|p| p.borrow());
+
+        let left_leaf_hash = path.map(|p| &p.leaf_hashes.0);
+        let right_leaf_hash = path.map(|p| &p.leaf_hashes.1);
 
         // Witness the leaves
         let leaf_hashes_var = (
-            LeafH::OutputVar::new_variable(ns!(cs, "left_leaf"), || Ok(&path.leaf_hashes.0), mode)?,
+            LeafH::OutputVar::new_variable(
+                ns!(cs, "left_leaf"),
+                || left_leaf_hash.ok_or(SynthesisError::AssignmentMissing),
+                mode,
+            )?,
             LeafH::OutputVar::new_variable(
                 ns!(cs, "right_leaf"),
-                || Ok(&path.leaf_hashes.1),
+                || right_leaf_hash.ok_or(SynthesisError::AssignmentMissing),
                 mode,
             )?,
         );
 
-        // Witness all the inner hashes
-        let mut inner_hashes_var = Vec::new();
-        for (ref left_hash, ref right_hash) in &path.inner_hashes {
-            let left_hash_var = TwoToOneH::OutputVar::new_variable(
-                ark_relations::ns!(cs, "l_child"),
-                || Ok(left_hash),
-                mode,
-            )?;
-            let right_hash_var = TwoToOneH::OutputVar::new_variable(
-                ark_relations::ns!(cs, "r_child"),
-                || Ok(right_hash),
-                mode,
-            )?;
-            inner_hashes_var.push((left_hash_var, right_hash_var));
+        // Now to populate the inner hashes
+        let mut inner_hashes_var: Vec<(TwoToOneH::OutputVar, TwoToOneH::OutputVar)> = Vec::new();
+
+        // If path is set, use its real contents
+        if let Some(p) = path {
+            for (ref left_hash, ref right_hash) in &p.inner_hashes {
+                let left_hash_var =
+                    TwoToOneH::OutputVar::new_variable(ns!(cs, "l_child"), || Ok(left_hash), mode)?;
+                let right_hash_var = TwoToOneH::OutputVar::new_variable(
+                    ns!(cs, "r_child"),
+                    || Ok(right_hash),
+                    mode,
+                )?;
+
+                inner_hashes_var.push((left_hash_var, right_hash_var));
+            }
+        } else {
+            // If path is not set, then make the appropriate number (height-2) of placeholder vars
+            let e: Result<&TwoToOneDigest<P>, _> = Err(SynthesisError::AssignmentMissing);
+
+            for _ in 0..(height - 2) {
+                let left = TwoToOneH::OutputVar::new_variable(ns!(cs, "l_child"), || e, mode)?;
+                let right = TwoToOneH::OutputVar::new_variable(ns!(cs, "r_child"), || e, mode)?;
+                inner_hashes_var.push((left, right));
+            }
         }
 
         Ok(SparseMerkleTreePathVar {
             leaf_hashes: leaf_hashes_var,
             inner_hashes: inner_hashes_var,
         })
+    }
+    pub(crate) fn new_constant(
+        cs: impl Into<Namespace<ConstraintF>>,
+        t: impl Borrow<SparseMerkleTreePath<P>>,
+        height: u32,
+    ) -> Result<Self, SynthesisError> {
+        Self::new_variable(cs, || Ok(t), AllocationMode::Constant, height)
+    }
+    pub(crate) fn new_input<T: Borrow<SparseMerkleTreePath<P>>>(
+        cs: impl Into<Namespace<ConstraintF>>,
+        f: impl FnOnce() -> Result<T, SynthesisError>,
+        height: u32,
+    ) -> Result<Self, SynthesisError> {
+        Self::new_variable(cs, f, AllocationMode::Input, height)
+    }
+
+    pub(crate) fn new_witness<T: Borrow<SparseMerkleTreePath<P>>>(
+        cs: impl Into<Namespace<ConstraintF>>,
+        f: impl FnOnce() -> Result<T, SynthesisError>,
+        height: u32,
+    ) -> Result<Self, SynthesisError> {
+        Self::new_variable(cs, f, AllocationMode::Witness, height)
     }
 }
 
@@ -277,13 +309,14 @@ mod test {
 
             // Allocate Merkle Tree Path
             let cw = SparseMerkleTreePathVar::<_, HG, HG, _>::new_witness(
-                ark_relations::ns!(cs, "new_witness"),
+                ns!(cs, "new_witness"),
                 || Ok(proof),
+                height,
             )
             .unwrap();
 
             cw.check_membership(
-                ark_relations::ns!(cs, "check_membership").cs(),
+                ns!(cs, "check_membership").cs(),
                 &leaf_param_var,
                 &two_to_one_param_var,
                 &root_var,

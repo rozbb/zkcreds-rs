@@ -1,4 +1,7 @@
+pub mod api;
+mod common;
 pub mod constraints;
+pub mod membership_circuit;
 pub mod merkle_forest;
 pub mod show_cred;
 pub mod sparse_merkle;
