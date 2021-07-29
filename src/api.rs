@@ -20,19 +20,21 @@ use ark_groth16::{
     verifier::{prepare_verifying_key, verify_proof},
     PreparedVerifyingKey, Proof, ProvingKey,
 };
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError};
 use ark_std::{
-    io::{Result as IoResult, Write},
-    rand::{prelude::StdRng, SeedableRng},
+    io::{Read, Result as IoResult, Write},
+    rand::{prelude::StdRng, CryptoRng, Rng, SeedableRng},
 };
 use lazy_static::lazy_static;
 
+// Initialize the hashing parameters deterministically
 lazy_static! {
     static ref LEAF_PARAM: LeafParam<P> = {
         let mut rng = {
             let mut seed = [0u8; 32];
             let mut writer = &mut seed[..];
             writer.write(b"zeronym-leaf-hash-param").unwrap();
-            R::from_seed(seed)
+            StdRng::from_seed(seed)
         };
         <<P as TreeConfig>::LeafHash as CRH>::setup(&mut rng).unwrap()
     };
@@ -41,7 +43,7 @@ lazy_static! {
             let mut seed = [0u8; 32];
             let mut writer = &mut seed[..];
             writer.write(b"zeronym-two-to-one-hash-param").unwrap();
-            R::from_seed(seed)
+            StdRng::from_seed(seed)
         };
         <<P as TreeConfig>::TwoToOneHash as TwoToOneCRH>::setup(&mut rng).unwrap()
     };
@@ -78,14 +80,55 @@ type TwoToOneH = bowe_hopwood::CRH<EdwardsParameters, TwoToOneWindow>;
 type HG = bowe_hopwood::constraints::CRHGadget<EdwardsParameters, FqVar>;
 type E = Bls12_381;
 type P = JubJubMerkleTreeParams;
-type R = StdRng;
 
-/// Get a secure random number generator
-pub fn get_rng() -> R {
-    R::from_entropy()
+// This is so that IssuanceList is serializable
+impl CanonicalSerialize for SparseMerkleTree<P> {
+    fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
+        // Just serialize everything except the hash params. Those are static
+        self.height.serialize(&mut writer)?;
+        self.leaf_hashes.serialize(&mut writer)?;
+        self.inner_hashes.serialize(&mut writer)?;
+        self.empty_hashes.serialize(&mut writer)?;
+
+        Ok(())
+    }
+
+    fn serialized_size(&self) -> usize {
+        self.height.serialized_size()
+            + self.leaf_hashes.serialized_size()
+            + self.inner_hashes.serialized_size()
+            + self.empty_hashes.serialized_size()
+    }
+}
+
+// This is so that IssuanceList is deserializable
+impl CanonicalDeserialize for SparseMerkleTree<P> {
+    fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+        use crate::sparse_merkle::{EmptyHashes, LeafDigest};
+
+        // The params were never serialized. Recover them using the static values
+        let leaf_param = LEAF_PARAM.clone();
+        let two_to_one_param = TWO_TO_ONE_PARAM.clone();
+
+        // Now deserialize everything else
+        let height = u32::deserialize(&mut reader)?;
+        let leaf_hashes = BTreeMap::<u64, LeafDigest<P>>::deserialize(&mut reader)?;
+        let inner_hashes = BTreeMap::<u64, TwoToOneDigest<P>>::deserialize(&mut reader)?;
+        let empty_hashes = EmptyHashes::<P>::deserialize(&mut reader)?;
+
+        Ok(SparseMerkleTree {
+            leaf_param,
+            two_to_one_param,
+            height,
+            leaf_hashes,
+            inner_hashes,
+            empty_hashes,
+        })
+    }
 }
 
 /// The proving key for zero-knowledge membership proofs
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct ZkProvingKey {
     groth_pk: ProvingKey<E>,
     tree_height: u32,
@@ -98,7 +141,10 @@ pub type ZkProof = Proof<E>;
 /// Sets up the proving and verifying keys for the membership proofs. `tree_height` is the height
 /// of the [`IssuanceList`] tree that will be used. That is, `2^tree_height` is the number of
 /// commitments that can be stored in a single [`IssuanceList`].
-pub fn zk_proof_setup(rng: &mut R, tree_height: u32) -> (ZkProvingKey, ZkVerifyingKey) {
+pub fn zk_proof_setup<R>(rng: &mut R, tree_height: u32) -> (ZkProvingKey, ZkVerifyingKey)
+where
+    R: Rng + CryptoRng,
+{
     let param_gen_circuit = ProofOfIssuanceCircuit::<P, Fr, HG, HG>::new_placeholder(
         tree_height,
         LEAF_PARAM.clone(),
@@ -117,11 +163,13 @@ pub fn zk_proof_setup(rng: &mut R, tree_height: u32) -> (ZkProvingKey, ZkVerifyi
 
 // Wrapper structs for the sake of a simple API
 /// A commitment to a `Cred`
-#[derive(Default)]
+#[derive(CanonicalSerialize, CanonicalDeserialize, Default)]
 pub struct Com(TwoToOneDigest<P>);
 /// A secret credential
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct Cred(Credential);
 /// The opening to a credential commitment
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct ComNonce(Credential);
 
 impl ToBytes for Com {
@@ -132,12 +180,18 @@ impl ToBytes for Com {
 
 impl Cred {
     /// Make a new random credential
-    pub fn gen(rng: &mut R) -> Self {
+    pub fn gen<R>(rng: &mut R) -> Self
+    where
+        R: Rng + CryptoRng,
+    {
         Cred(Credential::gen(rng))
     }
 
     /// Commit to this credential, getting a commitment and an opening nonce
-    pub fn commit(&self, rng: &mut R) -> Result<(Com, ComNonce), Error> {
+    pub fn commit<R>(&self, rng: &mut R) -> Result<(Com, ComNonce), Error>
+    where
+        R: Rng + CryptoRng,
+    {
         let nonce = Credential::gen(rng);
         let com = <<P as TreeConfig>::TwoToOneHash as TwoToOneCRH>::evaluate(
             &*TWO_TO_ONE_PARAM,
@@ -150,12 +204,15 @@ impl Cred {
 }
 
 /// A merkle tree of all the credential commitments that are issued
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct IssuanceList(SparseMerkleTree<P>);
 /// A proof of membership in an [`IssuanceList`]. To make this a zero-knowledge proof, call
 /// [`AuthPath::zk_prove`].
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct AuthPath(SparseMerkleTreePath<P>);
 /// The root node of the issuance merkle tree. This is all the input that's needed to verify a
 /// proof of membership.
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct IssuanceListRoot(TwoToOneDigest<P>);
 
 impl IssuanceList {
@@ -220,21 +277,17 @@ impl IssuanceList {
     }
 }
 
-/// Verifies a zero-knowledge proof of membership
-#[must_use]
-pub fn zk_verify(vk: &ZkVerifyingKey, root: &IssuanceListRoot, proof: &ZkProof) -> bool {
-    let root_input = root.0.to_field_elements().unwrap();
-    verify_proof(vk, proof, &root_input).expect("circuit verification failed")
-}
-
 impl AuthPath {
     /// Constructs a zero-knowledge proof that this `AuthPath` is valid
-    pub fn zk_prove(
+    pub fn zk_prove<R>(
         &self,
         rng: &mut R,
         pk: &ZkProvingKey,
         opening: (Cred, ComNonce),
-    ) -> Result<ZkProof, Error> {
+    ) -> Result<ZkProof, Error>
+    where
+        R: Rng + CryptoRng,
+    {
         let (cred, nonce) = opening;
         let root_hash = self.0.root(&*TWO_TO_ONE_PARAM)?;
 
@@ -252,10 +305,17 @@ impl AuthPath {
     }
 }
 
+/// Verifies a zero-knowledge proof of membership
+#[must_use]
+pub fn zk_verify(vk: &ZkVerifyingKey, root: &IssuanceListRoot, proof: &ZkProof) -> bool {
+    let root_input = root.0.to_field_elements().unwrap();
+    verify_proof(vk, proof, &root_input).expect("circuit verification failed")
+}
+
 #[test]
 fn test_api_correctness() {
     // Set up the RNG and CRS
-    let mut rng = get_rng();
+    let mut rng = StdRng::from_entropy();
     let tree_height: u32 = 32;
     let (pk, vk) = zk_proof_setup(&mut rng, tree_height);
 

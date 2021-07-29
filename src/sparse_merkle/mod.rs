@@ -11,9 +11,11 @@ use ark_crypto_primitives::{
     merkle_tree::{Config as TreeConfig, LeafParam, TwoToOneParam},
 };
 use ark_ff::{to_bytes, ToBytes};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError};
 use ark_std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Debug,
+    io::{Read, Write},
     string::ToString,
     vec::Vec,
 };
@@ -24,6 +26,7 @@ pub mod constraints;
 pub(crate) type LeafDigest<P> = <<P as TreeConfig>::LeafHash as CRH>::Output;
 pub(crate) type TwoToOneDigest<P> = <<P as TreeConfig>::TwoToOneHash as TwoToOneCRH>::Output;
 
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct SparseMerkleTreePath<P: TreeConfig> {
     pub(crate) leaf_hashes: (LeafDigest<P>, LeafDigest<P>),
     pub(crate) inner_hashes: Vec<(TwoToOneDigest<P>, TwoToOneDigest<P>)>,
@@ -110,17 +113,18 @@ where
     TwoToOneDigest<P>: Eq,
 {
     // Tree params
-    leaf_param: LeafParam<P>,
-    two_to_one_param: TwoToOneParam<P>,
-    height: u32,
+    pub(crate) leaf_param: LeafParam<P>,
+    pub(crate) two_to_one_param: TwoToOneParam<P>,
+    pub(crate) height: u32,
     // Tree contents
-    leaf_hashes: BTreeMap<u64, LeafDigest<P>>,
-    inner_hashes: BTreeMap<u64, TwoToOneDigest<P>>,
+    pub(crate) leaf_hashes: BTreeMap<u64, LeafDigest<P>>,
+    pub(crate) inner_hashes: BTreeMap<u64, TwoToOneDigest<P>>,
     // Cached empty hashes
-    empty_hashes: EmptyHashes<P>,
+    pub(crate) empty_hashes: EmptyHashes<P>,
 }
 
-struct EmptyHashes<P: TreeConfig> {
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
+pub(crate) struct EmptyHashes<P: TreeConfig> {
     leaf_hash: LeafDigest<P>,
     inner_hashes: Vec<TwoToOneDigest<P>>,
 }

@@ -5,9 +5,10 @@ use ark_r1cs_std::{
     ToBytesGadget,
 };
 use ark_relations::r1cs::{Namespace, SynthesisError};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError};
 use ark_std::{
     borrow::Borrow,
-    io::{Result as IoResult, Write},
+    io::{Read, Result as IoResult, Write},
     rand::RngCore,
 };
 
@@ -28,6 +29,26 @@ impl Credential {
 impl ToBytes for Credential {
     fn write<W: Write>(&self, writer: W) -> IoResult<()> {
         self.0.write(writer)
+    }
+}
+
+// To serialize and deserialize a credential, just use the Vec<T> routines
+impl CanonicalSerialize for Credential {
+    fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
+        writer.write_all(&self.0).map_err(Into::into)
+    }
+
+    fn serialized_size(&self) -> usize {
+        CRED_SIZE
+    }
+}
+
+impl CanonicalDeserialize for Credential {
+    fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+        let mut buf = [0u8; CRED_SIZE];
+        reader.read_exact(&mut buf)?;
+
+        Ok(Credential(buf))
     }
 }
 

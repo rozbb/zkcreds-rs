@@ -8,20 +8,22 @@ license = "MIT/Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ark-ff = "0.3"
+ark-bls12-381 = "0.3"
+ark-crypto-primitives = { version = "0.3", features = ["r1cs"], default-features = false }
 ark-ec = "0.3"
+ark-ed-on-bls12-381 = { version = "0.3", features = ["r1cs"] }
+ark-ff = "0.3"
 ark-groth16 = "0.3"
 #ark-groth16 = { git = "https://github.com/rozbb/groth16.git", branch = "verif-preprocess" }
-ark-bls12-381 = "0.3"
-ark-ed-on-bls12-381 = { version = "0.3", features = ["r1cs"] }
 ark-relations = "0.3"
 ark-r1cs-std = "0.3"
 ark-std = "0.3"
-ark-crypto-primitives = { version = "0.3", features = ["r1cs"], default-features = false }
+ark-serialize = "0.3"
 arkworks-gadgets = "0.3"
 byteorder = "1.4"
 lazy_static = "1.4"
 rand_core = { version = "0.6", features = ["std"] }
+wasm-bindgen = "0.2"
 
 [patch.crates-io.ark-crypto-primitives]
 git = "https://github.com/arkworks-rs/crypto-primitives.git"
@@ -59,6 +61,7 @@ debug = true
 
 [lib]
 bench = false
+crate-type = ["cdylib"]
 
 [[bench]]
 name = "bench"
