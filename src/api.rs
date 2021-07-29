@@ -354,12 +354,16 @@ fn test_api_correctness() {
         .get_auth_path(first_free_idx, &com)
         .expect("couldn't get auth path");
     let opening = (cred, com_nonce);
-    let membership_proof = auth_path
+    let mut membership_proof = auth_path
         .zk_prove(&mut rng, &pk, opening)
         .expect("couldn't prove membership");
 
     // Observer: Verify proof wrt the issuance list
     let list_root = global_list.root();
+    assert!(zk_verify(&vk, &list_root, &membership_proof));
+
+    // Rerandomize the proof and verify again
+    membership_proof.rerandomize(&mut rng, &pk);
     assert!(zk_verify(&vk, &list_root, &membership_proof));
 
     // Now remove the credential from the list and ensure that the proof no longer works
