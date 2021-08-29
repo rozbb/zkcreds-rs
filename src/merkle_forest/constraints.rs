@@ -13,7 +13,7 @@ use ark_relations::{
 
 pub type Path<P> = ark_crypto_primitives::merkle_tree::Path<P>;
 
-pub struct MerkleProofCircuit<'a, ConstraintF, LeafH, P, TwoToOneH>
+pub struct MerkleForestCircuit<'a, ConstraintF, LeafH, P, TwoToOneH>
 where
     ConstraintF: Field,
     P: Config,
@@ -33,7 +33,7 @@ where
 }
 
 impl<'a, ConstraintF, LeafH, P, TwoToOneH> Clone
-    for MerkleProofCircuit<'a, ConstraintF, LeafH, P, TwoToOneH>
+    for MerkleForestCircuit<'a, ConstraintF, LeafH, P, TwoToOneH>
 where
     ConstraintF: Field,
     P: Config + Clone,
@@ -41,8 +41,8 @@ where
     TwoToOneH: TwoToOneCRHGadget<P::TwoToOneHash, ConstraintF>,
     TwoToOneH::OutputVar: EqGadget<ConstraintF>,
 {
-    fn clone(&self) -> MerkleProofCircuit<'a, ConstraintF, LeafH, P, TwoToOneH> {
-        MerkleProofCircuit {
+    fn clone(&self) -> MerkleForestCircuit<'a, ConstraintF, LeafH, P, TwoToOneH> {
+        MerkleForestCircuit {
             roots: self.roots,
             leaf_crh_param: self.leaf_crh_param.clone(),
             two_to_one_crh_param: self.two_to_one_crh_param.clone(),
@@ -53,7 +53,7 @@ where
     }
 }
 
-impl<'a, ConstraintF, LeafH, P, TwoToOneH> MerkleProofCircuit<'a, ConstraintF, LeafH, P, TwoToOneH>
+impl<'a, ConstraintF, LeafH, P, TwoToOneH> MerkleForestCircuit<'a, ConstraintF, LeafH, P, TwoToOneH>
 where
     ConstraintF: Field,
     P: Config,
@@ -67,10 +67,10 @@ where
         two_to_one_crh_param: &TwoToOneParam<P>,
         auth_path: &'a Path<P>,
         leaf_val_slice: &[u8],
-    ) -> MerkleProofCircuit<'a, ConstraintF, LeafH, P, TwoToOneH> {
+    ) -> MerkleForestCircuit<'a, ConstraintF, LeafH, P, TwoToOneH> {
         let leaf_val: Vec<Option<u8>> = leaf_val_slice.iter().map(|b| Some(*b)).collect();
 
-        MerkleProofCircuit {
+        MerkleForestCircuit {
             roots,
             leaf_crh_param: leaf_crh_param.clone(),
             two_to_one_crh_param: two_to_one_crh_param.clone(),
@@ -82,7 +82,7 @@ where
 }
 
 impl<'a, ConstraintF, LeafH, P, TwoToOneH> ConstraintSynthesizer<ConstraintF>
-    for MerkleProofCircuit<'a, ConstraintF, LeafH, P, TwoToOneH>
+    for MerkleForestCircuit<'a, ConstraintF, LeafH, P, TwoToOneH>
 where
     ConstraintF: Field,
     P: Config,
@@ -216,7 +216,7 @@ mod tests {
 
         // Construct the circuit which will prove the membership of leaf i
         let roots = forest.roots();
-        let circuit = MerkleProofCircuit::<Fq, HG, JubJubMerkleTreeParams, HG>::new(
+        let circuit = MerkleForestCircuit::<Fq, HG, JubJubMerkleTreeParams, HG>::new(
             &roots,
             &leaf_crh_params,
             &two_to_one_crh_params,

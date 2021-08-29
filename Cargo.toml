@@ -5,8 +5,6 @@ authors = ["Michael Rosenberg <michael@mrosenberg.pub>"]
 edition = "2018"
 license = "MIT/Apache-2.0"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 ark-bls12-381 = "0.3"
 ark-crypto-primitives = { version = "0.3", features = ["r1cs"], default-features = false }
@@ -14,7 +12,6 @@ ark-ec = "0.3"
 ark-ed-on-bls12-381 = { version = "0.3", features = ["r1cs"] }
 ark-ff = "0.3"
 ark-groth16 = "0.3"
-#ark-groth16 = { git = "https://github.com/rozbb/groth16.git", branch = "verif-preprocess" }
 ark-relations = "0.3"
 ark-r1cs-std = "0.3"
 ark-std = "0.3"
@@ -61,7 +58,7 @@ debug = true
 
 [lib]
 bench = false
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [[bench]]
 name = "bench"

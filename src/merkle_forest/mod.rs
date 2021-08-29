@@ -1,3 +1,6 @@
+pub mod constraints;
+pub use constraints::*;
+
 use ark_crypto_primitives::{
     merkle_tree::{Config, LeafParam, MerkleTree, TwoToOneDigest, TwoToOneParam},
     Error as ArkError,

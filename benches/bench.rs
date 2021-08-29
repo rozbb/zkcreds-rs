@@ -1,4 +1,4 @@
-use zeronym::constraints::MerkleProofCircuit;
+use zeronym::merkle_forest::MerkleForestCircuit;
 
 use ark_bls12_381::{Bls12_381 as E, Fr};
 use ark_crypto_primitives::{
@@ -187,7 +187,7 @@ where
             &mut rng,
         )
         .unwrap();
-        let param_gen_circuit = MerkleProofCircuit::<Fq, HG, C, HG>::new(
+        let param_gen_circuit = MerkleForestCircuit::<Fq, HG, C, HG>::new(
             &roots,
             &leaf_crh_params,
             &two_to_one_crh_params,
@@ -196,14 +196,14 @@ where
         );
         /* This doesn't work because you can't make a ZK PathVar
         let param_gen_circuit =
-            MerkleProofCircuit::<Fq, HG, JubJubMerkleTreeParams, HG>::new_placeholder(
+            MerkleForestCircuit::<Fq, HG, JubJubMerkleTreeParams, HG>::new_placeholder(
                 &forest, LEAF_SIZE,
             );
         */
         let pk = generate_random_parameters::<E, _, _>(param_gen_circuit, &mut rng).unwrap();
 
         // Construct the circuit which will prove the membership of leaf i, and prove it
-        let circuit = MerkleProofCircuit::<Fq, HG, C, HG>::new(
+        let circuit = MerkleForestCircuit::<Fq, HG, C, HG>::new(
             &roots,
             &leaf_crh_params,
             &two_to_one_crh_params,
@@ -309,5 +309,5 @@ fn bench_bowe_hopwood(c: &mut Criterion) {
     bench_with_hash::<JubJubMerkleTreeParams, HG>("Bowe-Hopwood", c);
 }
 
-criterion_group!(benches, bench_pedersen, bench_bowe_hopwood);
+criterion_group!(benches, /*bench_pedersen,*/ bench_bowe_hopwood);
 criterion_main!(benches);
