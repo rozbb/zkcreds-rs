@@ -27,15 +27,6 @@ use ark_std::{
 };
 use lazy_static::lazy_static;
 
-use wasm_bindgen::prelude::*;
-
-#[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(js_namespace = console)]
-    fn log(s: &str);
-}
-
-
 // Initialize the hashing parameters deterministically
 lazy_static! {
     static ref LEAF_PARAM: LeafParam<P> = {
@@ -163,25 +154,21 @@ impl ZkProof {
 /// Sets up the proving and verifying keys for the membership proofs. `log_capacity` is the height
 /// of the [`IssuanceList`] tree that will be used. That is, `2^log_capacity` is the number of
 /// commitments that can be stored in a single [`IssuanceList`].
-pub fn zk_proof_setup<R>(rng: &mut R, log_capacity: u32) -> (ZkProvingKey, ZkVerifyingKey)
+pub fn setup_zk_proof<R>(rng: &mut R, log_capacity: u32) -> (ZkProvingKey, ZkVerifyingKey)
 where
     R: Rng + CryptoRng,
-{   log("a");
+{
     let param_gen_circuit = ProofOfIssuanceCircuit::<P, Fr, HG, HG>::new_placeholder(
         log_capacity,
         LEAF_PARAM.clone(),
         TWO_TO_ONE_PARAM.clone(),
     );
-    log("b");
     let groth_pk = generate_random_parameters::<E, _, _>(param_gen_circuit, rng).unwrap();
-    log("c");
     let vk = ZkVerifyingKey(groth_pk.vk.clone());
-    log("d");
     let pk = ZkProvingKey {
         groth_pk,
         log_capacity,
     };
-    log("e");
 
     (pk, vk)
 }
@@ -349,7 +336,7 @@ fn test_api_correctness() {
     // Set up the RNG and CRS
     let mut rng = StdRng::from_entropy();
     let log_capacity: u32 = 32;
-    let (pk, vk) = zk_proof_setup(&mut rng, log_capacity);
+    let (pk, vk) = setup_zk_proof(&mut rng, log_capacity);
 
     // Client: Make a credential and commit to it. Send commitment to the list holder
     let cred = Cred::gen(&mut rng);

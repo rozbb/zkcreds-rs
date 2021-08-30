@@ -1,34 +1,25 @@
 <!DOCTYPE html>
 <html>
+<meta charset="UTF-8">
 <head>
     <title>Demo</title>
     <link rel="shortcut icon" href="#">
 </head>
 <body>
     <script type="module">
-        import init, { setup_zk_proof} from './pkg/zeronym.js';
+        import init, { zeronym_init, setup_zk_proof } from './pkg/zeronym.js';
             await init();
 
+            zeronym_init();
 
             let log_capacity = 32;
+            console.log("Generating CRS...");
             let json_pk_and_vk = setup_zk_proof(log_capacity);
+            console.log("...Done");
+            console.log("The CRS is:");
+            console.log(json_pk_and_vk);
            // let json_cred = cred_gen();
            // let json_com_and_comnonce = cred_commit(json_cred);
-
-
-
-
-
-
-        </script>
-        
-    </body>
-    </html>
-
-
-
-
-
-
-
-
+    </script>
+</body>
+</html>

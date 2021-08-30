@@ -11,19 +11,20 @@ ark-crypto-primitives = { version = "0.3", features = ["r1cs"], default-features
 ark-ec = "0.3"
 ark-ed-on-bls12-381 = { version = "0.3", features = ["r1cs"] }
 ark-ff = "0.3"
-ark-groth16 = "0.3"
+ark-groth16 = { version = "0.3", default-features = false }
 ark-relations = "0.3"
 ark-r1cs-std = "0.3"
 ark-std = "0.3"
 ark-serialize = "0.3"
 arkworks-gadgets = "0.3"
+base64 = "0.13"
 byteorder = "1.4"
+console_error_panic_hook = { version = "0.1.6" }
+getrandom = { version = "0.2", features = ["js"] }
 lazy_static = "1.4"
-rand_core = { version = "0.6", features = ["std"] }
-wasm-bindgen = "0.2"
-getrandom = { version = "0.2", features = ["js"] } 
-console_error_panic_hook = { version = "0.1.6", optional = true }
 rand = "0.8"
+rand_core = "0.6"
+wasm-bindgen = "0.2"
 
 [patch.crates-io.ark-crypto-primitives]
 git = "https://github.com/arkworks-rs/crypto-primitives.git"
@@ -33,7 +34,8 @@ rev = "3402a729b7104983c9779714ab8580de5187bbdd"
 features = ["r1cs"]
 
 [features]
-default = ["std", "console_error_panic_hook"]
+default = ["std", "no-wasm"]
+no-wasm = ["parallel", "asm"]
 asm = ["ark-ff/asm"]
 parallel = [
     "ark-crypto-primitives/parallel",
@@ -49,9 +51,9 @@ std = [
     "ark-std/std",
     "ark-ec/std",
     "ark-ff/std",
-    "ark-r1cs-std/std"
+    "ark-r1cs-std/std",
+    "rand_core/std"
 ]
-
 
 [dev-dependencies]
 ark-bls12-381 = { version = "0.3" }
