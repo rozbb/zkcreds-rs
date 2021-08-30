@@ -27,6 +27,15 @@ use ark_std::{
 };
 use lazy_static::lazy_static;
 
+use wasm_bindgen::prelude::*;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = console)]
+    fn log(s: &str);
+}
+
+
 // Initialize the hashing parameters deterministically
 lazy_static! {
     static ref LEAF_PARAM: LeafParam<P> = {
@@ -157,19 +166,22 @@ impl ZkProof {
 pub fn zk_proof_setup<R>(rng: &mut R, log_capacity: u32) -> (ZkProvingKey, ZkVerifyingKey)
 where
     R: Rng + CryptoRng,
-{
+{   log("a");
     let param_gen_circuit = ProofOfIssuanceCircuit::<P, Fr, HG, HG>::new_placeholder(
         log_capacity,
         LEAF_PARAM.clone(),
         TWO_TO_ONE_PARAM.clone(),
     );
+    log("b");
     let groth_pk = generate_random_parameters::<E, _, _>(param_gen_circuit, rng).unwrap();
-
+    log("c");
     let vk = ZkVerifyingKey(groth_pk.vk.clone());
+    log("d");
     let pk = ZkProvingKey {
         groth_pk,
         log_capacity,
     };
+    log("e");
 
     (pk, vk)
 }
