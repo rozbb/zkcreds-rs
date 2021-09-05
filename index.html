@@ -48,9 +48,11 @@
             let json_auth_path = get_path(json_global_list, 
                                      json_com_and_comnonce, 
                                      first_free_idx);
+            console.log("get_path done.");
             let json_membership_proof = get_proof(json_auth_path,
                                                   json_pk_and_vk,
                                                   json_com_and_comnonce);
+            console.log("get_proof done.");
             console.log("done.");
             console.log(json_auth_path);
             console.log(json_membership_proof);

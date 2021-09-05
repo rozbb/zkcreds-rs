@@ -135,12 +135,13 @@ pub fn get_path(
 ) -> JsValue {
     let global_list: IssuanceList = json_to_val(json_global_list);
     let (com, _): (Com, ComNonce) = json_to_pair(json_com_and_comnonce);
-
+    log("succesfully deseralized global_list and com");
     let auth_path = global_list
         .get_auth_path(first_free_idx, &com)
         .expect("couldn't get auth path");
+    log("succesfully got auth_path from global_list");
     let json_auth_path = val_to_json(&auth_path);
-
+    log("succesfully serialzed auth_path");
     json_auth_path
 }
 
@@ -153,13 +154,17 @@ pub fn get_proof(
     let mut rng = OsRng;
 
     let auth_path: AuthPath = json_to_val(json_auth_path);
+    log("succesfully deseralized auth_path");
     let (pk, _): (ZkProvingKey, ZkVerifyingKey) = json_to_pair(json_pk_and_vk);
+    log("succesfully deseralized public key");
     let opening = json_to_pair(json_com_and_comnonce);
-
+    log("succesfully deseralized opening");
     let membership_proof = auth_path
         .zk_prove(&mut rng, &pk, opening)
         .expect("couldn't prove membership");
+    log("succesfully got membership_proof from auth_path");
     let json_membership_proof = val_to_json(&membership_proof);
+    log("succesfully serialzed membership_proof");
 
     json_membership_proof
 }
