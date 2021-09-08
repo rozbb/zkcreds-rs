@@ -224,7 +224,7 @@ pub struct IssuanceList(SparseMerkleTree<P>);
 pub struct AuthPath(SparseMerkleTreePath<P>);
 /// The root node of the issuance merkle tree. This is all the input that's needed to verify a
 /// proof of membership.
-#[derive(CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct IssuanceListRoot(TwoToOneDigest<P>);
 
 impl IssuanceList {
@@ -352,6 +352,7 @@ fn test_api_correctness() {
     let auth_path = global_list
         .get_auth_path(first_free_idx, &com)
         .expect("couldn't get auth path");
+
     let opening = (cred, com_nonce);
     let mut membership_proof = auth_path
         .zk_prove(&mut rng, &pk, opening)

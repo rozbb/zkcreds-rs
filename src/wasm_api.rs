@@ -20,14 +20,15 @@ extern "C" {
 /// Returns the base64 encoding of the given serializable value
 fn val_to_str<S: CanonicalSerialize>(val: &S) -> String {
     let mut buf: Vec<u8> = Vec::new();
-    val.serialize(&mut buf).expect("serialization error");
+    val.serialize_uncompressed(&mut buf)
+        .expect("serialization error");
     base64::encode(&buf)
 }
 
 /// Returns the object corresponding to the inputted base64-encoded bytes
 fn str_to_val<D: CanonicalDeserialize>(s: &str) -> D {
     let bytes = base64::decode(s).expect("base64 decode error");
-    D::deserialize(&*bytes).expect("deserialization error")
+    D::deserialize_unchecked(&*bytes).expect("deserialization error")
 }
 
 /// Turns the given object into its JSON encoding
@@ -59,8 +60,10 @@ where
     let mut parts = concatenation.split(':');
 
     // Parse the two semicolon-separated parts
-    let val1 = str_to_val(parts.next().expect("expected first value in pair"));
-    let val2 = str_to_val(parts.next().expect("expected second value in pair"));
+    let str1 = parts.next().expect("expected first value in pair");
+    let str2 = parts.next().expect("expected second value in pair");
+    let val1 = str_to_val(str1);
+    let val2 = str_to_val(str2);
 
     (val1, val2)
 }
@@ -149,22 +152,21 @@ pub fn get_path(
 pub fn get_proof(
     json_auth_path: &JsValue,
     json_pk_and_vk: &JsValue,
+    json_cred: &JsValue,
     json_com_and_comnonce: &JsValue,
 ) -> JsValue {
     let mut rng = OsRng;
 
     let auth_path: AuthPath = json_to_val(json_auth_path);
+    let cred: Cred = json_to_val(json_cred);
     log("succesfully deseralized auth_path");
     let (pk, _): (ZkProvingKey, ZkVerifyingKey) = json_to_pair(json_pk_and_vk);
-    log("succesfully deseralized public key");
-    let opening = json_to_pair(json_com_and_comnonce);
-    log("succesfully deseralized opening");
+    let (_, com_nonce): (Com, ComNonce) = json_to_pair(json_com_and_comnonce);
     let membership_proof = auth_path
-        .zk_prove(&mut rng, &pk, opening)
+        .zk_prove(&mut rng, &pk, (cred, com_nonce))
         .expect("couldn't prove membership");
     log("succesfully got membership_proof from auth_path");
     let json_membership_proof = val_to_json(&membership_proof);
-    log("succesfully serialzed membership_proof");
 
     json_membership_proof
 }
@@ -180,9 +182,7 @@ pub fn verify(
     let membership_proof: ZkProof = json_to_val(json_membership_proof);
 
     let list_root = global_list.root();
-    let verified = api::zk_verify(&vk, &list_root, &membership_proof);
-
-    verified
+    api::zk_verify(&vk, &list_root, &membership_proof)
 }
 
 #[wasm_bindgen]
@@ -206,4 +206,46 @@ pub fn remove_from_list(json_global_list: &JsValue, inserted_cred_idx: u64) -> J
     let json_updated_global_list = val_to_json(&global_list);
 
     json_updated_global_list
+}
+
+#[wasm_bindgen]
+pub fn test_wasm_api_correctness() {
+    // Set up the RNG and CRS
+    let log_capacity: u32 = 32;
+    log("making CRS");
+    let pk_and_vk = setup_zk_proof(log_capacity);
+
+    // Client: Make a credential and commit to it. Send commitment to the list holder
+    let cred = cred_gen();
+    let com_and_com_nonce = cred_commit(&cred);
+
+    log("making list");
+
+    // Make a list and insert the commitment in a free space. Share the list with the world.
+    let first_free_idx = 0u64;
+    let global_list = create_list(log_capacity);
+    let global_list = insert_into_list(&global_list, &com_and_com_nonce, first_free_idx);
+    let inserted_cred_idx = first_free_idx;
+
+    log("making path");
+
+    // Client: Get the auth path in the list and use it to make a ZK proof
+    let auth_path = get_path(&global_list, &com_and_com_nonce, first_free_idx);
+
+    log("making proof");
+
+    let membership_proof = get_proof(&auth_path, &pk_and_vk, &cred, &com_and_com_nonce);
+    assert!(verify(&global_list, &pk_and_vk, &membership_proof));
+
+    log("randomizing proof");
+
+    // Rerandomize the proof and verify again
+    let membership_proof = randomize(&pk_and_vk, &membership_proof);
+    assert!(verify(&global_list, &pk_and_vk, &membership_proof));
+
+    log("making non-proof");
+
+    // Now remove the credential from the list and ensure that the proof no longer works
+    let global_list = remove_from_list(&global_list, inserted_cred_idx);
+    assert!(!verify(&global_list, &pk_and_vk, &membership_proof));
 }
