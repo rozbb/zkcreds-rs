@@ -19,7 +19,8 @@
             init,
             {
                 zeronym_init, setup_zk_proof, cred_gen, cred_commit, create_list,
-                insert_into_list, get_path, get_proof, verify, test_wasm_api_correctness, randomize
+                insert_into_list, get_path, get_proof, verify, test_wasm_api_correctness, randomize,
+                remove_from_list
             }
         from './pkg/zeronym.js';
 
@@ -27,11 +28,12 @@
         zeronym_init();
 
         //test_wasm_api_correctness();
+        //console.log("test_wasm_api_correctness");
 
         console.log("Generating public and virtual key:");
         let log_capacity = 32;
-        //let json_pk_and_vk = await get_precomputed_val("json_pk_and_vk.txt");
-        let json_pk_and_vk = setup_zk_proof(log_capacity);
+        let json_pk_and_vk = await get_precomputed_val("json_pk_and_vk.txt");
+        //let json_pk_and_vk = setup_zk_proof(log_capacity);
         console.log("done.");
         console.log(json_pk_and_vk);
 
@@ -45,7 +47,7 @@
         console.log(json_com_and_comnonce);
 
         console.log("Making a list and inserting it:");
-        let first_free_idx = BigInt(0);
+        let first_free_idx = 0;
         let inserted_cred_idx = first_free_idx;
         //let json_global_list = await get_precomputed_val("json_global_list.txt");
         let json_global_list = create_list(log_capacity);
@@ -57,7 +59,7 @@
         console.log("done.");
         console.log(json_global_list);
 
-        console.log("Getting the auth path and creating a ZK proof:")
+        console.log("Getting the auth path and creating a ZK proof:");
         let json_auth_path = get_path(
             json_global_list,
             json_com_and_comnonce,
@@ -97,6 +99,7 @@
 
         console.log("Remove credential and verify proof NOT valid:");
         json_global_list = remove_from_list(json_global_list, inserted_cred_idx);
+        console.log("credential removed");
         console.assert(
             !verify(
                 json_global_list,
@@ -104,7 +107,7 @@
                 json_membership_proof,
             )
         );
-        console.log("done.")
+        console.log("done.");
 
         console.log("yayyyyyy");
     </script>

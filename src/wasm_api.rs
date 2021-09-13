@@ -119,12 +119,12 @@ pub fn create_list(log_capacity: u32) -> JsValue {
 pub fn insert_into_list(
     json_global_list: &JsValue,
     json_com_and_comnonce: &JsValue,
-    first_free_idx: u64,
+    first_free_idx: u32,
 ) -> JsValue {
     let mut global_list: IssuanceList = json_to_val(json_global_list);
     let (com, _): (api::Com, api::ComNonce) = json_to_pair(json_com_and_comnonce);
 
-    global_list.insert(first_free_idx, &com);
+    global_list.insert(first_free_idx.into(), &com);
     let json_updated_global_list = val_to_json(&global_list);
 
     json_updated_global_list
@@ -134,13 +134,13 @@ pub fn insert_into_list(
 pub fn get_path(
     json_global_list: &JsValue,
     json_com_and_comnonce: &JsValue,
-    first_free_idx: u64,
+    first_free_idx: u32,
 ) -> JsValue {
     let global_list: IssuanceList = json_to_val(json_global_list);
     let (com, _): (Com, ComNonce) = json_to_pair(json_com_and_comnonce);
     log("succesfully deseralized global_list and com");
     let auth_path = global_list
-        .get_auth_path(first_free_idx, &com)
+        .get_auth_path(first_free_idx.into(), &com)
         .expect("couldn't get auth path");
     log("succesfully got auth_path from global_list");
     let json_auth_path = val_to_json(&auth_path);
@@ -199,10 +199,10 @@ pub fn randomize(json_pk_and_vk: &JsValue, json_membership_proof: &JsValue) -> J
 }
 
 #[wasm_bindgen]
-pub fn remove_from_list(json_global_list: &JsValue, inserted_cred_idx: u64) -> JsValue {
+pub fn remove_from_list(json_global_list: &JsValue, inserted_cred_idx: u32) -> JsValue {
     let mut global_list: IssuanceList = json_to_val(json_global_list);
 
-    global_list.remove(inserted_cred_idx);
+    global_list.remove(inserted_cred_idx.into());
     let json_updated_global_list = val_to_json(&global_list);
 
     json_updated_global_list
@@ -222,7 +222,7 @@ pub fn test_wasm_api_correctness() {
     log("making list");
 
     // Make a list and insert the commitment in a free space. Share the list with the world.
-    let first_free_idx = 0u64;
+    let first_free_idx = 0u32;
     let global_list = create_list(log_capacity);
     let global_list = insert_into_list(&global_list, &com_and_com_nonce, first_free_idx);
     let inserted_cred_idx = first_free_idx;
