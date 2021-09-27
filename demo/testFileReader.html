@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>resttest html shi</title>
+    <link rel="shortcut icon" href="#">
+</head>
+<body>
+
+    <label> Upload ___.txt: <br> <input type="file" id="doc"> </label><br>
+    <button  name="submit" id="read">Read the uploaded file.</button>
+     <button  name="submit" id="log">Log the read file.</button>
+
+
+
+    <script type="module">
+
+        var theCode = "initialization value :(";
+
+
+        async function get_precomputed_val() {
+            const res = document.getElementById("doc").files[0];
+            const str = await res.text();
+            theCode = str;
+        }
+
+        document.getElementById("read").addEventListener("click", get_precomputed_val);
+
+        document.getElementById("log").addEventListener("click", function() {
+            console.log(theCode);
+        });
+
+
+
+      
+    </script>
+</body>
+</html>
