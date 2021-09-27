@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<meta charset="UTF-8">
+<head>
+    <title>Demo-Observer</title>
+    <link rel="shortcut icon" href="#">
+</head>
+<body>
+    <h3>Observer</h3>
+
+    <h4>Verify</h4>
+    <h5> Inputs </h5>
+      Global List:<br>
+      <textarea id="global_list" rows="5" cols="50"></textarea><br>
+      Membership Proof:<br>
+      <textarea id="membership_proof" rows="5" cols="50"></textarea><br>
+      Public and Verifying Keys: (upload pk_and_vk.txt here)<br>
+      <input type="file" id="pk_and_vk"><br>
+
+      <br><button type="button" id="verify">Verify</button><br>
+
+    <hr>
+    <script type="module">
+        var json_pk_and_vk = "";
+        var json_cred = "";
+        var json_com_and_comnonce = "";
+        var json_global_list = "";
+        var json_auth_path = "";
+        var json_membership_proof = "";
+
+        import
+            init,
+            {
+                zeronym_init, verify
+            }
+        from './zeronym.js';
+
+        await init();
+        zeronym_init();
+
+
+        async function set_pk_and_vk() {
+            const res = document.getElementById("pk_and_vk").files[0];
+            const str = await res.text();
+            json_pk_and_vk = str;
+        }
+
+        document.getElementById("verify").addEventListener("click", function() {
+            set_pk_and_vk();
+
+            json_global_list = document.getElementById("global_list").value;
+
+            json_membership_proof = document.getElementById("membership_proof").value;
+
+            var verified = verify(
+                json_global_list,
+                json_pk_and_vk,
+                json_membership_proof,
+            );
+
+            if (verified) {
+                alert("Proof is valid");
+            } else {
+                alert("Proof is INvalid");
+            }
+        });
+
+        
+    </script>
+</body>
+</html>

@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8" />
+  <title>Demo-User</title>
+  <link rel="shortcut icon" href="#">
+</head>
+
+
+<body>
+  <h3>User</h3>
+  
+  <h4>Step 1 : Credentials</h4>
+      Serialized Credential:<br>
+      <textarea id="cred" rows="5" cols="50"></textarea><br>
+      <button type="button" id="cred_gen">Generate Credential</button><br>
+      <br>
+      Serialized Commit:<br>
+      <textarea id="com_and_comnonce" rows="5" cols="50"></textarea><br>
+      <button type="button" id="cred_commit">Commit Credential</button>
+  <hr>
+
+  <h4>Step 3 : Creating Membership Proof</h4>
+      <h5> Inputs </h5>
+      Global List:<br>
+      <textarea id="global_list_in" rows="5" cols="50"></textarea><br>
+      Public and Verifying Keys: (upload pk_and_vk.txt here)<br>
+      <input type="file" id="pk_and_vk_proof"><br>
+
+      <br><button type="button" id="get_path_and_proof">Get Proof</button><br>
+
+      <h5> Output </h5>
+      Membership Proof: <br>
+      <textarea id="membership_proof" rows="5" cols="50"></textarea>
+  <hr>
+
+  <h4>Step 4 : Remove from List</h4>
+      <h5> Inputs </h5>
+      Global List:<br>
+      <textarea id="global_list_in_rmv" rows="5" cols="50"></textarea><br>
+
+      <br><button type="button" id="get_path_and_proof">Remove from List</button><br>
+
+      <h5> Output </h5>
+      Global List: <br>
+      <textarea id="global_list_out_rmv" rows="5" cols="50"></textarea>
+  <hr>
+
+
+
+  <script type="module">
+
+      var json_pk_and_vk = "";
+      var json_cred = "";
+      var json_com_and_comnonce = "";
+      var json_global_list = "";
+      var json_auth_path = "";
+      var json_membership_proof = "";
+
+      import
+        init,
+        {
+            zeronym_init, setup_zk_proof, cred_gen, cred_commit, create_list,
+            insert_into_list, get_path, get_proof, verify, test_wasm_api_correctness, randomize,
+            remove_from_list
+        }
+      from './zeronym.js';
+
+      await init();
+      zeronym_init();
+
+      //STEP 1
+
+      document.getElementById("cred_gen").addEventListener("click", function() {
+        json_cred = cred_gen();
+        document.getElementById("cred").value = json_cred; 
+      });
+
+      document.getElementById("cred_commit").addEventListener("click", function() {
+        json_com_and_comnonce = cred_commit(json_cred);
+        document.getElementById("com_and_comnonce").value = json_com_and_comnonce;
+      });
+
+
+      //STEP 3
+
+      async function set_pk_and_vk() {
+            const res = document.getElementById("pk_and_vk_proof").files[0];
+            const str = await res.text();
+            json_pk_and_vk = str.trim();
+            console.log(json_pk_and_vk);
+        }
+
+      document.getElementById("get_path_and_proof").addEventListener("click", function() {
+        set_pk_and_vk();
+        json_global_list = document.getElementById("global_list_in").value;
+        json_auth_path = get_path(
+            json_global_list,
+            json_com_and_comnonce,
+            0,
+        );
+        console.log("got auth path");
+
+        json_membership_proof = get_proof(
+            json_auth_path,
+            json_pk_and_vk,
+            json_cred,
+            json_com_and_comnonce,
+            json_global_list,
+        );
+
+        document.getElementById("membership_proof").value =  json_membership_proof;
+      });
+
+
+      //STEP 4
+
+      document.getElementById("get_path_and_proof").addEventListener("click", function() {
+        json_global_list = document.getElementById("global_list_in_rmv").value;
+        json_global_list = remove_from_list(json_global_list, 0);
+
+        document.getElementById("global_list_out_rmv").value = json_global_list;
+      });
+      
+
+
+
+    
+
+
+
+
+
+
+
+  </script>
+</body>
+
+</html>
