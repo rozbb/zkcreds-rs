@@ -4,6 +4,11 @@
 <head>
     <title>Demo</title>
     <link rel="shortcut icon" href="#">
+    <style>
+    *{
+      white-space: pre-wrap;
+    }
+  </style>
 </head>
 <body>
     <script type="module">
@@ -29,6 +34,7 @@
 
         //test_wasm_api_correctness();
         //console.log("test_wasm_api_correctness");
+
 
         console.log("Generating public and virtual key:");
         let log_capacity = 32;
@@ -73,7 +79,7 @@
         console.log("json_auth_path");
         console.log(json_auth_path);
 
-        
+
         let json_membership_proof = get_proof(
             json_auth_path,
             json_pk_and_vk,

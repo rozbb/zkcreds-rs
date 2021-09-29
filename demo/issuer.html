@@ -5,8 +5,12 @@
   <meta charset="utf-8" />
   <title>Demo-Issuer</title>
   <link rel="shortcut icon" href="#">
+  <style>
+    textarea{
+      white-space: pre-wrap;
+    }
+  </style>
 </head>
-
 
 <body>
   <h3>Issuer</h3>
@@ -81,6 +85,7 @@
 
     function download(filename, text) {
       var element = document.createElement('a');
+      text = text.replace(/\r\n?/g, '%0D%0A');
       element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(text));
       element.setAttribute('download', filename);
 

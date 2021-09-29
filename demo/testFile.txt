@@ -1,0 +1,4 @@
+test 
+string 
+with 
+newlines

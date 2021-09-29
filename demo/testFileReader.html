@@ -8,14 +8,24 @@
 <body>
 
     <label> Upload ___.txt: <br> <input type="file" id="doc"> </label><br>
-    <button  name="submit" id="read">Read the uploaded file.</button>
-     <button  name="submit" id="log">Log the read file.</button>
+
+    <button  name="submit" id="read">Read the uploaded file.</button><br>
+    <button  name="submit" id="log">Log the read file.</button><br>
+    <button  name="submit" id="dwnld">Download.</button><br>
+    <button  name="submit" id="test">Test.</button><br>
+
+
+
 
 
 
     <script type="module">
 
-        var theCode = "initialization value :(";
+
+        var theCode = "test \nstring \nwith \nnewlines";
+        var text = "test \nstring \nwith \nnewlines";
+
+
 
 
         async function get_precomputed_val() {
@@ -29,6 +39,29 @@
         document.getElementById("log").addEventListener("click", function() {
             console.log(theCode);
         });
+
+        document.getElementById("dwnld").addEventListener("click", function() {
+            download("file.txt", text);
+        });
+
+        document.getElementById("test").addEventListener("click", function() {
+            var same = (text == theCode);
+            alert(same);
+        });
+
+
+    function download(filename, text) {
+      var element = document.createElement('a');
+      element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(text));
+      element.setAttribute('download', filename);
+
+      element.style.display = 'none';
+      document.body.appendChild(element);
+
+      element.click();
+
+      document.body.removeChild(element);
+    }
 
 
 
