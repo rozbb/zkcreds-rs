@@ -13,7 +13,7 @@ use ark_std::{
 };
 
 /// The bytelength of our attribute strings
-pub(crate) const ATTR_STRING_LEN: usize = 16;
+pub(crate) const ATTR_STRING_LEN: usize = 31;
 
 #[derive(Clone)]
 pub struct AttrString(pub [u8; ATTR_STRING_LEN]);

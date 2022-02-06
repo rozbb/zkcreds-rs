@@ -160,7 +160,7 @@ mod test {
     use ark_bls12_381::Fr;
     use ark_relations::r1cs::ConstraintSystem;
     use arkworks_gadgets::setup::common::{
-        setup_params_x5_3 as setup_params, Curve, PoseidonRounds_x5_3 as PoseidonRounds,
+        setup_params_x5_5 as setup_params, Curve, PoseidonRounds_x5_3 as PoseidonRounds,
     };
 
     #[test]
