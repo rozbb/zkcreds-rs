@@ -1,4 +1,4 @@
-use crate::common::{Credential, CredentialVar, CRED_SIZE};
+use crate::common::{AttrString, AttrStringVar, ATTR_STRING_LEN};
 
 use core::{cmp::Ordering, marker::PhantomData};
 use std::io::Write;
@@ -30,14 +30,14 @@ where
     // Public inputs //
     /// The nonce associated to this presentation
     presentation_nonce: ConstraintF,
-    /// Number of times this credential can be shown
+    /// Number of times this attrribute string can be shown
     max_num_presentations: u16,
 
     // Private inputs //
-    /// The user's credential
-    cred: Option<Credential>,
-    /// The counter representing the number of times this credential has been shown so far (begins
-    /// at 0)
+    /// The user's attribute string
+    attrs: Option<AttrString>,
+    /// The counter representing the number of times this attribute string has been shown so far
+    /// (begins at 0)
     counter: Option<u16>,
 
     // Constants //
@@ -53,7 +53,7 @@ where
 {
     pub fn new(
         presentation_nonce: ConstraintF,
-        cred: Credential,
+        attrs: AttrString,
         counter: u16,
         max_num_presentations: u16,
         params: PoseidonParameters<ConstraintF>,
@@ -61,7 +61,7 @@ where
         MultishowCircuit {
             presentation_nonce,
             max_num_presentations,
-            cred: Some(cred),
+            attrs: Some(attrs),
             counter: Some(counter),
             params,
             _rounds: PhantomData,
@@ -83,17 +83,17 @@ where
         let max_num_presentations_var = {
             // Convert the u16 to a field element first. Then witness it.
             let n: ConstraintF = self.max_num_presentations.into();
-            FpVar::new_input(ns!(cs, "max_num_presentations param"), || Ok(n.clone()))?
+            FpVar::new_input(ns!(cs, "max_num_presentations param"), || Ok(n))?
         };
 
-        // Witness the nonce, credential, and counter
+        // Witness the nonce, attrs, and counter
         let presentation_nonce_var =
             FpVar::<ConstraintF>::new_input(ns!(cs, "nonce input"), || {
                 Ok(&self.presentation_nonce)
             })?;
-        // Convert the credential bytes to a field element
-        let cred_var = CredentialVar::new_witness(ns!(cs, "cred wit"), || {
-            self.cred.as_ref().ok_or(SynthesisError::AssignmentMissing)
+        // Convert the attribute string bytes to a field element
+        let attrs_var = AttrStringVar::new_witness(ns!(cs, "attrs wit"), || {
+            self.attrs.as_ref().ok_or(SynthesisError::AssignmentMissing)
         })?;
         let counter_var = {
             // Convert the u16 to a field element first. Then witness it
@@ -111,12 +111,12 @@ where
         // Assert that counter < max_num_presentations
         counter_var.enforce_cmp(&max_num_presentations_var, Ordering::Less, false)?;
 
-        // Finally, assert presentation_nonce == H(cred, counter, n)
+        // Finally, assert presentation_nonce == H(attrs, counter, n)
         let hash = {
             // Only use the first two bytes of the counter. This is legal because already checked
             // that counter < max_num_presentations, and n: u16 is a public input.
             let counter_bytes_var = counter_var.to_bytes()?;
-            let hash_input = &[&cred_var.to_bytes()?, &counter_bytes_var[..2]].concat();
+            let hash_input = &[&attrs_var.to_bytes()?, &counter_bytes_var[..2]].concat();
 
             println!(
                 "hash var input {:x?}",
@@ -134,19 +134,19 @@ where
 
 pub fn compute_presentation_nonce<F, P>(
     params: &PoseidonParameters<F>,
-    cred: &Credential,
+    attrs: &AttrString,
     counter: u16,
 ) -> Result<F, ArkError>
 where
     F: PrimeField,
     P: PoseidonRounds,
 {
-    let mut hash_input = [0u8; CRED_SIZE + 2];
+    let mut hash_input = [0u8; ATTR_STRING_LEN + 2];
     let mut buf = &mut hash_input[..];
 
-    // Presentation nonce is H(cred, counter, n)
-    buf.write_all(&to_bytes!(cred).unwrap())
-        .expect("couldn't write cred to buf");
+    // Presentation nonce is H(attrs, counter, n)
+    buf.write_all(&to_bytes!(attrs).unwrap())
+        .expect("couldn't write attrs to buf");
     buf.write_u16::<LittleEndian>(counter)
         .expect("couldn't write show counter to buf");
 
@@ -164,21 +164,21 @@ mod test {
     };
 
     #[test]
-    fn test_show_cred() {
+    fn test_show_attrs() {
         let mut rng = ark_std::test_rng();
 
         let params = setup_params::<Fr>(Curve::Bls381);
-        let cred = Credential::gen(&mut rng);
+        let attrs = AttrString::gen(&mut rng);
         let counter = 1u16;
         let max_num_presentations = 128u16;
 
         let presentation_nonce =
-            compute_presentation_nonce::<_, PoseidonRounds>(&params, &cred, counter).unwrap();
+            compute_presentation_nonce::<_, PoseidonRounds>(&params, &attrs, counter).unwrap();
 
         let cs = ConstraintSystem::<Fr>::new_ref();
         let circuit = MultishowCircuit::<_, PoseidonRounds>::new(
             presentation_nonce,
-            cred,
+            attrs,
             counter,
             max_num_presentations,
             params,

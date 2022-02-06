@@ -1,5 +1,5 @@
 use crate::{
-    common::Credential,
+    common::AttrString,
     proof_of_issuance::ProofOfIssuanceCircuit,
     sparse_merkle::{SparseMerkleTree, SparseMerkleTreePath, TwoToOneDigest},
     Error,
@@ -9,11 +9,15 @@ use std::collections::BTreeMap;
 
 use ark_bls12_381::{Bls12_381, Fr};
 use ark_crypto_primitives::{
+    commitment::{self, pedersen::Parameters as CommitmentParameters, CommitmentScheme},
     crh::{bowe_hopwood, pedersen, TwoToOneCRH, CRH},
     merkle_tree::{Config as TreeConfig, LeafParam, TwoToOneParam},
 };
-use ark_ed_on_bls12_381::{constraints::FqVar, EdwardsParameters};
-use ark_ff::{to_bytes, ToBytes, ToConstraintField};
+use ark_ed_on_bls12_381::{
+    constraints::{EdwardsVar as JubjubVar, FqVar},
+    EdwardsParameters, EdwardsProjective as Jubjub,
+};
+use ark_ff::{ToBytes, ToConstraintField, UniformRand};
 use ark_groth16::{
     generator::generate_random_parameters,
     prover::{create_random_proof, rerandomize_proof},
@@ -33,16 +37,25 @@ lazy_static! {
         let mut rng = {
             let mut seed = [0u8; 32];
             let mut writer = &mut seed[..];
-            writer.write(b"zeronym-leaf-hash-param").unwrap();
+            writer.write_all(b"zeronym-leaf-hash-param").unwrap();
             StdRng::from_seed(seed)
         };
         <<P as TreeConfig>::LeafHash as CRH>::setup(&mut rng).unwrap()
+    };
+    static ref COM_PARAM: CommitmentParameters<Jubjub> = {
+        let mut rng = {
+            let mut seed = [0u8; 32];
+            let mut writer = &mut seed[..];
+            writer.write_all(b"zeronym-commitment-param").unwrap();
+            StdRng::from_seed(seed)
+        };
+        commitment::pedersen::Commitment::<Jubjub, CommitmentWindow>::setup(&mut rng).unwrap()
     };
     static ref TWO_TO_ONE_PARAM: TwoToOneParam<P> = {
         let mut rng = {
             let mut seed = [0u8; 32];
             let mut writer = &mut seed[..];
-            writer.write(b"zeronym-two-to-one-hash-param").unwrap();
+            writer.write_all(b"zeronym-two-to-one-hash-param").unwrap();
             StdRng::from_seed(seed)
         };
         <<P as TreeConfig>::TwoToOneHash as TwoToOneCRH>::setup(&mut rng).unwrap()
@@ -64,7 +77,17 @@ impl pedersen::Window for TwoToOneWindow {
 pub struct LeafWindow;
 impl pedersen::Window for LeafWindow {
     const WINDOW_SIZE: usize = 63;
-    const NUM_WINDOWS: usize = 2;
+    const NUM_WINDOWS: usize = 3;
+}
+
+/// The Pedersen parameters for the attribute set commitment scheme
+#[derive(Clone)]
+pub struct CommitmentWindow;
+impl pedersen::Window for CommitmentWindow {
+    const WINDOW_SIZE: usize = 63;
+    // This can be smaller than 8, but the program panics if it's not divisible by 8. Tracking
+    // issue here: https://github.com/arkworks-rs/crypto-primitives/issues/76
+    const NUM_WINDOWS: usize = 8;
 }
 
 // Size params for the whole merkle tree
@@ -80,6 +103,11 @@ type TwoToOneH = bowe_hopwood::CRH<EdwardsParameters, TwoToOneWindow>;
 type HG = bowe_hopwood::constraints::CRHGadget<EdwardsParameters, FqVar>;
 type E = Bls12_381;
 type P = JubJubMerkleTreeParams;
+/// A commitment to an `AttrString`
+#[derive(CanonicalSerialize, CanonicalDeserialize, Default)]
+pub struct Com(<ComScheme as CommitmentScheme>::Output);
+/// The opening to an attribute string commitment
+pub struct ComNonce(<ComScheme as CommitmentScheme>::Randomness);
 
 // This is so that IssuanceList is serializable
 impl CanonicalSerialize for SparseMerkleTree<P> {
@@ -158,11 +186,13 @@ pub fn setup_zk_proof<R>(rng: &mut R, log_capacity: u32) -> (ZkProvingKey, ZkVer
 where
     R: Rng + CryptoRng,
 {
-    let param_gen_circuit = ProofOfIssuanceCircuit::<P, Fr, HG, HG>::new_placeholder(
-        log_capacity,
-        LEAF_PARAM.clone(),
-        TWO_TO_ONE_PARAM.clone(),
-    );
+    let param_gen_circuit =
+        ProofOfIssuanceCircuit::<ComScheme, ComGadget, P, Fr, HG, HG>::new_placeholder(
+            log_capacity,
+            LEAF_PARAM.clone(),
+            TWO_TO_ONE_PARAM.clone(),
+            COM_PARAM.clone(),
+        );
     let groth_pk = generate_random_parameters::<E, _, _>(param_gen_circuit, rng).unwrap();
     let vk = ZkVerifyingKey(groth_pk.vk.clone());
     let pk = ZkProvingKey {
@@ -174,44 +204,30 @@ where
 }
 
 // Wrapper structs for the sake of a simple API
-/// A commitment to a `Cred`
-#[derive(CanonicalSerialize, CanonicalDeserialize, Default)]
-pub struct Com(TwoToOneDigest<P>);
-/// A secret credential
-#[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct Cred(Credential);
-/// The opening to a credential commitment
-#[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct ComNonce(Credential);
+type ComScheme = commitment::pedersen::Commitment<Jubjub, CommitmentWindow>;
+type ComGadget = commitment::pedersen::constraints::CommGadget<Jubjub, JubjubVar, CommitmentWindow>;
+
+impl AttrString {
+    /// Commit to this credential, getting a commitment and an opening nonce
+    pub fn commit<R>(&self, rng: &mut R) -> Result<(Com, ComNonce), Error>
+    where
+        R: Rng + CryptoRng,
+    {
+        let nonce = <ComScheme as CommitmentScheme>::Randomness::rand(rng);
+        let com = <ComScheme as CommitmentScheme>::commit(&COM_PARAM, &self.0, &nonce)?;
+
+        Ok((Com(com), ComNonce(nonce)))
+    }
+}
 
 impl ToBytes for Com {
     fn write<W: Write>(&self, writer: W) -> IoResult<()> {
         self.0.write(writer)
     }
 }
-
-impl Cred {
-    /// Make a new random credential
-    pub fn gen<R>(rng: &mut R) -> Self
-    where
-        R: Rng + CryptoRng,
-    {
-        Cred(Credential::gen(rng))
-    }
-
-    /// Commit to this credential, getting a commitment and an opening nonce
-    pub fn commit<R>(&self, rng: &mut R) -> Result<(Com, ComNonce), Error>
-    where
-        R: Rng + CryptoRng,
-    {
-        let nonce = Credential::gen(rng);
-        let com = <<P as TreeConfig>::TwoToOneHash as TwoToOneCRH>::evaluate(
-            &*TWO_TO_ONE_PARAM,
-            &to_bytes!(self.0)?,
-            &to_bytes!(nonce)?,
-        )?;
-
-        Ok((Com(com), ComNonce(nonce)))
+impl ToBytes for ComNonce {
+    fn write<W: Write>(&self, writer: W) -> IoResult<()> {
+        self.0.write(writer)
     }
 }
 
@@ -295,20 +311,21 @@ impl AuthPath {
         &self,
         rng: &mut R,
         pk: &ZkProvingKey,
-        opening: (Cred, ComNonce),
+        opening: (AttrString, ComNonce),
     ) -> Result<ZkProof, Error>
     where
         R: Rng + CryptoRng,
     {
-        let (cred, nonce) = opening;
+        let (attrs, nonce) = opening;
         let root_hash = self.0.root(&*TWO_TO_ONE_PARAM)?;
 
-        let circuit = ProofOfIssuanceCircuit::<P, Fr, HG, HG>::new(
+        let circuit = ProofOfIssuanceCircuit::<ComScheme, ComGadget, P, Fr, HG, HG>::new(
             pk.log_capacity,
             LEAF_PARAM.clone(),
             TWO_TO_ONE_PARAM.clone(),
+            COM_PARAM.clone(),
             root_hash,
-            (cred.0, nonce.0),
+            (attrs, nonce.0),
             self.0.clone(),
         );
 
@@ -338,9 +355,9 @@ fn test_api_correctness() {
     let log_capacity: u32 = 32;
     let (pk, vk) = setup_zk_proof(&mut rng, log_capacity);
 
-    // Client: Make a credential and commit to it. Send commitment to the list holder
-    let cred = Cred::gen(&mut rng);
-    let (com, com_nonce) = cred.commit(&mut rng).expect("couldn't commit to cred");
+    // Client: Make some attributes and commit to it. Send commitment to the list holder
+    let attrs = AttrString::gen(&mut rng);
+    let (com, com_nonce) = attrs.commit(&mut rng).expect("couldn't commit to cred");
 
     // Make a list and insert the commitment in a free space. Share the list with the world.
     let first_free_idx = 0u64;
@@ -353,7 +370,7 @@ fn test_api_correctness() {
         .get_auth_path(first_free_idx, &com)
         .expect("couldn't get auth path");
 
-    let opening = (cred, com_nonce);
+    let opening = (attrs, com_nonce);
     let start = std::time::Instant::now();
     let mut membership_proof = auth_path
         .zk_prove(&mut rng, &pk, opening)

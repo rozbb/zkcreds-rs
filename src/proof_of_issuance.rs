@@ -1,10 +1,11 @@
 use crate::{
-    common::{Credential, CredentialVar},
+    common::{AttrString, AttrStringVar},
     sparse_merkle::{constraints::SparseMerkleTreePathVar, SparseMerkleTreePath, TwoToOneDigest},
 };
 use core::marker::PhantomData;
 
 use ark_crypto_primitives::{
+    commitment::{constraints::CommitmentGadget, CommitmentScheme},
     crh::constraints::{CRHGadget, TwoToOneCRHGadget},
     merkle_tree::{Config as TreeConfig, LeafParam, TwoToOneParam},
 };
@@ -15,13 +16,12 @@ use ark_relations::{
     r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError},
 };
 
-/// The randomness used to commit to a credential
-type ComNonce = Credential;
-
-/// A circuit that proves that a commitment to `cred` appears in the merkle tree of height `height`
+/// A circuit that proves that a commitment to `attrs` appears in the merkle tree of height `height`
 /// defined by root hash `root`.
-pub struct ProofOfIssuanceCircuit<P, ConstraintF, LeafH, TwoToOneH>
+pub struct ProofOfIssuanceCircuit<C, CG, P, ConstraintF, LeafH, TwoToOneH>
 where
+    C: CommitmentScheme,
+    CG: CommitmentGadget<C, ConstraintF>,
     ConstraintF: PrimeField,
     LeafH: CRHGadget<P::LeafHash, ConstraintF>,
     TwoToOneH: TwoToOneCRHGadget<P::TwoToOneHash, ConstraintF>,
@@ -31,24 +31,28 @@ where
     height: u32,
     leaf_param: LeafParam<P>,
     two_to_one_param: TwoToOneParam<P>,
+    com_param: C::Parameters,
 
     // Public inputs //
     root: TwoToOneDigest<P>,
 
     // Private inputs //
-    /// The credential
-    cred: Option<Credential>,
+    /// The attrs
+    attrs: Option<AttrString>,
     /// The opening of the commitment
-    com_nonce: Option<ComNonce>,
+    com_nonce: Option<C::Randomness>,
     /// Merkle auth path
     path: Option<SparseMerkleTreePath<P>>,
 
     // Marker //
-    _marker: PhantomData<(ConstraintF, LeafH, TwoToOneH)>,
+    _marker: PhantomData<(ConstraintF, C, CG, LeafH, TwoToOneH)>,
 }
 
-impl<P, ConstraintF, LeafH, TwoToOneH> ProofOfIssuanceCircuit<P, ConstraintF, LeafH, TwoToOneH>
+impl<C, CG, P, ConstraintF, LeafH, TwoToOneH>
+    ProofOfIssuanceCircuit<C, CG, P, ConstraintF, LeafH, TwoToOneH>
 where
+    C: CommitmentScheme,
+    CG: CommitmentGadget<C, ConstraintF>,
     ConstraintF: PrimeField,
     LeafH: CRHGadget<P::LeafHash, ConstraintF>,
     TwoToOneH: TwoToOneCRHGadget<P::TwoToOneHash, ConstraintF>,
@@ -58,16 +62,18 @@ where
         height: u32,
         leaf_param: LeafParam<P>,
         two_to_one_param: TwoToOneParam<P>,
+        com_param: C::Parameters,
         root: TwoToOneDigest<P>,
-        opening: (Credential, ComNonce),
+        opening: (AttrString, C::Randomness),
         path: SparseMerkleTreePath<P>,
     ) -> Self {
         ProofOfIssuanceCircuit {
             height,
             leaf_param,
             two_to_one_param,
+            com_param,
             root,
-            cred: Some(opening.0),
+            attrs: Some(opening.0),
             com_nonce: Some(opening.1),
             path: Some(path),
             _marker: PhantomData,
@@ -79,13 +85,15 @@ where
         height: u32,
         leaf_param: LeafParam<P>,
         two_to_one_param: TwoToOneParam<P>,
+        com_param: C::Parameters,
     ) -> Self {
         ProofOfIssuanceCircuit {
             height,
             leaf_param,
             two_to_one_param,
+            com_param,
             root: Default::default(),
-            cred: None,
+            attrs: None,
             com_nonce: None,
             path: None,
             _marker: PhantomData,
@@ -93,9 +101,11 @@ where
     }
 }
 
-impl<P, ConstraintF, LeafH, TwoToOneH> ConstraintSynthesizer<ConstraintF>
-    for ProofOfIssuanceCircuit<P, ConstraintF, LeafH, TwoToOneH>
+impl<C, CG, P, ConstraintF, LeafH, TwoToOneH> ConstraintSynthesizer<ConstraintF>
+    for ProofOfIssuanceCircuit<C, CG, P, ConstraintF, LeafH, TwoToOneH>
 where
+    C: CommitmentScheme,
+    CG: CommitmentGadget<C, ConstraintF>,
     ConstraintF: PrimeField,
     LeafH: CRHGadget<P::LeafHash, ConstraintF>,
     TwoToOneH: TwoToOneCRHGadget<P::TwoToOneHash, ConstraintF>,
@@ -112,15 +122,16 @@ where
             ns!(cs, "two_to_one param"),
             &self.two_to_one_param,
         )?;
+        let com_param_var = CG::ParametersVar::new_constant(ns!(cs, "com param"), &self.com_param)?;
 
         // Get the root as public input
         let root_var = TwoToOneH::OutputVar::new_input(ns!(cs, "root"), || Ok(&self.root))?;
 
-        // Witness the credential, its opening nonce, and the path
-        let cred_var = CredentialVar::new_witness(ns!(cs, "cred"), || {
-            self.cred.as_ref().ok_or(SynthesisError::AssignmentMissing)
+        // Witness the attrs, its opening nonce, and the path
+        let attrs_var = AttrStringVar::new_witness(ns!(cs, "attrs"), || {
+            self.attrs.as_ref().ok_or(SynthesisError::AssignmentMissing)
         })?;
-        let com_nonce_var = CredentialVar::new_witness(ns!(cs, "cred"), || {
+        let com_nonce_var = CG::RandomnessVar::new_witness(ns!(cs, "attrs"), || {
             self.com_nonce
                 .as_ref()
                 .ok_or(SynthesisError::AssignmentMissing)
@@ -131,19 +142,15 @@ where
             self.height,
         )?;
 
-        // Compute the credential commitment
-        let commitment_var = TwoToOneH::evaluate(
-            &two_to_one_param_var,
-            &cred_var.to_bytes()?,
-            &com_nonce_var.to_bytes()?,
-        )?;
+        // Compute the attrs commitment
+        let com_var = CG::commit(&com_param_var, &attrs_var.to_bytes()?, &com_nonce_var)?;
 
         path_var.check_membership(
             ns!(cs, "check_membership").cs(),
             &leaf_param_var,
             &two_to_one_param_var,
             &root_var,
-            &commitment_var,
+            &com_var,
         )
     }
 }

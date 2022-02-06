@@ -12,53 +12,54 @@ use ark_std::{
     rand::RngCore,
 };
 
-/// A credential is a 128 bit bitstring
-pub const CRED_SIZE: usize = 16;
-#[derive(Clone, Default)]
-pub struct Credential([u8; CRED_SIZE]);
+/// The bytelength of our attribute strings
+pub(crate) const ATTR_STRING_LEN: usize = 16;
 
-impl Credential {
-    pub fn gen<R: RngCore>(rng: &mut R) -> Credential {
-        let mut buf = [0u8; CRED_SIZE];
+#[derive(Clone)]
+pub struct AttrString(pub [u8; ATTR_STRING_LEN]);
+
+impl AttrString {
+    pub fn gen<R: RngCore>(rng: &mut R) -> AttrString {
+        let mut buf = [0u8; ATTR_STRING_LEN];
         rng.fill_bytes(&mut buf);
 
-        Credential(buf)
+        AttrString(buf)
     }
 }
 
-impl ToBytes for Credential {
+impl ToBytes for AttrString {
     fn write<W: Write>(&self, writer: W) -> IoResult<()> {
         self.0.write(writer)
     }
 }
 
-// To serialize and deserialize a credential, just use the Vec<T> routines
-impl CanonicalSerialize for Credential {
+// To serialize and deserialize an attribute string, just use the Vec<T> routines
+impl CanonicalSerialize for AttrString {
     fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
         writer.write_all(&self.0).map_err(Into::into)
     }
 
     fn serialized_size(&self) -> usize {
-        CRED_SIZE
+        ATTR_STRING_LEN
     }
 }
 
-impl CanonicalDeserialize for Credential {
+impl CanonicalDeserialize for AttrString {
     fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
-        let mut buf = [0u8; CRED_SIZE];
+        let mut buf = [0u8; ATTR_STRING_LEN];
         reader.read_exact(&mut buf)?;
 
-        Ok(Credential(buf))
+        Ok(AttrString(buf))
     }
 }
 
-pub struct CredentialVar<ConstraintF: PrimeField>(Vec<UInt8<ConstraintF>>);
+pub struct AttrStringVar<ConstraintF: PrimeField>(Vec<UInt8<ConstraintF>>);
 
-impl<ConstraintF> AllocVar<Credential, ConstraintF> for CredentialVar<ConstraintF>
+impl<ConstraintF> AllocVar<AttrString, ConstraintF> for AttrStringVar<ConstraintF>
 where
     ConstraintF: PrimeField,
 {
-    fn new_variable<T: Borrow<Credential>>(
+    fn new_variable<T: Borrow<AttrString>>(
         cs: impl Into<Namespace<ConstraintF>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
         mode: AllocationMode,
@@ -66,11 +67,11 @@ where
         let ns: Namespace<_> = cs.into();
         let cs = ns.cs();
 
-        // Get the credential if it's defined. Transpose it to a Vec of Options
+        // Get the attribute string if it's defined. Transpose it to a Vec of Options
         let underlying_val = f().ok();
-        let cred: Option<&Credential> = underlying_val.as_ref().map(|c| c.borrow());
-        let opt_bytes: Vec<Option<u8>> = match cred {
-            None => vec![None; CRED_SIZE],
+        let attrs: Option<&AttrString> = underlying_val.as_ref().map(|c| c.borrow());
+        let opt_bytes: Vec<Option<u8>> = match attrs {
+            None => vec![None; ATTR_STRING_LEN],
             Some(c) => c.0.iter().map(|&b| Some(b)).collect(),
         };
 
@@ -86,11 +87,11 @@ where
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(CredentialVar(byte_vars))
+        Ok(AttrStringVar(byte_vars))
     }
 }
 
-impl<ConstraintF> ToBytesGadget<ConstraintF> for CredentialVar<ConstraintF>
+impl<ConstraintF> ToBytesGadget<ConstraintF> for AttrStringVar<ConstraintF>
 where
     ConstraintF: PrimeField,
 {
