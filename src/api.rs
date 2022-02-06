@@ -354,9 +354,11 @@ fn test_api_correctness() {
         .expect("couldn't get auth path");
 
     let opening = (cred, com_nonce);
+    let start = std::time::Instant::now();
     let mut membership_proof = auth_path
         .zk_prove(&mut rng, &pk, opening)
         .expect("couldn't prove membership");
+    println!("Proof time {:?}", start.elapsed());
 
     // Observer: Verify proof wrt the issuance list
     let list_root = global_list.root();

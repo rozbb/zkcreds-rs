@@ -76,17 +76,18 @@
     document.getElementById("setup_zk_proof").addEventListener("click", function() {
         document.getElementById("pk_and_vk").value = "in progress...";
         json_pk_and_vk = setup_zk_proof(log_capacity);
-        document.getElementById("pk_and_vk").value = "done. You can download the keys now.";
+        document.getElementById("pk_and_vk").value = json_pk_and_vk;
     });
 
     document.getElementById("download_pk_and_vk").addEventListener("click", function() {
-        download("pk_and_vk.txt", json_pk_and_vk);
+        const pk_and_vk = document.getElementById("pk_and_vk").value;
+        download("pk_and_vk.txt", pk_and_vk);
     });
 
     function download(filename, text) {
+      const blob = new Blob([text]);
       var element = document.createElement('a');
-      text = text.replace(/\r\n?/g, '%0D%0A');
-      element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(text));
+      element.setAttribute('href', URL.createObjectURL(blob))
       element.setAttribute('download', filename);
 
       element.style.display = 'none';

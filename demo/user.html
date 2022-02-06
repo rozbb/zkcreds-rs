@@ -45,7 +45,7 @@
       Global List:<br>
       <textarea id="global_list_in_rmv" rows="5" cols="50"></textarea><br>
 
-      <br><button type="button" id="get_path_and_proof">Remove from List</button><br>
+      <br><button type="button" id="list_remove">Remove from List</button><br>
 
       <h5> Output </h5>
       Global List: <br>
@@ -94,11 +94,26 @@
             const res = document.getElementById("pk_and_vk_proof").files[0];
             const str = await res.text();
             json_pk_and_vk = str.trim();
-            console.log(json_pk_and_vk);
+
+            const res2 = await fetch("index/json_pk_and_vk.txt");
+            const blob = await res2.blob();
+            const str2 = await blob.text();
+            const t = str2.trim();
+
+            console.log("Files are same? " + t === json_pk_and_vk);
+            console.log("Uploaded file length " + json_pk_and_vk.length);
+            console.log("Pure length " + t.length);
+            for (var i = 0; i < t.length; i++) {
+                if (t[i] != json_pk_and_vk[i]) {
+                    console.log("Differs at " + i);
+                }
+            }
+            //console.log(json_pk_and_vk);
         }
 
       document.getElementById("get_path_and_proof").addEventListener("click", function() {
         set_pk_and_vk();
+        /*
         json_global_list = document.getElementById("global_list_in").value;
         json_auth_path = get_path(
             json_global_list,
@@ -116,12 +131,13 @@
         );
 
         document.getElementById("membership_proof").value =  json_membership_proof;
+        */
       });
 
 
       //STEP 4
 
-      document.getElementById("get_path_and_proof").addEventListener("click", function() {
+      document.getElementById("list_remove").addEventListener("click", function() {
         json_global_list = document.getElementById("global_list_in_rmv").value;
         json_global_list = remove_from_list(json_global_list, 0);
 

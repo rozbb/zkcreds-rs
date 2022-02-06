@@ -126,7 +126,7 @@ where
                     .collect::<Result<Vec<u8>, _>>()
             );
 
-            PoseidonGadget::<ConstraintF, P>::evaluate(&params_var, &hash_input)?
+            PoseidonGadget::<ConstraintF, P>::evaluate(&params_var, hash_input)?
         };
         hash.enforce_equal(&presentation_nonce_var)
     }
@@ -145,7 +145,7 @@ where
     let mut buf = &mut hash_input[..];
 
     // Presentation nonce is H(cred, counter, n)
-    buf.write(&to_bytes!(cred).unwrap())
+    buf.write_all(&to_bytes!(cred).unwrap())
         .expect("couldn't write cred to buf");
     buf.write_u16::<LittleEndian>(counter)
         .expect("couldn't write show counter to buf");

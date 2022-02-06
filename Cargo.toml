@@ -31,7 +31,7 @@ git = "https://github.com/arkworks-rs/crypto-primitives.git"
 #branch = "main"
 #path = "../crypto-primitives"
 rev = "3402a729b7104983c9779714ab8580de5187bbdd"
-features = ["r1cs"]
+#features = ["r1cs"]
 
 [features]
 default = ["std", "no-wasm"]
