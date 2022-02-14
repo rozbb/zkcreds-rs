@@ -2,7 +2,7 @@
 name = "zeronym"
 version = "0.1.0"
 authors = ["Michael Rosenberg <michael@mrosenberg.pub>"]
-edition = "2018"
+edition = "2021"
 license = "MIT/Apache-2.0"
 
 [dependencies]
@@ -19,12 +19,9 @@ ark-serialize = "0.3"
 arkworks-gadgets = "0.3"
 base64 = "0.13"
 byteorder = "1.4"
-console_error_panic_hook = { version = "0.1.6" }
-getrandom = { version = "0.2", features = ["js"] }
 lazy_static = "1.4"
 rand = "0.8"
 rand_core = "0.6"
-wasm-bindgen = "0.2"
 
 [patch.crates-io.ark-crypto-primitives]
 git = "https://github.com/arkworks-rs/crypto-primitives.git"
@@ -34,8 +31,7 @@ rev = "3402a729b7104983c9779714ab8580de5187bbdd"
 #features = ["r1cs"]
 
 [features]
-default = ["std", "no-wasm"]
-no-wasm = ["parallel", "asm"]
+default = ["std", "parallel", "asm"]
 asm = ["ark-ff/asm"]
 parallel = [
     "ark-crypto-primitives/parallel",
@@ -64,7 +60,6 @@ debug = true
 
 [lib]
 bench = false
-crate-type = ["cdylib", "rlib"]
 
 [[bench]]
 name = "bench"
