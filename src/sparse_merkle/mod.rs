@@ -185,7 +185,7 @@ where
             let left_hash_bytes = to_bytes![left_hash]?;
             let right_hash_bytes = to_bytes![right_hash]?;
             let hash =
-                P::TwoToOneHash::evaluate(&two_to_one_param, &left_hash_bytes, &right_hash_bytes)?;
+                P::TwoToOneHash::evaluate(two_to_one_param, &left_hash_bytes, &right_hash_bytes)?;
 
             // Insert the digest
             inner_hashes.insert(parent_idx, hash);
@@ -219,7 +219,7 @@ where
                 let left_hash_bytes = to_bytes![left_hash]?;
                 let right_hash_bytes = to_bytes![right_hash]?;
                 let hash = P::TwoToOneHash::evaluate(
-                    &two_to_one_param,
+                    two_to_one_param,
                     &left_hash_bytes,
                     &right_hash_bytes,
                 )?;
@@ -388,7 +388,7 @@ where
         // Check that the given index corresponds to the correct leaf.
         if let Some(x) = self.leaf_hashes.get(&tree_idx) {
             if &leaf_hash != x {
-                Err(SparseMerkleTreeError::IncorrectTreeStructure)?;
+                return Err(SparseMerkleTreeError::IncorrectTreeStructure.into());
             }
         }
 
@@ -472,7 +472,7 @@ where
         // Compute the leaf's tree index and insert it into the leaf_hashes map
         let leaf_node = convert_idx_to_last_level(idx, self.height);
         let leaf_hash = P::LeafHash::evaluate(&self.leaf_param, &to_bytes!(leaf)?)?;
-        self.leaf_hashes.insert(leaf_node, leaf_hash.clone());
+        self.leaf_hashes.insert(leaf_node, leaf_hash);
 
         // Recompute all the nodes above the leaf
         self.recalculate_leaf_ancestors(idx)
@@ -589,7 +589,7 @@ fn gen_empty_hashes<P: TreeConfig, L: ToBytes + Default>(
 
     let empty_leaf_hash = {
         let empty_leaf_bytes = to_bytes!(L::default())?;
-        P::LeafHash::evaluate(&leaf_param, &empty_leaf_bytes)?
+        P::LeafHash::evaluate(leaf_param, &empty_leaf_bytes)?
     };
 
     let mut empty_inner_hashes = Vec::with_capacity(usize::try_from(height).unwrap() - 1);
