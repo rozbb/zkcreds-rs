@@ -1,6 +1,6 @@
 use crate::{
     common::AttrString,
-    proof_of_issuance::ProofOfIssuanceCircuit,
+    proof_of_issuance::TreeMembershipProver,
     sparse_merkle::{SparseMerkleTree, SparseMerkleTreePath, TwoToOneDigest},
     Error,
 };
@@ -187,7 +187,7 @@ where
     R: Rng + CryptoRng,
 {
     let param_gen_circuit =
-        ProofOfIssuanceCircuit::<ComScheme, ComGadget, P, Fr, HG, HG>::new_placeholder(
+        TreeMembershipProver::<ComScheme, ComGadget, P, Fr, HG, HG>::new_placeholder(
             log_capacity,
             LEAF_PARAM.clone(),
             TWO_TO_ONE_PARAM.clone(),
@@ -319,7 +319,7 @@ impl AuthPath {
         let (attrs, nonce) = opening;
         let root_hash = self.0.root(&*TWO_TO_ONE_PARAM)?;
 
-        let circuit = ProofOfIssuanceCircuit::<ComScheme, ComGadget, P, Fr, HG, HG>::new(
+        let circuit = TreeMembershipProver::<ComScheme, ComGadget, P, Fr, HG, HG>::new(
             pk.log_capacity,
             LEAF_PARAM.clone(),
             TWO_TO_ONE_PARAM.clone(),

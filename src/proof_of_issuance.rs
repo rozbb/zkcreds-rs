@@ -1,163 +1,33 @@
 use crate::{
     attrs::{Attrs, AttrsVar},
-    common::{AttrString, AttrStringVar},
-    pred::{PredicateChecker, PredicateProver},
-    proof_data_structures::{PredProvingKey, TreeProvingKey},
+    identity_crh::{IdentityCRH, IdentityCRHGadget},
+    proof_data_structures::{TreeProof, TreeProvingKey},
     sparse_merkle::{
         constraints::SparseMerkleTreePathVar, SparseMerkleTree, SparseMerkleTreePath,
         TwoToOneDigest,
     },
 };
 
-use core::{borrow::Borrow, marker::PhantomData};
+use core::marker::PhantomData;
 
 use ark_crypto_primitives::{
     commitment::{constraints::CommitmentGadget, CommitmentScheme},
     crh::{
         constraints::{CRHGadget, TwoToOneCRHGadget},
-        TwoToOneCRH, CRH,
+        TwoToOneCRH,
     },
-    merkle_tree::{Config as TreeConfig, LeafParam, TwoToOneParam},
+    merkle_tree::{Config as TreeConfig, TwoToOneParam},
     Error as ArkError,
 };
 use ark_ec::PairingEngine;
 use ark_ff::PrimeField;
-use ark_r1cs_std::{
-    alloc::{AllocVar, AllocationMode},
-    boolean::Boolean,
-    eq::EqGadget,
-    select::CondSelectGadget,
-    uint8::UInt8,
-    R1CSVar, ToBytesGadget,
-};
+use ark_r1cs_std::{alloc::AllocVar, eq::EqGadget, ToBytesGadget};
 use ark_relations::{
     ns,
-    r1cs::{ConstraintSynthesizer, ConstraintSystemRef, Namespace, SynthesisError},
+    r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError},
 };
 use ark_serialize::CanonicalSerialize;
 use ark_std::rand::Rng;
-
-// The unit type for circuit variables. This contains no data.
-#[derive(Clone, Debug, Default)]
-pub struct UnitVar<ConstraintF: PrimeField>(PhantomData<ConstraintF>);
-
-impl<ConstraintF: PrimeField> AllocVar<(), ConstraintF> for UnitVar<ConstraintF> {
-    // Allocates 32 UInt8s
-    fn new_variable<T: Borrow<()>>(
-        _cs: impl Into<Namespace<ConstraintF>>,
-        _f: impl FnOnce() -> Result<T, SynthesisError>,
-        _mode: AllocationMode,
-    ) -> Result<Self, SynthesisError> {
-        Ok(UnitVar(PhantomData))
-    }
-}
-
-/// A helper implementation. This CRH is the identity function on its input
-struct IdentityCRH;
-impl CRH for IdentityCRH {
-    /// This value doesn't matter. We return everything no matter what
-    const INPUT_SIZE_BITS: usize = 0;
-
-    type Output = Vec<u8>;
-    type Parameters = ();
-
-    fn setup<R: Rng>(_rng: &mut R) -> Result<Self::Parameters, ArkError> {
-        Ok(())
-    }
-
-    fn evaluate(_parameters: &Self::Parameters, input: &[u8]) -> Result<Self::Output, ArkError> {
-        Ok(input.to_vec())
-    }
-}
-
-#[derive(Clone, Debug)]
-struct Bytestring<ConstraintF: PrimeField>(Vec<UInt8<ConstraintF>>);
-
-impl<ConstraintF: PrimeField> EqGadget<ConstraintF> for Bytestring<ConstraintF> {
-    fn is_eq(&self, other: &Self) -> Result<Boolean<ConstraintF>, SynthesisError> {
-        self.0
-            .iter()
-            .zip(other.0.iter())
-            .fold(Ok(Boolean::constant(false)), |acc, (a, b)| {
-                acc.and_then(|acc| acc.and(&a.is_eq(b)?))
-            })
-    }
-}
-
-impl<ConstraintF: PrimeField> ToBytesGadget<ConstraintF> for Bytestring<ConstraintF> {
-    fn to_bytes(&self) -> Result<Vec<UInt8<ConstraintF>>, SynthesisError> {
-        Ok(self.0.clone())
-    }
-}
-
-impl<ConstraintF: PrimeField> CondSelectGadget<ConstraintF> for Bytestring<ConstraintF> {
-    fn conditionally_select(
-        cond: &Boolean<ConstraintF>,
-        true_value: &Self,
-        false_value: &Self,
-    ) -> Result<Self, SynthesisError> {
-        assert_eq!(true_value.0.len(), false_value.0.len());
-
-        let bytes: Result<Vec<_>, _> = true_value
-            .0
-            .iter()
-            .zip(false_value.0.iter())
-            .map(|(t, f)| UInt8::conditionally_select(cond, t, f))
-            .collect();
-        Ok(Bytestring(bytes?))
-    }
-}
-
-impl<ConstraintF: PrimeField> AllocVar<Vec<u8>, ConstraintF> for Bytestring<ConstraintF> {
-    // Allocates a vector of UInt8s. This panics if `f()` is `Err`, since we don't know how many
-    // bytes to allocate
-    fn new_variable<T: Borrow<Vec<u8>>>(
-        cs: impl Into<Namespace<ConstraintF>>,
-        f: impl FnOnce() -> Result<T, SynthesisError>,
-        mode: AllocationMode,
-    ) -> Result<Self, SynthesisError> {
-        let cs = cs.into().cs();
-        let f_output = f().expect("cannot allocate a Bytestring of indeterminate length");
-        let native_bytes = f_output.borrow();
-
-        let var_bytes: Result<Vec<_>, _> = native_bytes
-            .iter()
-            .map(|b| UInt8::new_variable(cs.clone(), || Ok(b), mode))
-            .collect();
-
-        Ok(Bytestring(var_bytes?))
-    }
-}
-
-impl<ConstraintF: PrimeField> R1CSVar<ConstraintF> for Bytestring<ConstraintF> {
-    type Value = Vec<u8>;
-
-    fn cs(&self) -> ConstraintSystemRef<ConstraintF> {
-        let mut result = ConstraintSystemRef::None;
-        for var in &self.0 {
-            result = var.cs().or(result);
-        }
-        result
-    }
-
-    fn value(&self) -> Result<Self::Value, SynthesisError> {
-        self.0.iter().map(|v| v.value()).collect()
-    }
-}
-
-// Another helper implementation. This CRH is the identity function in its input
-struct IdentityCRHGadget;
-impl<ConstraintF: PrimeField> CRHGadget<IdentityCRH, ConstraintF> for IdentityCRHGadget {
-    type OutputVar = Bytestring<ConstraintF>;
-    type ParametersVar = UnitVar<ConstraintF>;
-
-    fn evaluate(
-        _parameters: &Self::ParametersVar,
-        input: &[UInt8<ConstraintF>],
-    ) -> Result<Self::OutputVar, SynthesisError> {
-        Ok(Bytestring(input.to_vec()))
-    }
-}
 
 /// A sparse Merkle tree config which uses the identity function for leaf hashes (we don't need to
 /// hash commitments)
@@ -177,10 +47,13 @@ where
 {
     /// Parameters for the commitment of this tree's root
     merkle_com_params: MC::Parameters,
+
     /// The nonce for the commitment of this tree's root
-    nonce: MC::Randomness,
+    root_com_nonce: MC::Randomness,
+
     /// The tree's contents
     tree: SparseMerkleTree<ComTreeConfig<H>>,
+
     _marker: PhantomData<AC::Output>,
 }
 
@@ -202,27 +75,34 @@ where
             root.serialize(&mut buf)?;
             buf
         };
-        MC::commit(&self.merkle_com_params, &root_bytes, &self.nonce).map(RootCom)
+        MC::commit(&self.merkle_com_params, &root_bytes, &self.root_com_nonce).map(RootCom)
     }
 
-    /*
-    pub fn gen_crs<R, E, P, A, AV, ACG, MCG>(
+    /// Generates the membership proving key for this tree
+    pub fn gen_crs<R, E, HG, A, AV, ACG, MCG>(
+        &self,
         rng: &mut R,
-        checker: P,
     ) -> Result<TreeProvingKey<E, A, AV, AC, ACG, MC, MCG>, SynthesisError>
     where
         R: Rng,
         E: PairingEngine,
-        P: PredicateChecker<E::Fr, A, AV, AC, ACG>,
+        HG: TwoToOneCRHGadget<H, E::Fr>,
         A: Attrs<AC>,
         AV: AttrsVar<E::Fr, A, AC, ACG>,
         ACG: CommitmentGadget<AC, E::Fr>,
         MCG: CommitmentGadget<MC, E::Fr>,
     {
-        let prover: PredicateProver<_, _, _, _, _, _, _, MCG> = PredicateProver {
-            checker,
-            attrs: A::default(),
-            merkle_root_com: MC::Output::default(),
+        let prover: TreeMembershipProver<E::Fr, AC, ACG, MC, MCG, H, HG> = TreeMembershipProver {
+            height: self.tree.height,
+            two_to_one_param: self.tree.two_to_one_param.clone(),
+            merkle_com_param: self.merkle_com_params.clone(),
+            attrs_com: Default::default(),
+            root: Default::default(),
+            root_com: Default::default(),
+            root_com_nonce: Default::default(),
+            //root: self.tree.root(),
+            //root_com_nonce: self.nonce,
+            auth_path: None,
             _marker: PhantomData,
         };
         let pk = ark_groth16::generate_random_parameters(prover, rng)?;
@@ -231,144 +111,147 @@ where
             _marker: PhantomData,
         })
     }
-    */
+
+    /// Proves that the given attribute commitment is at the specified tree index
+    pub fn prove_membership<R, E, HG, A, AV, ACG, MCG>(
+        &self,
+        rng: &mut R,
+        pk: &TreeProvingKey<E, A, AV, AC, ACG, MC, MCG>,
+        idx: u64,
+        attrs_com: AC::Output,
+    ) -> Result<TreeProof<E, A, AV, AC, ACG, MC, MCG>, SynthesisError>
+    where
+        R: Rng,
+        E: PairingEngine,
+        HG: TwoToOneCRHGadget<H, E::Fr>,
+        A: Attrs<AC>,
+        AV: AttrsVar<E::Fr, A, AC, ACG>,
+        ACG: CommitmentGadget<AC, E::Fr>,
+        MCG: CommitmentGadget<MC, E::Fr>,
+    {
+        // Get the root, its commitment, and the auth path of the given idx
+        let root = self.tree.root();
+        let root_com = self.root_com().expect("could not commit to root").0;
+        let auth_path = self
+            .tree
+            .generate_proof(idx, &attrs_com)
+            .expect("could not construct auth path");
+
+        // Construct the prover with all the relevant info, and prove
+        let prover: TreeMembershipProver<E::Fr, AC, ACG, MC, MCG, H, HG> = TreeMembershipProver {
+            height: self.tree.height,
+            two_to_one_param: self.tree.two_to_one_param.clone(),
+            merkle_com_param: self.merkle_com_params.clone(),
+            attrs_com,
+            root,
+            root_com,
+            root_com_nonce: self.root_com_nonce.clone(),
+            auth_path: Some(auth_path),
+            _marker: PhantomData,
+        };
+
+        let proof = ark_groth16::create_random_proof(prover, &pk.pk, rng)?;
+        Ok(TreeProof {
+            proof,
+            _marker: PhantomData,
+        })
+    }
 }
 
 /// A circuit that proves that a commitment to `attrs` appears in the Merkle tree of height `height`
 /// defined by root hash `root`.
-pub struct ProofOfIssuanceCircuit<C, CG, P, ConstraintF, LeafH, TwoToOneH>
+struct TreeMembershipProver<ConstraintF, AC, ACG, MC, MCG, H, HG>
 where
-    C: CommitmentScheme,
-    CG: CommitmentGadget<C, ConstraintF>,
     ConstraintF: PrimeField,
-    LeafH: CRHGadget<P::LeafHash, ConstraintF>,
-    TwoToOneH: TwoToOneCRHGadget<P::TwoToOneHash, ConstraintF>,
-    P: TreeConfig,
+    AC: CommitmentScheme,
+    ACG: CommitmentGadget<AC, ConstraintF>,
+    MC: CommitmentScheme,
+    MCG: CommitmentGadget<MC, ConstraintF>,
+    H: TwoToOneCRH,
+    HG: TwoToOneCRHGadget<H, ConstraintF>,
 {
     // Constants //
     height: u32,
-    leaf_param: LeafParam<P>,
-    two_to_one_param: TwoToOneParam<P>,
-    com_param: C::Parameters,
+    two_to_one_param: TwoToOneParam<ComTreeConfig<H>>,
+    merkle_com_param: MC::Parameters,
 
     // Public inputs //
-    root: TwoToOneDigest<P>,
+    root: TwoToOneDigest<ComTreeConfig<H>>,
 
     // Private inputs //
-    /// The attrs
-    attrs: Option<AttrString>,
-    /// The opening of the commitment
-    com_nonce: Option<C::Randomness>,
-    /// Merkle auth path
-    path: Option<SparseMerkleTreePath<P>>,
+    /// The leaf value
+    attrs_com: AC::Output,
+    /// A commitment to the root value
+    root_com: MC::Output,
+    /// The opening of the root commitment
+    root_com_nonce: MC::Randomness,
+    /// Merkle auth path of the leaf `attrs_com`
+    auth_path: Option<SparseMerkleTreePath<ComTreeConfig<H>>>,
 
     // Marker //
-    _marker: PhantomData<(ConstraintF, C, CG, LeafH, TwoToOneH)>,
+    _marker: PhantomData<(ConstraintF, AC, ACG, MC, MCG, HG)>,
 }
 
-impl<C, CG, P, ConstraintF, LeafH, TwoToOneH>
-    ProofOfIssuanceCircuit<C, CG, P, ConstraintF, LeafH, TwoToOneH>
+impl<ConstraintF, AC, ACG, MC, MCG, H, HG> ConstraintSynthesizer<ConstraintF>
+    for TreeMembershipProver<ConstraintF, AC, ACG, MC, MCG, H, HG>
 where
-    C: CommitmentScheme,
-    CG: CommitmentGadget<C, ConstraintF>,
     ConstraintF: PrimeField,
-    LeafH: CRHGadget<P::LeafHash, ConstraintF>,
-    TwoToOneH: TwoToOneCRHGadget<P::TwoToOneHash, ConstraintF>,
-    P: TreeConfig,
-{
-    pub fn new(
-        height: u32,
-        leaf_param: LeafParam<P>,
-        two_to_one_param: TwoToOneParam<P>,
-        com_param: C::Parameters,
-        root: TwoToOneDigest<P>,
-        opening: (AttrString, C::Randomness),
-        path: SparseMerkleTreePath<P>,
-    ) -> Self {
-        ProofOfIssuanceCircuit {
-            height,
-            leaf_param,
-            two_to_one_param,
-            com_param,
-            root,
-            attrs: Some(opening.0),
-            com_nonce: Some(opening.1),
-            path: Some(path),
-            _marker: PhantomData,
-        }
-    }
-
-    /// Makes a circuit with placeholder data. This is used for the purpose of CRS generation.
-    pub fn new_placeholder(
-        height: u32,
-        leaf_param: LeafParam<P>,
-        two_to_one_param: TwoToOneParam<P>,
-        com_param: C::Parameters,
-    ) -> Self {
-        ProofOfIssuanceCircuit {
-            height,
-            leaf_param,
-            two_to_one_param,
-            com_param,
-            root: Default::default(),
-            attrs: None,
-            com_nonce: None,
-            path: None,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<C, CG, P, ConstraintF, LeafH, TwoToOneH> ConstraintSynthesizer<ConstraintF>
-    for ProofOfIssuanceCircuit<C, CG, P, ConstraintF, LeafH, TwoToOneH>
-where
-    C: CommitmentScheme,
-    CG: CommitmentGadget<C, ConstraintF>,
-    ConstraintF: PrimeField,
-    LeafH: CRHGadget<P::LeafHash, ConstraintF>,
-    TwoToOneH: TwoToOneCRHGadget<P::TwoToOneHash, ConstraintF>,
-    P: TreeConfig,
+    AC: CommitmentScheme,
+    ACG: CommitmentGadget<AC, ConstraintF>,
+    MC: CommitmentScheme,
+    MCG: CommitmentGadget<MC, ConstraintF>,
+    H: TwoToOneCRH,
+    HG: TwoToOneCRHGadget<H, ConstraintF>,
 {
     fn generate_constraints(
         self,
         cs: ConstraintSystemRef<ConstraintF>,
     ) -> Result<(), SynthesisError> {
-        // Input the parameters
+        // Witness the public variables. In ALL zeronym proofs, it's the commitment to the
+        // attributes and the merkle root
+        let attrs_com_var =
+            ACG::OutputVar::new_input(ns!(cs, "attrs com var"), || Ok(self.attrs_com))?;
+        let root_com_var =
+            MCG::OutputVar::new_input(ns!(cs, "root com var"), || Ok(self.root_com))?;
+
+        // Check that the root commitment is consistent
+        let com_param_var =
+            MCG::ParametersVar::new_constant(ns!(cs, "com param"), &self.merkle_com_param)?;
+        let root_var = HG::OutputVar::new_input(ns!(cs, "root"), || Ok(&self.root))?;
+        let root_com_nonce_var =
+            MCG::RandomnessVar::new_input(ns!(cs, "root com nonce"), || Ok(&self.root_com_nonce))?;
+        root_com_var.enforce_equal(&MCG::commit(
+            &com_param_var,
+            &root_var.to_bytes()?,
+            &root_com_nonce_var,
+        )?)?;
+
+        // Now we do the tree membership proof. Input the two-to-one params
         let leaf_param_var =
-            LeafH::ParametersVar::new_constant(ns!(cs, "leaf param"), &self.leaf_param)?;
-        let two_to_one_param_var = TwoToOneH::ParametersVar::new_constant(
-            ns!(cs, "two_to_one param"),
-            &self.two_to_one_param,
-        )?;
-        let com_param_var = CG::ParametersVar::new_constant(ns!(cs, "com param"), &self.com_param)?;
+            <IdentityCRHGadget as CRHGadget<IdentityCRH, _>>::ParametersVar::new_constant(
+                ns!(cs, "identity param"),
+                (),
+            )?;
+        let two_to_one_param_var =
+            HG::ParametersVar::new_constant(ns!(cs, "two_to_one param"), &self.two_to_one_param)?;
 
-        // Get the root as public input
-        let root_var = TwoToOneH::OutputVar::new_input(ns!(cs, "root"), || Ok(&self.root))?;
-
-        // Witness the attrs, its opening nonce, and the path
-        let attrs_var = AttrStringVar::new_witness(ns!(cs, "attrs"), || {
-            self.attrs.as_ref().ok_or(SynthesisError::AssignmentMissing)
-        })?;
-        let com_nonce_var = CG::RandomnessVar::new_witness(ns!(cs, "attrs"), || {
-            self.com_nonce
-                .as_ref()
-                .ok_or(SynthesisError::AssignmentMissing)
-        })?;
-        let path_var = SparseMerkleTreePathVar::<_, LeafH, TwoToOneH, _>::new_witness(
+        // Witness the path
+        let path_var = SparseMerkleTreePathVar::<_, IdentityCRHGadget, HG, _>::new_witness(
             ns!(cs, "auth path"),
-            || self.path.as_ref().ok_or(SynthesisError::AssignmentMissing),
+            || {
+                self.auth_path
+                    .as_ref()
+                    .ok_or(SynthesisError::AssignmentMissing)
+            },
             self.height,
         )?;
-
-        // Compute the attrs commitment
-        let com_var = CG::commit(&com_param_var, &attrs_var.to_bytes()?, &com_nonce_var)?;
 
         path_var.check_membership(
             ns!(cs, "check_membership").cs(),
             &leaf_param_var,
             &two_to_one_param_var,
             &root_var,
-            &com_var,
+            &attrs_com_var,
         )
     }
 }

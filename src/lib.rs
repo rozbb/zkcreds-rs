@@ -1,6 +1,7 @@
-pub mod api;
+//pub mod api;
 mod attrs;
 mod common;
+mod identity_crh;
 pub mod merkle_forest;
 mod multishow;
 mod pred;
