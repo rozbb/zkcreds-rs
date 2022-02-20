@@ -162,10 +162,23 @@ where
 
         // Check that the attrs commitment is consistent
         let attrs_var = AV::new_witness(ns!(cs, "attrs var"), || Ok(&self.attrs))?;
-        attrs_com_var.enforce_equal(&attrs_var.commit())?;
+        attrs_com_var.enforce_equal(&attrs_var.commit()?)?;
 
         // Finally assert the predicate is true
         let success = self.checker.pred(cs, &attrs_var)?;
         success.enforce_equal(&Boolean::TRUE)
     }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::test_util::NameAndBirthYear;
+
+    use ark_bls12_381::{Bls12_381 as E, Fr};
+
+    // Make NameAndBirthYear a predicate prover
+
+    #[test]
+    fn it_works() {}
 }
