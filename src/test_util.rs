@@ -122,12 +122,12 @@ pub(crate) struct NameAndBirthYear {
 pub(crate) struct NameAndBirthYearVar {
     nonce: NonceVar<BigComScheme, BigComSchemeG, Fr>,
     first_name: Vec<UInt8<Fr>>,
-    birth_year: FpVar<Fr>,
+    pub(crate) birth_year: FpVar<Fr>,
 }
 
 impl NameAndBirthYear {
     /// Constructs a new `NameAndBirthYear`, sampling a random nonce for commitment
-    fn new<R: Rng>(rng: &mut R, first_name: &[u8], birth_year: Fr) -> NameAndBirthYear {
+    pub(crate) fn new<R: Rng>(rng: &mut R, first_name: &[u8], birth_year: u16) -> NameAndBirthYear {
         assert!(first_name.len() < 16);
         let nonce = <BigComScheme as CommitmentScheme>::Randomness::rand(rng);
         let mut name_buf = [0u8; 16];
@@ -136,21 +136,25 @@ impl NameAndBirthYear {
         NameAndBirthYear {
             nonce,
             first_name: name_buf,
-            birth_year,
+            birth_year: Fr::from(birth_year),
         }
     }
+}
 
+impl Attrs<BigComScheme> for NameAndBirthYear {
     /// Serializes the attrs into bytes
     fn to_bytes(&self) -> Vec<u8> {
         let mut buf = self.first_name.to_vec();
         self.birth_year.serialize(&mut buf).unwrap();
         buf
     }
-}
 
-impl Attrs<BigComScheme> for NameAndBirthYear {
-    fn commit(&self) -> Com<BigComScheme> {
-        BigComScheme::commit(&*BIG_COM_PARAM, &self.to_bytes(), &self.nonce).unwrap()
+    fn get_com_param(&self) -> &Param<BigComScheme> {
+        &*BIG_COM_PARAM
+    }
+
+    fn get_com_nonce(&self) -> &Nonce<BigComScheme> {
+        &self.nonce
     }
 }
 
@@ -217,6 +221,15 @@ impl AllocVar<NameAndBirthYear, Fr> for NameAndBirthYearVar {
 }
 
 impl AttrsVar<Fr, NameAndBirthYear, BigComScheme, BigComSchemeG> for NameAndBirthYearVar {
+    fn get_com_param(&self) -> Result<ParamVar<BigComScheme, BigComSchemeG, Fr>, SynthesisError> {
+        let cs = self.first_name[0].cs().or(self.birth_year.cs());
+        ParamVar::<_, BigComSchemeG, _>::new_constant(cs, &*BIG_COM_PARAM)
+    }
+
+    fn get_com_nonce(&self) -> Result<NonceVar<BigComScheme, BigComSchemeG, Fr>, SynthesisError> {
+        Ok(self.nonce.clone())
+    }
+
     fn commit(&self) -> Result<ComVar<BigComScheme, BigComSchemeG, Fr>, SynthesisError> {
         let cs = self.first_name[0].cs().or(self.birth_year.cs());
         let com_param =

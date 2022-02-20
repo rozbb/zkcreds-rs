@@ -28,6 +28,25 @@ where
     pub(crate) _marker: PhantomData<(A, AV, AC, ACG, MC, MCG)>,
 }
 
+impl<E, A, AV, AC, ACG, MC, MCG> PredProvingKey<E, A, AV, AC, ACG, MC, MCG>
+where
+    E: PairingEngine,
+    A: Attrs<AC>,
+    AV: AttrsVar<E::Fr, A, AC, ACG>,
+    AC: CommitmentScheme,
+    ACG: CommitmentGadget<AC, E::Fr>,
+    MC: CommitmentScheme,
+    MCG: CommitmentGadget<MC, E::Fr>,
+{
+    pub fn prepare_verifying_key(&self) -> PredVerifyingKey<E, A, AV, AC, ACG, MC, MCG> {
+        let pvk = ark_groth16::prepare_verifying_key(&self.pk.vk);
+        PredVerifyingKey {
+            pvk,
+            _marker: self._marker,
+        }
+    }
+}
+
 /// Represents the verifying key for a predicate proofs
 pub struct PredVerifyingKey<E, A, AV, AC, ACG, MC, MCG>
 where

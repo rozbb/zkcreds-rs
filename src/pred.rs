@@ -95,6 +95,38 @@ where
     })
 }
 
+#[cfg(test)]
+pub(crate) fn verif_pred<R, P, E, A, AV, AC, ACG, MC, MCG>(
+    rng: &mut R,
+    vk: &PredVerifyingKey<E, A, AV, AC, ACG, MC, MCG>,
+    proof: &PredProof<E, A, AV, AC, ACG, MC, MCG>,
+    checker: &P,
+    attrs_com: &AC::Output,
+    merkle_root_com: &MC::Output,
+) -> Result<bool, SynthesisError>
+where
+    R: Rng,
+    P: PredicateChecker<E::Fr, A, AV, AC, ACG>,
+    E: PairingEngine,
+    A: Attrs<AC>,
+    AV: AttrsVar<E::Fr, A, AC, ACG>,
+    AC: CommitmentScheme,
+    ACG: CommitmentGadget<AC, E::Fr>,
+    MC: CommitmentScheme,
+    MCG: CommitmentGadget<MC, E::Fr>,
+{
+    use ark_ff::{to_bytes, ToConstraintField};
+
+    let attr_com_input = to_bytes![attrs_com].unwrap().to_field_elements().unwrap();
+    let root_com_input = to_bytes![merkle_root_com]
+        .unwrap()
+        .to_field_elements()
+        .unwrap();
+
+    let all_inputs = [attr_com_input, root_com_input, checker.public_inputs()].concat();
+    ark_groth16::verify_proof(&vk.pvk, &proof.proof, &all_inputs)
+}
+
 pub fn prepare_pred_inputs<R, P, E, A, AV, AC, ACG, MC, MCG>(
     vk: &PredVerifyingKey<E, A, AV, AC, ACG, MC, MCG>,
     checker: &P,
@@ -173,12 +205,86 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::test_util::NameAndBirthYear;
+    use crate::test_util::{
+        BigComScheme, BigComSchemeG, Com, NameAndBirthYear, NameAndBirthYearVar, PedersenCom,
+        PedersenComG, Window8x63,
+    };
 
     use ark_bls12_381::{Bls12_381 as E, Fr};
+    use ark_r1cs_std::fields::fp::FpVar;
+    use ark_relations::r1cs::ConstraintSystem;
 
-    // Make NameAndBirthYear a predicate prover
+    type MerkleCom = PedersenCom<Window8x63>;
+    type MerkleComG = PedersenComG<Window8x63>;
+
+    // Define a predicate that will tell whether the given `NameAndBirthYear` is at least 21. The
+    // predicate is: attrs.birth_year ≤ self.threshold_birth_year
+    #[derive(Clone)]
+    struct Over21Prover {
+        threshold_birth_year: Fr,
+    }
+    impl PredicateChecker<Fr, NameAndBirthYear, NameAndBirthYearVar, BigComScheme, BigComSchemeG>
+        for Over21Prover
+    {
+        /// Returns whether or not the predicate was satisfied
+        fn pred(
+            self,
+            cs: ConstraintSystemRef<Fr>,
+            attrs: &NameAndBirthYearVar,
+        ) -> Result<Boolean<Fr>, SynthesisError> {
+            // Witness the threshold year as a public input
+            let threshold_birth_year =
+                FpVar::<Fr>::new_input(
+                    ns!(cs, "threshold year"),
+                    || Ok(self.threshold_birth_year),
+                )?;
+            attrs
+                .birth_year
+                .is_cmp(&threshold_birth_year, core::cmp::Ordering::Less, true)
+        }
+
+        /// This outputs the field elements corresponding to the public inputs of this predicate.
+        /// This DOES NOT include `attrs`.
+        fn public_inputs(&self) -> Vec<Fr> {
+            vec![self.threshold_birth_year]
+        }
+    }
 
     #[test]
-    fn it_works() {}
+    fn test_pred() {
+        let mut rng = ark_std::test_rng();
+
+        // Generate the predicate circuit's CRS
+        let checker = Over21Prover {
+            threshold_birth_year: Fr::from(2001u16),
+        };
+        let pk =
+            gen_pred_crs::<_, _, E, _, _, _, _, _, MerkleComG>(&mut rng, checker.clone()).unwrap();
+
+        // First name is UTF-8 encoded, padded at the end with null bytes
+        let person = NameAndBirthYear::new(&mut rng, b"Andrew", 1992);
+        // Make a placeholder merkle root commitment. We're not testing this here
+        let merkle_root_com = Com::<MerkleCom>::default();
+
+        let proof = prove_pred(
+            &mut rng,
+            &pk,
+            checker.clone(),
+            person.clone(),
+            merkle_root_com,
+        )
+        .unwrap();
+
+        let person_com = person.commit();
+        let vk = pk.prepare_verifying_key();
+        assert!(verif_pred(
+            &mut rng,
+            &vk,
+            &proof,
+            &checker,
+            &person_com,
+            &merkle_root_com,
+        )
+        .unwrap());
+    }
 }
