@@ -15,6 +15,9 @@ use ark_relations::{
 };
 use ark_std::rand::Rng;
 
+#[cfg(test)]
+use ark_ff::ToConstraintField;
+
 /// Describes any predicate that someone might want to prove over an `Attrs` object.
 pub trait PredicateChecker<ConstraintF, A, AV, AC, ACG>: Sized
 where
@@ -96,8 +99,7 @@ where
 }
 
 #[cfg(test)]
-pub(crate) fn verif_pred<R, P, E, A, AV, AC, ACG, MC, MCG>(
-    rng: &mut R,
+pub(crate) fn verify_pred<P, E, A, AV, AC, ACG, MC, MCG>(
     vk: &PredVerifyingKey<E, A, AV, AC, ACG, MC, MCG>,
     proof: &PredProof<E, A, AV, AC, ACG, MC, MCG>,
     checker: &P,
@@ -105,7 +107,6 @@ pub(crate) fn verif_pred<R, P, E, A, AV, AC, ACG, MC, MCG>(
     merkle_root_com: &MC::Output,
 ) -> Result<bool, SynthesisError>
 where
-    R: Rng,
     P: PredicateChecker<E::Fr, A, AV, AC, ACG>,
     E: PairingEngine,
     A: Attrs<AC>,
@@ -114,14 +115,11 @@ where
     ACG: CommitmentGadget<AC, E::Fr>,
     MC: CommitmentScheme,
     MCG: CommitmentGadget<MC, E::Fr>,
+    AC::Output: ToConstraintField<E::Fr>,
+    MC::Output: ToConstraintField<E::Fr>,
 {
-    use ark_ff::{to_bytes, ToConstraintField};
-
-    let attr_com_input = to_bytes![attrs_com].unwrap().to_field_elements().unwrap();
-    let root_com_input = to_bytes![merkle_root_com]
-        .unwrap()
-        .to_field_elements()
-        .unwrap();
+    let attr_com_input = attrs_com.to_field_elements().unwrap();
+    let root_com_input = merkle_root_com.to_field_elements().unwrap();
 
     let all_inputs = [attr_com_input, root_com_input, checker.public_inputs()].concat();
     ark_groth16::verify_proof(&vk.pvk, &proof.proof, &all_inputs)
@@ -217,14 +215,14 @@ mod test {
     type MerkleCom = PedersenCom<Window8x63>;
     type MerkleComG = PedersenComG<Window8x63>;
 
-    // Define a predicate that will tell whether the given `NameAndBirthYear` is at least 21. The
-    // predicate is: attrs.birth_year ≤ self.threshold_birth_year
+    // Define a predicate that will tell whether the given `NameAndBirthYear` is at least X years
+    // old. The predicate is: attrs.birth_year ≤ self.threshold_birth_year
     #[derive(Clone)]
-    struct Over21Prover {
+    struct AgeProver {
         threshold_birth_year: Fr,
     }
     impl PredicateChecker<Fr, NameAndBirthYear, NameAndBirthYearVar, BigComScheme, BigComSchemeG>
-        for Over21Prover
+        for AgeProver
     {
         /// Returns whether or not the predicate was satisfied
         fn pred(
@@ -250,22 +248,27 @@ mod test {
         }
     }
 
+    /// Tests a predicate that returns true iff the given `NameAndBirthYear` is at least 21
     #[test]
-    fn test_pred() {
+    fn test_age() {
         let mut rng = ark_std::test_rng();
 
-        // Generate the predicate circuit's CRS
-        let checker = Over21Prover {
+        // We choose that anyone born in 2001 or earlier satisfies our predicate
+        let checker = AgeProver {
             threshold_birth_year: Fr::from(2001u16),
         };
+
+        // Generate the predicate circuit's CRS
         let pk =
             gen_pred_crs::<_, _, E, _, _, _, _, _, MerkleComG>(&mut rng, checker.clone()).unwrap();
 
         // First name is UTF-8 encoded, padded at the end with null bytes
         let person = NameAndBirthYear::new(&mut rng, b"Andrew", 1992);
-        // Make a placeholder merkle root commitment. We're not testing this here
+        // Make a placeholder merkle root commitment. This value is only relevant when we start
+        // linking proofs. Together. Ignore for this test.
         let merkle_root_com = Com::<MerkleCom>::default();
 
+        // Prove the predicate
         let proof = prove_pred(
             &mut rng,
             &pk,
@@ -275,16 +278,11 @@ mod test {
         )
         .unwrap();
 
+        // Ordinarily we wouldn't be able to verify a predicate proof, since it requires knowledge
+        // of the attribute commitment. But this is testing mode and we know this value, so let's
+        // make sure the predicate proof verifies.
         let person_com = person.commit();
         let vk = pk.prepare_verifying_key();
-        assert!(verif_pred(
-            &mut rng,
-            &vk,
-            &proof,
-            &checker,
-            &person_com,
-            &merkle_root_com,
-        )
-        .unwrap());
+        assert!(verify_pred(&vk, &proof, &checker, &person_com, &merkle_root_com,).unwrap());
     }
 }
