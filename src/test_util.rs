@@ -1,18 +1,11 @@
 use core::borrow::Borrow;
 
-use crate::{
-    attrs::{Attrs, AttrsVar},
-    identity_crh::Bytestring,
-};
+use crate::attrs::{Attrs, AttrsVar};
 
 use ark_bls12_381::Bls12_381;
 use ark_crypto_primitives::{
-    commitment::{
-        self, constraints::CommitmentGadget, pedersen::Parameters as CommitmentParameters,
-        CommitmentScheme,
-    },
+    commitment::{self, constraints::CommitmentGadget, CommitmentScheme},
     crh::{bowe_hopwood, pedersen, TwoToOneCRH, CRH},
-    merkle_tree::{Config as TreeConfig, LeafParam, TwoToOneParam},
 };
 use ark_ec::PairingEngine;
 use ark_ed_on_bls12_381::{
@@ -28,11 +21,11 @@ use ark_r1cs_std::{
 };
 use ark_relations::{
     ns,
-    r1cs::{ConstraintSystemRef, Namespace, SynthesisError},
+    r1cs::{Namespace, SynthesisError},
 };
 use ark_serialize::CanonicalSerialize;
 use ark_std::{
-    io::{Read, Result as IoResult, Write},
+    io::Write,
     rand::{rngs::StdRng, Rng, SeedableRng},
 };
 use lazy_static::lazy_static;
@@ -128,7 +121,7 @@ pub(crate) struct NameAndBirthYearVar {
 impl NameAndBirthYear {
     /// Constructs a new `NameAndBirthYear`, sampling a random nonce for commitment
     pub(crate) fn new<R: Rng>(rng: &mut R, first_name: &[u8], birth_year: u16) -> NameAndBirthYear {
-        assert!(first_name.len() < 16);
+        assert!(first_name.len() <= NAME_MAXLEN);
         let nonce = <BigComScheme as CommitmentScheme>::Randomness::rand(rng);
         let mut name_buf = [0u8; 16];
         name_buf[..first_name.len()].copy_from_slice(first_name);
@@ -141,7 +134,7 @@ impl NameAndBirthYear {
     }
 }
 
-impl Attrs<BigComScheme> for NameAndBirthYear {
+impl Attrs<Fr, BigComScheme> for NameAndBirthYear {
     /// Serializes the attrs into bytes
     fn to_bytes(&self) -> Vec<u8> {
         let mut buf = self.first_name.to_vec();
@@ -230,10 +223,12 @@ impl AttrsVar<Fr, NameAndBirthYear, BigComScheme, BigComSchemeG> for NameAndBirt
         Ok(self.nonce.clone())
     }
 
+    /*
     fn commit(&self) -> Result<ComVar<BigComScheme, BigComSchemeG, Fr>, SynthesisError> {
         let cs = self.first_name[0].cs().or(self.birth_year.cs());
         let com_param =
             ParamVar::<BigComScheme, BigComSchemeG, Fr>::new_constant(cs, &*BIG_COM_PARAM)?;
         BigComSchemeG::commit(&com_param, &self.to_bytes()?, &self.nonce)
     }
+    */
 }

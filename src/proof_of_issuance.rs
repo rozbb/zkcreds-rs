@@ -20,7 +20,7 @@ use ark_crypto_primitives::{
     Error as ArkError,
 };
 use ark_ec::PairingEngine;
-use ark_ff::PrimeField;
+use ark_ff::{PrimeField, ToConstraintField};
 use ark_r1cs_std::{alloc::AllocVar, eq::EqGadget, ToBytesGadget};
 use ark_relations::{
     ns,
@@ -39,11 +39,14 @@ impl<H: TwoToOneCRH> TreeConfig for ComTreeConfig<H> {
 }
 
 /// A Merkle tree of attribute commitments
-pub struct ComTree<H, AC, MC>
+pub struct ComTree<ConstraintF, H, AC, MC>
 where
+    ConstraintF: PrimeField,
     H: TwoToOneCRH,
     AC: CommitmentScheme,
     MC: CommitmentScheme,
+    AC::Output: ToConstraintField<ConstraintF>,
+    MC::Output: ToConstraintField<ConstraintF>,
 {
     /// Parameters for the commitment of this tree's root
     merkle_com_params: MC::Parameters,
@@ -54,20 +57,31 @@ where
     /// The tree's contents
     tree: SparseMerkleTree<ComTreeConfig<H>>,
 
-    _marker: PhantomData<AC::Output>,
+    _marker: PhantomData<(ConstraintF, AC)>,
 }
 
 /// A commitment to a Merkle tree's root
-pub struct RootCom<MC: CommitmentScheme>(MC::Output);
-
-impl<H, AC, MC> ComTree<H, AC, MC>
+pub struct RootCom<ConstraintF, MC>
 where
+    ConstraintF: PrimeField,
+    MC: CommitmentScheme,
+    MC::Output: ToConstraintField<ConstraintF>,
+{
+    com: MC::Output,
+    _marker: PhantomData<ConstraintF>,
+}
+
+impl<ConstraintF, H, AC, MC> ComTree<ConstraintF, H, AC, MC>
+where
+    ConstraintF: PrimeField,
     H: TwoToOneCRH,
     AC: CommitmentScheme,
     MC: CommitmentScheme,
+    AC::Output: ToConstraintField<ConstraintF>,
+    MC::Output: ToConstraintField<ConstraintF>,
 {
     /// Returns a commitment to the tree's root
-    pub fn root_com(&self) -> Result<RootCom<MC>, ArkError> {
+    pub fn root_com(&self) -> Result<RootCom<ConstraintF, MC>, ArkError> {
         // Serialize the root and commit to it
         let root_bytes = {
             let mut buf = Vec::new();
@@ -75,7 +89,10 @@ where
             root.serialize(&mut buf)?;
             buf
         };
-        MC::commit(&self.merkle_com_params, &root_bytes, &self.root_com_nonce).map(RootCom)
+        MC::commit(&self.merkle_com_params, &root_bytes, &self.root_com_nonce).map(|com| RootCom {
+            com,
+            _marker: PhantomData,
+        })
     }
 
     /// Generates the membership proving key for this tree
@@ -85,9 +102,9 @@ where
     ) -> Result<TreeProvingKey<E, A, AV, AC, ACG, MC, MCG>, SynthesisError>
     where
         R: Rng,
-        E: PairingEngine,
+        E: PairingEngine<Fr = ConstraintF>,
         HG: TwoToOneCRHGadget<H, E::Fr>,
-        A: Attrs<AC>,
+        A: Attrs<E::Fr, AC>,
         AV: AttrsVar<E::Fr, A, AC, ACG>,
         ACG: CommitmentGadget<AC, E::Fr>,
         MCG: CommitmentGadget<MC, E::Fr>,
@@ -122,16 +139,16 @@ where
     ) -> Result<TreeProof<E, A, AV, AC, ACG, MC, MCG>, SynthesisError>
     where
         R: Rng,
-        E: PairingEngine,
+        E: PairingEngine<Fr = ConstraintF>,
         HG: TwoToOneCRHGadget<H, E::Fr>,
-        A: Attrs<AC>,
+        A: Attrs<E::Fr, AC>,
         AV: AttrsVar<E::Fr, A, AC, ACG>,
         ACG: CommitmentGadget<AC, E::Fr>,
         MCG: CommitmentGadget<MC, E::Fr>,
     {
         // Get the root, its commitment, and the auth path of the given idx
         let root = self.tree.root();
-        let root_com = self.root_com().expect("could not commit to root").0;
+        let root_com = self.root_com().expect("could not commit to root").com;
         let auth_path = self
             .tree
             .generate_proof(idx, &attrs_com)

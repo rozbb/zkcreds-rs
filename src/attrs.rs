@@ -5,7 +5,13 @@ use ark_relations::r1cs::SynthesisError;
 
 /// This describes any object which holds attributes. The requirement is that it holds a commitment
 /// nonce and defines a way to commit to itself.
-pub trait Attrs<AC: CommitmentScheme>: Default {
+pub trait Attrs<ConstraintF, AC>: Default
+where
+    ConstraintF: PrimeField,
+    AC: CommitmentScheme,
+    AC::Output: ToConstraintField<ConstraintF>,
+{
+    /// Serializes EVERYTHING BUT the nonce and param
     fn to_bytes(&self) -> Vec<u8>;
 
     fn get_com_param(&self) -> &AC::Parameters;
@@ -26,8 +32,9 @@ pub trait AttrsVar<ConstraintF, A, AC, ACG>:
     AllocVar<A, ConstraintF> + ToBytesGadget<ConstraintF>
 where
     ConstraintF: PrimeField,
-    A: Attrs<AC>,
+    A: Attrs<ConstraintF, AC>,
     AC: CommitmentScheme,
+    AC::Output: ToConstraintField<ConstraintF>,
     ACG: CommitmentGadget<AC, ConstraintF>,
 {
     fn get_com_param(&self) -> Result<ACG::ParametersVar, SynthesisError>;

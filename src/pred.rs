@@ -7,7 +7,7 @@ use core::marker::PhantomData;
 
 use ark_crypto_primitives::commitment::{constraints::CommitmentGadget, CommitmentScheme};
 use ark_ec::PairingEngine;
-use ark_ff::PrimeField;
+use ark_ff::{PrimeField, ToConstraintField};
 use ark_r1cs_std::{alloc::AllocVar, boolean::Boolean, eq::EqGadget};
 use ark_relations::{
     ns,
@@ -15,17 +15,15 @@ use ark_relations::{
 };
 use ark_std::rand::Rng;
 
-#[cfg(test)]
-use ark_ff::ToConstraintField;
-
 /// Describes any predicate that someone might want to prove over an `Attrs` object.
 pub trait PredicateChecker<ConstraintF, A, AV, AC, ACG>: Sized
 where
     ConstraintF: PrimeField,
-    A: Attrs<AC>,
+    A: Attrs<ConstraintF, AC>,
     AV: AttrsVar<ConstraintF, A, AC, ACG>,
     AC: CommitmentScheme,
     ACG: CommitmentGadget<AC, ConstraintF>,
+    AC::Output: ToConstraintField<ConstraintF>,
 {
     /// Returns whether or not the predicate was satisfied
     fn pred(
@@ -47,12 +45,14 @@ where
     R: Rng,
     P: PredicateChecker<E::Fr, A, AV, AC, ACG>,
     E: PairingEngine,
-    A: Attrs<AC>,
+    A: Attrs<E::Fr, AC>,
     AV: AttrsVar<E::Fr, A, AC, ACG>,
     AC: CommitmentScheme,
     ACG: CommitmentGadget<AC, E::Fr>,
     MC: CommitmentScheme,
     MCG: CommitmentGadget<MC, E::Fr>,
+    AC::Output: ToConstraintField<E::Fr>,
+    MC::Output: ToConstraintField<E::Fr>,
 {
     let prover: PredicateProver<_, _, _, _, _, _, _, MCG> = PredicateProver {
         checker,
@@ -78,12 +78,14 @@ where
     R: Rng,
     P: PredicateChecker<E::Fr, A, AV, AC, ACG>,
     E: PairingEngine,
-    A: Attrs<AC>,
+    A: Attrs<E::Fr, AC>,
     AV: AttrsVar<E::Fr, A, AC, ACG>,
     AC: CommitmentScheme,
     ACG: CommitmentGadget<AC, E::Fr>,
     MC: CommitmentScheme,
     MCG: CommitmentGadget<MC, E::Fr>,
+    AC::Output: ToConstraintField<E::Fr>,
+    MC::Output: ToConstraintField<E::Fr>,
 {
     let prover: PredicateProver<_, _, _, _, _, _, _, MCG> = PredicateProver {
         checker,
@@ -109,7 +111,7 @@ pub(crate) fn verify_pred<P, E, A, AV, AC, ACG, MC, MCG>(
 where
     P: PredicateChecker<E::Fr, A, AV, AC, ACG>,
     E: PairingEngine,
-    A: Attrs<AC>,
+    A: Attrs<E::Fr, AC>,
     AV: AttrsVar<E::Fr, A, AC, ACG>,
     AC: CommitmentScheme,
     ACG: CommitmentGadget<AC, E::Fr>,
@@ -133,12 +135,14 @@ where
     R: Rng,
     P: PredicateChecker<E::Fr, A, AV, AC, ACG>,
     E: PairingEngine,
-    A: Attrs<AC>,
+    A: Attrs<E::Fr, AC>,
     AV: AttrsVar<E::Fr, A, AC, ACG>,
     AC: CommitmentScheme,
     ACG: CommitmentGadget<AC, E::Fr>,
     MC: CommitmentScheme,
     MCG: CommitmentGadget<MC, E::Fr>,
+    AC::Output: ToConstraintField<E::Fr>,
+    MC::Output: ToConstraintField<E::Fr>,
 {
     let pinput = ark_groth16::prepare_inputs(&vk.pvk, &checker.public_inputs())?;
     Ok(PredPublicInput {
@@ -154,12 +158,14 @@ pub(crate) struct PredicateProver<ConstraintF, P, A, AV, AC, ACG, MC, MCG>
 where
     ConstraintF: PrimeField,
     P: PredicateChecker<ConstraintF, A, AV, AC, ACG>,
-    A: Attrs<AC>,
+    A: Attrs<ConstraintF, AC>,
     AV: AttrsVar<ConstraintF, A, AC, ACG>,
     AC: CommitmentScheme,
     ACG: CommitmentGadget<AC, ConstraintF>,
     MC: CommitmentScheme,
     MCG: CommitmentGadget<MC, ConstraintF>,
+    AC::Output: ToConstraintField<ConstraintF>,
+    MC::Output: ToConstraintField<ConstraintF>,
 {
     checker: P,
     attrs: A,
@@ -172,12 +178,14 @@ impl<ConstraintF, P, A, AV, AC, ACG, MC, MCG> ConstraintSynthesizer<ConstraintF>
 where
     ConstraintF: PrimeField,
     P: PredicateChecker<ConstraintF, A, AV, AC, ACG>,
-    A: Attrs<AC>,
+    A: Attrs<ConstraintF, AC>,
     AV: AttrsVar<ConstraintF, A, AC, ACG>,
     AC: CommitmentScheme,
     ACG: CommitmentGadget<AC, ConstraintF>,
     MC: CommitmentScheme,
     MCG: CommitmentGadget<MC, ConstraintF>,
+    AC::Output: ToConstraintField<ConstraintF>,
+    MC::Output: ToConstraintField<ConstraintF>,
 {
     fn generate_constraints(
         self,
@@ -210,7 +218,6 @@ mod test {
 
     use ark_bls12_381::{Bls12_381 as E, Fr};
     use ark_r1cs_std::fields::fp::FpVar;
-    use ark_relations::r1cs::ConstraintSystem;
 
     type MerkleCom = PedersenCom<Window8x63>;
     type MerkleComG = PedersenComG<Window8x63>;
@@ -236,6 +243,7 @@ mod test {
                     ns!(cs, "threshold year"),
                     || Ok(self.threshold_birth_year),
                 )?;
+            // Assert that attrs.birth_year ≤ threshold_birth_year
             attrs
                 .birth_year
                 .is_cmp(&threshold_birth_year, core::cmp::Ordering::Less, true)
@@ -283,6 +291,6 @@ mod test {
         // make sure the predicate proof verifies.
         let person_com = person.commit();
         let vk = pk.prepare_verifying_key();
-        assert!(verify_pred(&vk, &proof, &checker, &person_com, &merkle_root_com,).unwrap());
+        assert!(verify_pred(&vk, &proof, &checker, &person_com, &merkle_root_com).unwrap());
     }
 }

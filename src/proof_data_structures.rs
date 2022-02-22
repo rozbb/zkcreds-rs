@@ -4,6 +4,7 @@ use core::marker::PhantomData;
 
 use ark_crypto_primitives::commitment::{constraints::CommitmentGadget, CommitmentScheme};
 use ark_ec::PairingEngine;
+use ark_ff::ToConstraintField;
 use ark_groth16::{
     PreparedVerifyingKey as Groth16PreparedVerifyingKey, Proof as Groth16Proof,
     ProvingKey as Groth16ProvingKey,
@@ -17,12 +18,14 @@ use ark_groth16::{
 pub struct PredProvingKey<E, A, AV, AC, ACG, MC, MCG>
 where
     E: PairingEngine,
-    A: Attrs<AC>,
+    A: Attrs<E::Fr, AC>,
     AV: AttrsVar<E::Fr, A, AC, ACG>,
     AC: CommitmentScheme,
     ACG: CommitmentGadget<AC, E::Fr>,
     MC: CommitmentScheme,
     MCG: CommitmentGadget<MC, E::Fr>,
+    AC::Output: ToConstraintField<E::Fr>,
+    MC::Output: ToConstraintField<E::Fr>,
 {
     pub(crate) pk: Groth16ProvingKey<E>,
     pub(crate) _marker: PhantomData<(A, AV, AC, ACG, MC, MCG)>,
@@ -31,12 +34,14 @@ where
 impl<E, A, AV, AC, ACG, MC, MCG> PredProvingKey<E, A, AV, AC, ACG, MC, MCG>
 where
     E: PairingEngine,
-    A: Attrs<AC>,
+    A: Attrs<E::Fr, AC>,
     AV: AttrsVar<E::Fr, A, AC, ACG>,
     AC: CommitmentScheme,
     ACG: CommitmentGadget<AC, E::Fr>,
     MC: CommitmentScheme,
     MCG: CommitmentGadget<MC, E::Fr>,
+    AC::Output: ToConstraintField<E::Fr>,
+    MC::Output: ToConstraintField<E::Fr>,
 {
     pub fn prepare_verifying_key(&self) -> PredVerifyingKey<E, A, AV, AC, ACG, MC, MCG> {
         let pvk = ark_groth16::prepare_verifying_key(&self.pk.vk);
@@ -51,12 +56,14 @@ where
 pub struct PredVerifyingKey<E, A, AV, AC, ACG, MC, MCG>
 where
     E: PairingEngine,
-    A: Attrs<AC>,
+    A: Attrs<E::Fr, AC>,
     AV: AttrsVar<E::Fr, A, AC, ACG>,
     AC: CommitmentScheme,
     ACG: CommitmentGadget<AC, E::Fr>,
     MC: CommitmentScheme,
     MCG: CommitmentGadget<MC, E::Fr>,
+    AC::Output: ToConstraintField<E::Fr>,
+    MC::Output: ToConstraintField<E::Fr>,
 {
     pub(crate) pvk: Groth16PreparedVerifyingKey<E>,
     pub(crate) _marker: PhantomData<(A, AV, AC, ACG, MC, MCG)>,
@@ -66,12 +73,14 @@ where
 pub struct PredPublicInput<E, A, AV, AC, ACG, MC, MCG>
 where
     E: PairingEngine,
-    A: Attrs<AC>,
+    A: Attrs<E::Fr, AC>,
     AV: AttrsVar<E::Fr, A, AC, ACG>,
     AC: CommitmentScheme,
     ACG: CommitmentGadget<AC, E::Fr>,
     MC: CommitmentScheme,
     MCG: CommitmentGadget<MC, E::Fr>,
+    AC::Output: ToConstraintField<E::Fr>,
+    MC::Output: ToConstraintField<E::Fr>,
 {
     pub(crate) pinput: E::G1Projective,
     pub(crate) _marker: PhantomData<(A, AV, AC, ACG, MC, MCG)>,
@@ -81,12 +90,14 @@ where
 pub struct PredProof<E, A, AV, AC, ACG, MC, MCG>
 where
     E: PairingEngine,
-    A: Attrs<AC>,
+    A: Attrs<E::Fr, AC>,
     AV: AttrsVar<E::Fr, A, AC, ACG>,
     AC: CommitmentScheme,
     ACG: CommitmentGadget<AC, E::Fr>,
     MC: CommitmentScheme,
     MCG: CommitmentGadget<MC, E::Fr>,
+    AC::Output: ToConstraintField<E::Fr>,
+    MC::Output: ToConstraintField<E::Fr>,
 {
     pub(crate) proof: Groth16Proof<E>,
     pub(crate) _marker: PhantomData<(A, AV, AC, ACG, MC, MCG)>,
@@ -100,12 +111,14 @@ where
 pub struct TreeProvingKey<E, A, AV, AC, ACG, MC, MCG>
 where
     E: PairingEngine,
-    A: Attrs<AC>,
+    A: Attrs<E::Fr, AC>,
     AV: AttrsVar<E::Fr, A, AC, ACG>,
     AC: CommitmentScheme,
     ACG: CommitmentGadget<AC, E::Fr>,
     MC: CommitmentScheme,
     MCG: CommitmentGadget<MC, E::Fr>,
+    AC::Output: ToConstraintField<E::Fr>,
+    MC::Output: ToConstraintField<E::Fr>,
 {
     pub(crate) pk: Groth16ProvingKey<E>,
     pub(crate) _marker: PhantomData<(A, AV, AC, ACG, MC, MCG)>,
@@ -115,12 +128,14 @@ where
 pub struct TreeVerifyingKey<E, A, AV, AC, ACG, MC, MCG>
 where
     E: PairingEngine,
-    A: Attrs<AC>,
+    A: Attrs<E::Fr, AC>,
     AV: AttrsVar<E::Fr, A, AC, ACG>,
     AC: CommitmentScheme,
     ACG: CommitmentGadget<AC, E::Fr>,
     MC: CommitmentScheme,
     MCG: CommitmentGadget<MC, E::Fr>,
+    AC::Output: ToConstraintField<E::Fr>,
+    MC::Output: ToConstraintField<E::Fr>,
 {
     pub(crate) pvk: Groth16PreparedVerifyingKey<E>,
     pub(crate) _marker: PhantomData<(A, AV, AC, ACG, MC, MCG)>,
@@ -130,12 +145,14 @@ where
 pub struct TreePublicInput<E, A, AV, AC, ACG, MC, MCG>
 where
     E: PairingEngine,
-    A: Attrs<AC>,
+    A: Attrs<E::Fr, AC>,
     AV: AttrsVar<E::Fr, A, AC, ACG>,
     AC: CommitmentScheme,
     ACG: CommitmentGadget<AC, E::Fr>,
     MC: CommitmentScheme,
     MCG: CommitmentGadget<MC, E::Fr>,
+    AC::Output: ToConstraintField<E::Fr>,
+    MC::Output: ToConstraintField<E::Fr>,
 {
     pub(crate) pinput: E::G1Projective,
     pub(crate) _marker: PhantomData<(A, AV, AC, ACG, MC, MCG)>,
@@ -145,12 +162,14 @@ where
 pub struct TreeProof<E, A, AV, AC, ACG, MC, MCG>
 where
     E: PairingEngine,
-    A: Attrs<AC>,
+    A: Attrs<E::Fr, AC>,
     AV: AttrsVar<E::Fr, A, AC, ACG>,
     AC: CommitmentScheme,
     ACG: CommitmentGadget<AC, E::Fr>,
     MC: CommitmentScheme,
     MCG: CommitmentGadget<MC, E::Fr>,
+    AC::Output: ToConstraintField<E::Fr>,
+    MC::Output: ToConstraintField<E::Fr>,
 {
     pub(crate) proof: Groth16Proof<E>,
     pub(crate) _marker: PhantomData<(A, AV, AC, ACG, MC, MCG)>,
