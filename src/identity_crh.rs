@@ -76,12 +76,7 @@ pub(crate) struct Bytestring<ConstraintF: PrimeField>(Vec<UInt8<ConstraintF>>);
 
 impl<ConstraintF: PrimeField> EqGadget<ConstraintF> for Bytestring<ConstraintF> {
     fn is_eq(&self, other: &Self) -> Result<Boolean<ConstraintF>, SynthesisError> {
-        self.0
-            .iter()
-            .zip(other.0.iter())
-            .fold(Ok(Boolean::constant(false)), |acc, (a, b)| {
-                acc.and_then(|acc| acc.and(&a.is_eq(b)?))
-            })
+        self.0.as_slice().is_eq(other.0.as_slice())
     }
 }
 
@@ -105,7 +100,7 @@ impl<ConstraintF: PrimeField> CondSelectGadget<ConstraintF> for Bytestring<Const
             .zip(false_value.0.iter())
             .map(|(t, f)| UInt8::conditionally_select(cond, t, f))
             .collect();
-        Ok(Bytestring(bytes?))
+        bytes.map(Bytestring)
     }
 }
 
@@ -126,7 +121,7 @@ impl<ConstraintF: PrimeField> AllocVar<Vec<u8>, ConstraintF> for Bytestring<Cons
             .map(|b| UInt8::new_variable(cs.clone(), || Ok(b), mode))
             .collect();
 
-        Ok(Bytestring(var_bytes?))
+        var_bytes.map(Bytestring)
     }
 }
 

@@ -78,14 +78,12 @@ where
                 Ok(claimed_leaf_hash.value()? == self.leaf_hashes.0.value()?)
             })?);
 
-        claimed_leaf_hash.conditional_enforce_equal(
-            &LeafH::OutputVar::conditionally_select(
-                &leaf_is_left,
-                &self.leaf_hashes.0,
-                &self.leaf_hashes.1,
-            )?,
-            should_enforce,
+        let leaf_hash = LeafH::OutputVar::conditionally_select(
+            &leaf_is_left,
+            &self.leaf_hashes.0,
+            &self.leaf_hashes.1,
         )?;
+        claimed_leaf_hash.conditional_enforce_equal(&leaf_hash, should_enforce)?;
 
         // Check levels between leaf level and root.
         let mut previous_hash = TwoToOneH::evaluate(
@@ -255,16 +253,11 @@ mod test {
         // Setup hashing params
         let leaf_param = <H as CRH>::setup(rng).unwrap();
         let two_to_one_param = <H as TwoToOneCRH>::setup(rng).unwrap();
-        //let two_to_one_param = leaf_param.clone();
 
         // Construct a tree of size 4
-        let tree = JubJubMerkleTree::new(
-            leaf_param.clone(),
-            two_to_one_param.clone(),
-            height,
-            &leaves,
-        )
-        .unwrap();
+        let tree =
+            JubJubMerkleTree::new(leaf_param.clone(), two_to_one_param.clone(), height, leaves)
+                .unwrap();
 
         let root: Fq = tree.root();
         let mut satisfied = true;

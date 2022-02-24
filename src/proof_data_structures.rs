@@ -111,11 +111,10 @@ where
 //
 
 /// Represents the proving key for a Merkle tree membership proof
-pub struct TreeProvingKey<E, A, AV, AC, ACG, H, HG>
+pub struct TreeProvingKey<E, A, AC, ACG, H, HG>
 where
     E: PairingEngine,
     A: Attrs<E::Fr, AC>,
-    AV: AttrsVar<E::Fr, A, AC, ACG>,
     AC: CommitmentScheme,
     ACG: CommitmentGadget<AC, E::Fr>,
     AC::Output: ToConstraintField<E::Fr>,
@@ -124,15 +123,34 @@ where
     HG: TwoToOneCRHGadget<H, E::Fr>,
 {
     pub(crate) pk: Groth16ProvingKey<E>,
-    pub(crate) _marker: PhantomData<(A, AV, AC, ACG, H, HG)>,
+    pub(crate) _marker: PhantomData<(A, AC, ACG, H, HG)>,
 }
 
-/// Represents the verifying key for Merkle tree membership proofs
-pub struct TreeVerifyingKey<E, A, AV, AC, ACG, H, HG>
+impl<E, A, AC, ACG, H, HG> TreeProvingKey<E, A, AC, ACG, H, HG>
 where
     E: PairingEngine,
     A: Attrs<E::Fr, AC>,
-    AV: AttrsVar<E::Fr, A, AC, ACG>,
+    AC: CommitmentScheme,
+    AC::Output: ToConstraintField<E::Fr>,
+    ACG: CommitmentGadget<AC, E::Fr>,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<E::Fr>,
+    HG: TwoToOneCRHGadget<H, E::Fr>,
+{
+    pub fn prepare_verifying_key(&self) -> TreeVerifyingKey<E, A, AC, ACG, H, HG> {
+        let pvk = ark_groth16::prepare_verifying_key(&self.pk.vk);
+        TreeVerifyingKey {
+            pvk,
+            _marker: self._marker,
+        }
+    }
+}
+
+/// Represents the verifying key for Merkle tree membership proofs
+pub struct TreeVerifyingKey<E, A, AC, ACG, H, HG>
+where
+    E: PairingEngine,
+    A: Attrs<E::Fr, AC>,
     AC: CommitmentScheme,
     ACG: CommitmentGadget<AC, E::Fr>,
     AC::Output: ToConstraintField<E::Fr>,
@@ -141,15 +159,14 @@ where
     HG: TwoToOneCRHGadget<H, E::Fr>,
 {
     pub(crate) pvk: Groth16PreparedVerifyingKey<E>,
-    pub(crate) _marker: PhantomData<(A, AV, AC, ACG, H, HG)>,
+    pub(crate) _marker: PhantomData<(A, AC, ACG, H, HG)>,
 }
 
 /// Represents the prepared public inputs to a Merkle tree membership proof
-pub struct TreePublicInput<E, A, AV, AC, ACG, H, HG>
+pub struct TreePublicInput<E, A, AC, ACG, H, HG>
 where
     E: PairingEngine,
     A: Attrs<E::Fr, AC>,
-    AV: AttrsVar<E::Fr, A, AC, ACG>,
     AC: CommitmentScheme,
     ACG: CommitmentGadget<AC, E::Fr>,
     AC::Output: ToConstraintField<E::Fr>,
@@ -158,15 +175,14 @@ where
     HG: TwoToOneCRHGadget<H, E::Fr>,
 {
     pub(crate) pinput: E::G1Projective,
-    pub(crate) _marker: PhantomData<(A, AV, AC, ACG, H, HG)>,
+    pub(crate) _marker: PhantomData<(A, AC, ACG, H, HG)>,
 }
 
 /// Represents a Merkle tree membership proof
-pub struct TreeProof<E, A, AV, AC, ACG, H, HG>
+pub struct TreeProof<E, A, AC, ACG, H, HG>
 where
     E: PairingEngine,
     A: Attrs<E::Fr, AC>,
-    AV: AttrsVar<E::Fr, A, AC, ACG>,
     AC: CommitmentScheme,
     AC::Output: ToConstraintField<E::Fr>,
     ACG: CommitmentGadget<AC, E::Fr>,
@@ -175,5 +191,5 @@ where
     HG: TwoToOneCRHGadget<H, E::Fr>,
 {
     pub(crate) proof: Groth16Proof<E>,
-    pub(crate) _marker: PhantomData<(A, AV, AC, ACG, H, HG)>,
+    pub(crate) _marker: PhantomData<(A, AC, ACG, H, HG)>,
 }

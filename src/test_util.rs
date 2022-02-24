@@ -62,6 +62,13 @@ impl pedersen::Window for Window9x63 {
     const NUM_WINDOWS: usize = 9;
 }
 
+#[derive(Clone)]
+pub struct Window17x63;
+impl pedersen::Window for Window17x63 {
+    const WINDOW_SIZE: usize = 63;
+    const NUM_WINDOWS: usize = 17;
+}
+
 // Convenience types for commitment and two-to-one CRH
 pub(crate) type PedersenCom<W> = commitment::pedersen::Commitment<Jubjub, W>;
 pub(crate) type PedersenComG<W> =
@@ -83,7 +90,7 @@ type FqV = ark_ed_on_bls12_381::constraints::FqVar;
 type P = ark_ed_on_bls12_381::EdwardsParameters;
 
 // Pick a two-to-one CRH
-pub(crate) type H = bowe_hopwood::CRH<EdwardsParameters, Window9x63>;
+pub(crate) type H = bowe_hopwood::CRH<EdwardsParameters, Window17x63>;
 pub(crate) type HG = bowe_hopwood::constraints::CRHGadget<P, FqV>;
 
 // Pick a commitment scheme
@@ -99,6 +106,15 @@ lazy_static! {
             StdRng::from_seed(seed)
         };
         BigComScheme::setup(&mut rng).unwrap()
+    };
+    pub(crate) static ref MERKLE_CRH_PARAM: <H as TwoToOneCRH>::Parameters = {
+        let mut rng = {
+            let mut seed = [0u8; 32];
+            let mut writer = &mut seed[..];
+            writer.write_all(b"zeronym-merkle-param").unwrap();
+            StdRng::from_seed(seed)
+        };
+        <H as TwoToOneCRH>::setup(&mut rng).unwrap()
     };
 }
 
