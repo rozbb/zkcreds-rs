@@ -5,7 +5,10 @@ use crate::{
 
 use core::marker::PhantomData;
 
-use ark_crypto_primitives::commitment::{constraints::CommitmentGadget, CommitmentScheme};
+use ark_crypto_primitives::{
+    commitment::{constraints::CommitmentGadget, CommitmentScheme},
+    crh::{TwoToOneCRH, TwoToOneCRHGadget},
+};
 use ark_ec::PairingEngine;
 use ark_ff::{PrimeField, ToConstraintField};
 use ark_r1cs_std::{alloc::AllocVar, boolean::Boolean, eq::EqGadget};
@@ -37,10 +40,10 @@ where
     fn public_inputs(&self) -> Vec<ConstraintF>;
 }
 
-pub fn gen_pred_crs<R, P, E, A, AV, AC, ACG, MC, MCG>(
+pub fn gen_pred_crs<R, P, E, A, AV, AC, ACG, H, HG>(
     rng: &mut R,
     checker: P,
-) -> Result<PredProvingKey<E, A, AV, AC, ACG, MC, MCG>, SynthesisError>
+) -> Result<PredProvingKey<E, A, AV, AC, ACG, H, HG>, SynthesisError>
 where
     R: Rng,
     P: PredicateChecker<E::Fr, A, AV, AC, ACG>,
@@ -49,15 +52,15 @@ where
     AV: AttrsVar<E::Fr, A, AC, ACG>,
     AC: CommitmentScheme,
     ACG: CommitmentGadget<AC, E::Fr>,
-    MC: CommitmentScheme,
-    MCG: CommitmentGadget<MC, E::Fr>,
     AC::Output: ToConstraintField<E::Fr>,
-    MC::Output: ToConstraintField<E::Fr>,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<E::Fr>,
+    HG: TwoToOneCRHGadget<H, E::Fr>,
 {
-    let prover: PredicateProver<_, _, _, _, _, _, _, MCG> = PredicateProver {
+    let prover: PredicateProver<_, _, _, _, _, _, _, HG> = PredicateProver {
         checker,
         attrs: A::default(),
-        merkle_root_com: MC::Output::default(),
+        merkle_root: H::Output::default(),
         _marker: PhantomData,
     };
     let pk = ark_groth16::generate_random_parameters(prover, rng)?;
@@ -67,13 +70,13 @@ where
     })
 }
 
-pub fn prove_pred<R, P, E, A, AV, AC, ACG, MC, MCG>(
+pub fn prove_pred<R, P, E, A, AV, AC, ACG, H, HG>(
     rng: &mut R,
-    pk: &PredProvingKey<E, A, AV, AC, ACG, MC, MCG>,
+    pk: &PredProvingKey<E, A, AV, AC, ACG, H, HG>,
     checker: P,
     attrs: A,
-    merkle_root_com: MC::Output,
-) -> Result<PredProof<E, A, AV, AC, ACG, MC, MCG>, SynthesisError>
+    merkle_root: H::Output,
+) -> Result<PredProof<E, A, AV, AC, ACG, H, HG>, SynthesisError>
 where
     R: Rng,
     P: PredicateChecker<E::Fr, A, AV, AC, ACG>,
@@ -82,15 +85,15 @@ where
     AV: AttrsVar<E::Fr, A, AC, ACG>,
     AC: CommitmentScheme,
     ACG: CommitmentGadget<AC, E::Fr>,
-    MC: CommitmentScheme,
-    MCG: CommitmentGadget<MC, E::Fr>,
     AC::Output: ToConstraintField<E::Fr>,
-    MC::Output: ToConstraintField<E::Fr>,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<E::Fr>,
+    HG: TwoToOneCRHGadget<H, E::Fr>,
 {
-    let prover: PredicateProver<_, _, _, _, _, _, _, MCG> = PredicateProver {
+    let prover: PredicateProver<_, _, _, _, _, _, _, HG> = PredicateProver {
         checker,
         attrs,
-        merkle_root_com,
+        merkle_root,
         _marker: PhantomData,
     };
     let proof = ark_groth16::create_random_proof(prover, &pk.pk, rng)?;
@@ -101,12 +104,12 @@ where
 }
 
 #[cfg(test)]
-pub(crate) fn verify_pred<P, E, A, AV, AC, ACG, MC, MCG>(
-    vk: &PredVerifyingKey<E, A, AV, AC, ACG, MC, MCG>,
-    proof: &PredProof<E, A, AV, AC, ACG, MC, MCG>,
+pub(crate) fn verify_pred<P, E, A, AV, AC, ACG, H, HG>(
+    vk: &PredVerifyingKey<E, A, AV, AC, ACG, H, HG>,
+    proof: &PredProof<E, A, AV, AC, ACG, H, HG>,
     checker: &P,
     attrs_com: &AC::Output,
-    merkle_root_com: &MC::Output,
+    merkle_root: &H::Output,
 ) -> Result<bool, SynthesisError>
 where
     P: PredicateChecker<E::Fr, A, AV, AC, ACG>,
@@ -115,22 +118,22 @@ where
     AV: AttrsVar<E::Fr, A, AC, ACG>,
     AC: CommitmentScheme,
     ACG: CommitmentGadget<AC, E::Fr>,
-    MC: CommitmentScheme,
-    MCG: CommitmentGadget<MC, E::Fr>,
     AC::Output: ToConstraintField<E::Fr>,
-    MC::Output: ToConstraintField<E::Fr>,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<E::Fr>,
+    HG: TwoToOneCRHGadget<H, E::Fr>,
 {
     let attr_com_input = attrs_com.to_field_elements().unwrap();
-    let root_com_input = merkle_root_com.to_field_elements().unwrap();
+    let root_input = merkle_root.to_field_elements().unwrap();
 
-    let all_inputs = [attr_com_input, root_com_input, checker.public_inputs()].concat();
+    let all_inputs = [attr_com_input, root_input, checker.public_inputs()].concat();
     ark_groth16::verify_proof(&vk.pvk, &proof.proof, &all_inputs)
 }
 
-pub fn prepare_pred_inputs<R, P, E, A, AV, AC, ACG, MC, MCG>(
-    vk: &PredVerifyingKey<E, A, AV, AC, ACG, MC, MCG>,
+pub fn prepare_pred_inputs<R, P, E, A, AV, AC, ACG, H, HG>(
+    vk: &PredVerifyingKey<E, A, AV, AC, ACG, H, HG>,
     checker: &P,
-) -> Result<PredPublicInput<E, A, AV, AC, ACG, MC, MCG>, SynthesisError>
+) -> Result<PredPublicInput<E, A, AV, AC, ACG, H, HG>, SynthesisError>
 where
     R: Rng,
     P: PredicateChecker<E::Fr, A, AV, AC, ACG>,
@@ -138,11 +141,11 @@ where
     A: Attrs<E::Fr, AC>,
     AV: AttrsVar<E::Fr, A, AC, ACG>,
     AC: CommitmentScheme,
-    ACG: CommitmentGadget<AC, E::Fr>,
-    MC: CommitmentScheme,
-    MCG: CommitmentGadget<MC, E::Fr>,
     AC::Output: ToConstraintField<E::Fr>,
-    MC::Output: ToConstraintField<E::Fr>,
+    ACG: CommitmentGadget<AC, E::Fr>,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<E::Fr>,
+    HG: TwoToOneCRHGadget<H, E::Fr>,
 {
     let pinput = ark_groth16::prepare_inputs(&vk.pvk, &checker.public_inputs())?;
     Ok(PredPublicInput {
@@ -154,27 +157,27 @@ where
 /// Internal object for proving predicates. This needs to implement `ConstraintSynthesizer` in
 /// order to pass to the Groth16 proving functions. `AC` is the attribute commitment scheme, `MC`
 /// is the merkle root commitment scheme.
-pub(crate) struct PredicateProver<ConstraintF, P, A, AV, AC, ACG, MC, MCG>
+pub(crate) struct PredicateProver<ConstraintF, P, A, AV, AC, ACG, H, HG>
 where
     ConstraintF: PrimeField,
     P: PredicateChecker<ConstraintF, A, AV, AC, ACG>,
     A: Attrs<ConstraintF, AC>,
     AV: AttrsVar<ConstraintF, A, AC, ACG>,
     AC: CommitmentScheme,
-    ACG: CommitmentGadget<AC, ConstraintF>,
-    MC: CommitmentScheme,
-    MCG: CommitmentGadget<MC, ConstraintF>,
     AC::Output: ToConstraintField<ConstraintF>,
-    MC::Output: ToConstraintField<ConstraintF>,
+    ACG: CommitmentGadget<AC, ConstraintF>,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<ConstraintF>,
+    HG: TwoToOneCRHGadget<H, ConstraintF>,
 {
     checker: P,
     attrs: A,
-    merkle_root_com: MC::Output,
-    _marker: PhantomData<(ConstraintF, AV, AC, ACG, MCG)>,
+    merkle_root: H::Output,
+    _marker: PhantomData<(ConstraintF, AV, AC, ACG, HG)>,
 }
 
-impl<ConstraintF, P, A, AV, AC, ACG, MC, MCG> ConstraintSynthesizer<ConstraintF>
-    for PredicateProver<ConstraintF, P, A, AV, AC, ACG, MC, MCG>
+impl<ConstraintF, P, A, AV, AC, ACG, H, HG> ConstraintSynthesizer<ConstraintF>
+    for PredicateProver<ConstraintF, P, A, AV, AC, ACG, H, HG>
 where
     ConstraintF: PrimeField,
     P: PredicateChecker<ConstraintF, A, AV, AC, ACG>,
@@ -182,10 +185,10 @@ where
     AV: AttrsVar<ConstraintF, A, AC, ACG>,
     AC: CommitmentScheme,
     ACG: CommitmentGadget<AC, ConstraintF>,
-    MC: CommitmentScheme,
-    MCG: CommitmentGadget<MC, ConstraintF>,
     AC::Output: ToConstraintField<ConstraintF>,
-    MC::Output: ToConstraintField<ConstraintF>,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<ConstraintF>,
+    HG: TwoToOneCRHGadget<H, ConstraintF>,
 {
     fn generate_constraints(
         self,
@@ -195,8 +198,7 @@ where
         // attributes and the merkle root
         let attrs_com_var =
             ACG::OutputVar::new_input(ns!(cs, "attrs com var"), || Ok(self.attrs.commit()))?;
-        let _root_com_var =
-            MCG::OutputVar::new_input(ns!(cs, "root com var"), || Ok(self.merkle_root_com))?;
+        let _root_var = HG::OutputVar::new_input(ns!(cs, "root var"), || Ok(self.merkle_root))?;
 
         // Check that the attrs commitment is consistent
         let attrs_var = AV::new_witness(ns!(cs, "attrs var"), || Ok(&self.attrs))?;
@@ -212,15 +214,11 @@ where
 mod test {
     use super::*;
     use crate::test_util::{
-        BigComScheme, BigComSchemeG, Com, NameAndBirthYear, NameAndBirthYearVar, PedersenCom,
-        PedersenComG, Window8x63,
+        BigComScheme, BigComSchemeG, NameAndBirthYear, NameAndBirthYearVar, H, HG,
     };
 
     use ark_bls12_381::{Bls12_381 as E, Fr};
     use ark_r1cs_std::fields::fp::FpVar;
-
-    type MerkleCom = PedersenCom<Window8x63>;
-    type MerkleComG = PedersenComG<Window8x63>;
 
     // Define a predicate that will tell whether the given `NameAndBirthYear` is at least X years
     // old. The predicate is: attrs.birth_year ≤ self.threshold_birth_year
@@ -267,30 +265,23 @@ mod test {
         };
 
         // Generate the predicate circuit's CRS
-        let pk =
-            gen_pred_crs::<_, _, E, _, _, _, _, _, MerkleComG>(&mut rng, checker.clone()).unwrap();
+        let pk = gen_pred_crs::<_, _, E, _, _, _, _, H, HG>(&mut rng, checker.clone()).unwrap();
 
         // First name is UTF-8 encoded, padded at the end with null bytes
         let person = NameAndBirthYear::new(&mut rng, b"Andrew", 1992);
-        // Make a placeholder merkle root commitment. This value is only relevant when we start
-        // linking proofs. Together. Ignore for this test.
-        let merkle_root_com = Com::<MerkleCom>::default();
+        // Make a placeholder Merkle root. This value is only relevant when we start linking
+        // proofs. Together. Ignore for this test.
+        let merkle_root = <H as TwoToOneCRH>::Output::default();
 
         // Prove the predicate
-        let proof = prove_pred(
-            &mut rng,
-            &pk,
-            checker.clone(),
-            person.clone(),
-            merkle_root_com,
-        )
-        .unwrap();
+        let proof =
+            prove_pred(&mut rng, &pk, checker.clone(), person.clone(), merkle_root).unwrap();
 
         // Ordinarily we wouldn't be able to verify a predicate proof, since it requires knowledge
         // of the attribute commitment. But this is testing mode and we know this value, so let's
         // make sure the predicate proof verifies.
         let person_com = person.commit();
         let vk = pk.prepare_verifying_key();
-        assert!(verify_pred(&vk, &proof, &checker, &person_com, &merkle_root_com).unwrap());
+        assert!(verify_pred(&vk, &proof, &checker, &person_com, &merkle_root).unwrap());
     }
 }

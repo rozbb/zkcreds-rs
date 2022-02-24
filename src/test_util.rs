@@ -222,13 +222,4 @@ impl AttrsVar<Fr, NameAndBirthYear, BigComScheme, BigComSchemeG> for NameAndBirt
     fn get_com_nonce(&self) -> Result<NonceVar<BigComScheme, BigComSchemeG, Fr>, SynthesisError> {
         Ok(self.nonce.clone())
     }
-
-    /*
-    fn commit(&self) -> Result<ComVar<BigComScheme, BigComSchemeG, Fr>, SynthesisError> {
-        let cs = self.first_name[0].cs().or(self.birth_year.cs());
-        let com_param =
-            ParamVar::<BigComScheme, BigComSchemeG, Fr>::new_constant(cs, &*BIG_COM_PARAM)?;
-        BigComSchemeG::commit(&com_param, &self.to_bytes()?, &self.nonce)
-    }
-    */
 }

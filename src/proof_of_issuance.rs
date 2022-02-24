@@ -1,32 +1,24 @@
 use crate::{
     attrs::{Attrs, AttrsVar},
-    identity_crh::{IdentityCRH, IdentityCRHGadget},
+    identity_crh::{IdentityCRH, IdentityCRHGadget, UnitVar},
     proof_data_structures::{TreeProof, TreeProvingKey},
-    sparse_merkle::{
-        constraints::SparseMerkleTreePathVar, SparseMerkleTree, SparseMerkleTreePath,
-        TwoToOneDigest,
-    },
+    sparse_merkle::{constraints::SparseMerkleTreePathVar, SparseMerkleTree, SparseMerkleTreePath},
 };
 
 use core::marker::PhantomData;
 
 use ark_crypto_primitives::{
     commitment::{constraints::CommitmentGadget, CommitmentScheme},
-    crh::{
-        constraints::{CRHGadget, TwoToOneCRHGadget},
-        TwoToOneCRH,
-    },
+    crh::{constraints::TwoToOneCRHGadget, TwoToOneCRH},
     merkle_tree::{Config as TreeConfig, TwoToOneParam},
-    Error as ArkError,
 };
 use ark_ec::PairingEngine;
 use ark_ff::{PrimeField, ToConstraintField};
-use ark_r1cs_std::{alloc::AllocVar, eq::EqGadget, ToBytesGadget};
+use ark_r1cs_std::alloc::AllocVar;
 use ark_relations::{
     ns,
     r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError},
 };
-use ark_serialize::CanonicalSerialize;
 use ark_std::rand::Rng;
 
 /// A sparse Merkle tree config which uses the identity function for leaf hashes (we don't need to
@@ -39,20 +31,16 @@ impl<H: TwoToOneCRH> TreeConfig for ComTreeConfig<H> {
 }
 
 /// A Merkle tree of attribute commitments
-pub struct ComTree<ConstraintF, H, AC, MC>
+pub struct ComTree<ConstraintF, H, AC>
 where
     ConstraintF: PrimeField,
     H: TwoToOneCRH,
+    H::Output: ToConstraintField<ConstraintF>,
     AC: CommitmentScheme,
-    MC: CommitmentScheme,
     AC::Output: ToConstraintField<ConstraintF>,
-    MC::Output: ToConstraintField<ConstraintF>,
 {
-    /// Parameters for the commitment of this tree's root
-    merkle_com_params: MC::Parameters,
-
-    /// The nonce for the commitment of this tree's root
-    root_com_nonce: MC::Randomness,
+    /// Parameters for the hash function of the Merkle tree
+    crh_params: H::Parameters,
 
     /// The tree's contents
     tree: SparseMerkleTree<ComTreeConfig<H>>,
@@ -60,46 +48,24 @@ where
     _marker: PhantomData<(ConstraintF, AC)>,
 }
 
-/// A commitment to a Merkle tree's root
-pub struct RootCom<ConstraintF, MC>
-where
-    ConstraintF: PrimeField,
-    MC: CommitmentScheme,
-    MC::Output: ToConstraintField<ConstraintF>,
-{
-    com: MC::Output,
-    _marker: PhantomData<ConstraintF>,
-}
-
-impl<ConstraintF, H, AC, MC> ComTree<ConstraintF, H, AC, MC>
+impl<ConstraintF, H, AC> ComTree<ConstraintF, H, AC>
 where
     ConstraintF: PrimeField,
     H: TwoToOneCRH,
+    H::Output: ToConstraintField<ConstraintF>,
     AC: CommitmentScheme,
-    MC: CommitmentScheme,
     AC::Output: ToConstraintField<ConstraintF>,
-    MC::Output: ToConstraintField<ConstraintF>,
 {
-    /// Returns a commitment to the tree's root
-    pub fn root_com(&self) -> Result<RootCom<ConstraintF, MC>, ArkError> {
-        // Serialize the root and commit to it
-        let root_bytes = {
-            let mut buf = Vec::new();
-            let root = self.tree.root();
-            root.serialize(&mut buf)?;
-            buf
-        };
-        MC::commit(&self.merkle_com_params, &root_bytes, &self.root_com_nonce).map(|com| RootCom {
-            com,
-            _marker: PhantomData,
-        })
+    /// Returns this tree's root
+    pub fn root(&self) -> H::Output {
+        self.tree.root()
     }
 
     /// Generates the membership proving key for this tree
     pub fn gen_crs<R, E, HG, A, AV, ACG, MCG>(
         &self,
         rng: &mut R,
-    ) -> Result<TreeProvingKey<E, A, AV, AC, ACG, MC, MCG>, SynthesisError>
+    ) -> Result<TreeProvingKey<E, A, AV, AC, ACG, H, HG>, SynthesisError>
     where
         R: Rng,
         E: PairingEngine<Fr = ConstraintF>,
@@ -107,16 +73,12 @@ where
         A: Attrs<E::Fr, AC>,
         AV: AttrsVar<E::Fr, A, AC, ACG>,
         ACG: CommitmentGadget<AC, E::Fr>,
-        MCG: CommitmentGadget<MC, E::Fr>,
     {
-        let prover: TreeMembershipProver<E::Fr, AC, ACG, MC, MCG, H, HG> = TreeMembershipProver {
+        let prover: TreeMembershipProver<E::Fr, AC, ACG, H, HG> = TreeMembershipProver {
             height: self.tree.height,
-            two_to_one_param: self.tree.two_to_one_param.clone(),
-            merkle_com_param: self.merkle_com_params.clone(),
+            crh_param: self.tree.two_to_one_param.clone(),
             attrs_com: Default::default(),
             root: Default::default(),
-            root_com: Default::default(),
-            root_com_nonce: Default::default(),
             //root: self.tree.root(),
             //root_com_nonce: self.nonce,
             auth_path: None,
@@ -130,39 +92,34 @@ where
     }
 
     /// Proves that the given attribute commitment is at the specified tree index
-    pub fn prove_membership<R, E, HG, A, AV, ACG, MCG>(
+    pub fn prove_membership<R, E, A, AV, ACG, HG>(
         &self,
         rng: &mut R,
-        pk: &TreeProvingKey<E, A, AV, AC, ACG, MC, MCG>,
+        pk: &TreeProvingKey<E, A, AV, AC, ACG, H, HG>,
         idx: u64,
         attrs_com: AC::Output,
-    ) -> Result<TreeProof<E, A, AV, AC, ACG, MC, MCG>, SynthesisError>
+    ) -> Result<TreeProof<E, A, AV, AC, ACG, H, HG>, SynthesisError>
     where
         R: Rng,
         E: PairingEngine<Fr = ConstraintF>,
-        HG: TwoToOneCRHGadget<H, E::Fr>,
         A: Attrs<E::Fr, AC>,
         AV: AttrsVar<E::Fr, A, AC, ACG>,
         ACG: CommitmentGadget<AC, E::Fr>,
-        MCG: CommitmentGadget<MC, E::Fr>,
+        HG: TwoToOneCRHGadget<H, E::Fr>,
     {
         // Get the root, its commitment, and the auth path of the given idx
         let root = self.tree.root();
-        let root_com = self.root_com().expect("could not commit to root").com;
         let auth_path = self
             .tree
             .generate_proof(idx, &attrs_com)
             .expect("could not construct auth path");
 
         // Construct the prover with all the relevant info, and prove
-        let prover: TreeMembershipProver<E::Fr, AC, ACG, MC, MCG, H, HG> = TreeMembershipProver {
+        let prover: TreeMembershipProver<E::Fr, AC, ACG, H, HG> = TreeMembershipProver {
             height: self.tree.height,
-            two_to_one_param: self.tree.two_to_one_param.clone(),
-            merkle_com_param: self.merkle_com_params.clone(),
+            crh_param: self.tree.two_to_one_param.clone(),
             attrs_com,
             root,
-            root_com,
-            root_com_nonce: self.root_com_nonce.clone(),
             auth_path: Some(auth_path),
             _marker: PhantomData,
         };
@@ -177,47 +134,43 @@ where
 
 /// A circuit that proves that a commitment to `attrs` appears in the Merkle tree of height `height`
 /// defined by root hash `root`.
-struct TreeMembershipProver<ConstraintF, AC, ACG, MC, MCG, H, HG>
+struct TreeMembershipProver<ConstraintF, AC, ACG, H, HG>
 where
     ConstraintF: PrimeField,
     AC: CommitmentScheme,
+    AC::Output: ToConstraintField<ConstraintF>,
     ACG: CommitmentGadget<AC, ConstraintF>,
-    MC: CommitmentScheme,
-    MCG: CommitmentGadget<MC, ConstraintF>,
     H: TwoToOneCRH,
+    H::Output: ToConstraintField<ConstraintF>,
     HG: TwoToOneCRHGadget<H, ConstraintF>,
 {
     // Constants //
     height: u32,
-    two_to_one_param: TwoToOneParam<ComTreeConfig<H>>,
-    merkle_com_param: MC::Parameters,
+    crh_param: TwoToOneParam<ComTreeConfig<H>>,
 
     // Public inputs //
-    root: TwoToOneDigest<ComTreeConfig<H>>,
 
     // Private inputs //
     /// The leaf value
     attrs_com: AC::Output,
-    /// A commitment to the root value
-    root_com: MC::Output,
-    /// The opening of the root commitment
-    root_com_nonce: MC::Randomness,
+    /// The tree root's value
+    root: H::Output,
     /// Merkle auth path of the leaf `attrs_com`
     auth_path: Option<SparseMerkleTreePath<ComTreeConfig<H>>>,
 
     // Marker //
-    _marker: PhantomData<(ConstraintF, AC, ACG, MC, MCG, HG)>,
+    _marker: PhantomData<(ConstraintF, AC, ACG, H, HG, HG)>,
 }
 
-impl<ConstraintF, AC, ACG, MC, MCG, H, HG> ConstraintSynthesizer<ConstraintF>
-    for TreeMembershipProver<ConstraintF, AC, ACG, MC, MCG, H, HG>
+impl<ConstraintF, AC, ACG, H, HG> ConstraintSynthesizer<ConstraintF>
+    for TreeMembershipProver<ConstraintF, AC, ACG, H, HG>
 where
     ConstraintF: PrimeField,
     AC: CommitmentScheme,
+    AC::Output: ToConstraintField<ConstraintF>,
     ACG: CommitmentGadget<AC, ConstraintF>,
-    MC: CommitmentScheme,
-    MCG: CommitmentGadget<MC, ConstraintF>,
     H: TwoToOneCRH,
+    H::Output: ToConstraintField<ConstraintF>,
     HG: TwoToOneCRHGadget<H, ConstraintF>,
 {
     fn generate_constraints(
@@ -228,29 +181,13 @@ where
         // attributes and the merkle root
         let attrs_com_var =
             ACG::OutputVar::new_input(ns!(cs, "attrs com var"), || Ok(self.attrs_com))?;
-        let root_com_var =
-            MCG::OutputVar::new_input(ns!(cs, "root com var"), || Ok(self.root_com))?;
-
-        // Check that the root commitment is consistent
-        let com_param_var =
-            MCG::ParametersVar::new_constant(ns!(cs, "com param"), &self.merkle_com_param)?;
-        let root_var = HG::OutputVar::new_input(ns!(cs, "root"), || Ok(&self.root))?;
-        let root_com_nonce_var =
-            MCG::RandomnessVar::new_input(ns!(cs, "root com nonce"), || Ok(&self.root_com_nonce))?;
-        root_com_var.enforce_equal(&MCG::commit(
-            &com_param_var,
-            &root_var.to_bytes()?,
-            &root_com_nonce_var,
-        )?)?;
+        let root_var = HG::OutputVar::new_input(ns!(cs, "root var"), || Ok(self.root))?;
 
         // Now we do the tree membership proof. Input the two-to-one params
-        let leaf_param_var =
-            <IdentityCRHGadget as CRHGadget<IdentityCRH, _>>::ParametersVar::new_constant(
-                ns!(cs, "identity param"),
-                (),
-            )?;
-        let two_to_one_param_var =
-            HG::ParametersVar::new_constant(ns!(cs, "two_to_one param"), &self.two_to_one_param)?;
+        let crh_param_var =
+            HG::ParametersVar::new_constant(ns!(cs, "two_to_one param"), &self.crh_param)?;
+        // This is a placeholder value. We don't actually use leaf hashes
+        let leaf_param_var = UnitVar::default();
 
         // Witness the path
         let path_var = SparseMerkleTreePathVar::<_, IdentityCRHGadget, HG, _>::new_witness(
@@ -266,7 +203,7 @@ where
         path_var.check_membership(
             ns!(cs, "check_membership").cs(),
             &leaf_param_var,
-            &two_to_one_param_var,
+            &crh_param_var,
             &root_var,
             &attrs_com_var,
         )
