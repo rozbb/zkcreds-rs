@@ -23,12 +23,13 @@ lazy_static = "1.4"
 rand = "0.8"
 rand_core = "0.6"
 
+[dependencies.groth-sahai-wrappers]
+git = "https://github.com/jdwhite88/groth-sahai-wrappers"
+rev = "84d30dcd8c5f073a6b4c80f3baccd7556aeccb0a"
+
 [patch.crates-io.ark-crypto-primitives]
 git = "https://github.com/arkworks-rs/crypto-primitives.git"
-#branch = "main"
-#path = "../crypto-primitives"
 rev = "3402a729b7104983c9779714ab8580de5187bbdd"
-#features = ["r1cs"]
 
 [features]
 default = ["std", "parallel", "asm"]

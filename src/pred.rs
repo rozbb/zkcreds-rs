@@ -211,7 +211,7 @@ where
 }
 
 #[cfg(test)]
-mod test {
+pub(crate) mod test {
     use super::*;
     use crate::test_util::{
         BigComScheme, BigComSchemeG, NameAndBirthYear, NameAndBirthYearVar, H, HG,
@@ -223,8 +223,8 @@ mod test {
     // Define a predicate that will tell whether the given `NameAndBirthYear` is at least X years
     // old. The predicate is: attrs.birth_year ≤ self.threshold_birth_year
     #[derive(Clone)]
-    struct AgeProver {
-        threshold_birth_year: Fr,
+    pub(crate) struct AgeProver {
+        pub(crate) threshold_birth_year: Fr,
     }
     impl PredicateChecker<Fr, NameAndBirthYear, NameAndBirthYearVar, BigComScheme, BigComSchemeG>
         for AgeProver

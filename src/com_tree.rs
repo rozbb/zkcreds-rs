@@ -28,7 +28,7 @@ use crate::proof_data_structures::TreeVerifyingKey;
 
 /// A sparse Merkle tree config which uses the identity function for leaf hashes (we don't need to
 /// hash commitments)
-struct ComTreeConfig<H: TwoToOneCRH>(H);
+pub struct ComTreeConfig<H: TwoToOneCRH>(H);
 
 impl<H: TwoToOneCRH> TreeConfig for ComTreeConfig<H> {
     type LeafHash = IdentityCRH;
@@ -222,8 +222,6 @@ where
     // Constants //
     height: u32,
     crh_param: TwoToOneParam<ComTreeConfig<H>>,
-
-    // Public inputs //
 
     // Private inputs //
     /// The leaf value

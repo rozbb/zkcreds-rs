@@ -17,7 +17,7 @@ use ark_relations::r1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use ark_std::rand::Rng;
 
 /// This CRH is the identity function on its input
-pub(crate) struct IdentityCRH;
+pub struct IdentityCRH;
 impl CRH for IdentityCRH {
     /// This value doesn't matter. We return everything no matter what
     const INPUT_SIZE_BITS: usize = 0;
