@@ -107,6 +107,84 @@ where
 }
 
 //
+// Birth predicate data structures
+//
+
+/// Represents the proving key for a predicate proof
+pub struct BirthProvingKey<E, A, AV, AC, ACG>
+where
+    E: PairingEngine,
+    A: Attrs<E::Fr, AC>,
+    AV: AttrsVar<E::Fr, A, AC, ACG>,
+    AC: CommitmentScheme,
+    AC::Output: ToConstraintField<E::Fr>,
+    ACG: CommitmentGadget<AC, E::Fr>,
+{
+    pub(crate) pk: Groth16ProvingKey<E>,
+    pub(crate) _marker: PhantomData<(A, AV, AC, ACG)>,
+}
+
+impl<E, A, AV, AC, ACG> BirthProvingKey<E, A, AV, AC, ACG>
+where
+    E: PairingEngine,
+    A: Attrs<E::Fr, AC>,
+    AV: AttrsVar<E::Fr, A, AC, ACG>,
+    AC: CommitmentScheme,
+    AC::Output: ToConstraintField<E::Fr>,
+    ACG: CommitmentGadget<AC, E::Fr>,
+{
+    pub fn prepare_verifying_key(&self) -> BirthVerifyingKey<E, A, AV, AC, ACG> {
+        let pvk = ark_groth16::prepare_verifying_key(&self.pk.vk);
+        BirthVerifyingKey {
+            pvk,
+            _marker: self._marker,
+        }
+    }
+}
+
+/// Represents the verifying key for a predicate proofs
+pub struct BirthVerifyingKey<E, A, AV, AC, ACG>
+where
+    E: PairingEngine,
+    A: Attrs<E::Fr, AC>,
+    AV: AttrsVar<E::Fr, A, AC, ACG>,
+    AC: CommitmentScheme,
+    AC::Output: ToConstraintField<E::Fr>,
+    ACG: CommitmentGadget<AC, E::Fr>,
+{
+    pub(crate) pvk: Groth16PreparedVerifyingKey<E>,
+    pub(crate) _marker: PhantomData<(A, AV, AC, ACG)>,
+}
+
+/// Represents the prepared public inputs to a predicate proof
+pub struct BirthPublicInput<E, A, AV, AC, ACG>
+where
+    E: PairingEngine,
+    A: Attrs<E::Fr, AC>,
+    AV: AttrsVar<E::Fr, A, AC, ACG>,
+    AC: CommitmentScheme,
+    AC::Output: ToConstraintField<E::Fr>,
+    ACG: CommitmentGadget<AC, E::Fr>,
+{
+    pub(crate) pinput: E::G1Projective,
+    pub(crate) _marker: PhantomData<(A, AV, AC, ACG)>,
+}
+
+/// Represents a predicate proof
+pub struct BirthProof<E, A, AV, AC, ACG>
+where
+    E: PairingEngine,
+    A: Attrs<E::Fr, AC>,
+    AV: AttrsVar<E::Fr, A, AC, ACG>,
+    AC: CommitmentScheme,
+    AC::Output: ToConstraintField<E::Fr>,
+    ACG: CommitmentGadget<AC, E::Fr>,
+{
+    pub(crate) proof: Groth16Proof<E>,
+    pub(crate) _marker: PhantomData<(A, AV, AC, ACG)>,
+}
+
+//
 // Merkle tree membership data structures
 //
 

@@ -226,6 +226,7 @@ pub(crate) mod test {
     pub(crate) struct AgeProver {
         pub(crate) threshold_birth_year: Fr,
     }
+
     impl PredicateChecker<Fr, NameAndBirthYear, NameAndBirthYearVar, BigComScheme, BigComSchemeG>
         for AgeProver
     {
