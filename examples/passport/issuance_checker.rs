@@ -43,7 +43,7 @@ struct IssuanceChecker {
 
     // Private inputs
     dg1: [u8; DG1_LEN],
-    dg2: Vec<u8>,
+    dg2_hash: [u8; HASH_LEN],
     pre_econtent: [u8; PRE_ECONTENT_LEN],
     econtent: [u8; ECONTENT_LEN],
 }
@@ -74,7 +74,8 @@ fn date_to_field_elem(date: &[UInt8<Fr>]) -> Result<FpVar<Fr>, SynthesisError> {
 impl PredicateChecker<Fr, PassportInfo, PassportInfoVar, PassportComScheme, PassportComSchemeG>
     for IssuanceChecker
 {
-    /// Returns whether or not the predicate was satisfied
+    /// Enforces that the given passport info hashes to the given econtent hash. The process of
+    /// constructing econtent is complicated, so this is multiple steps
     fn pred(
         self,
         cs: ConstraintSystemRef<Fr>,
@@ -82,7 +83,6 @@ impl PredicateChecker<Fr, PassportInfo, PassportInfoVar, PassportComScheme, Pass
     ) -> Result<(), SynthesisError> {
         // Witness everything
         let dg1 = UInt8::new_witness_vec(ns!(cs, "dg1"), &self.dg1)?;
-        let dg2 = UInt8::new_witness_vec(ns!(cs, "dg2 hash"), &self.dg2)?;
         let pre_econtent = UInt8::new_witness_vec(ns!(cs, "pre-econtent"), &self.pre_econtent)?;
         let econtent = UInt8::new_witness_vec(ns!(cs, "econtent"), &self.econtent)?;
         let econtent_hash = UInt8::new_input_vec(ns!(cs, "econtent hash"), &self.econtent)?;
@@ -100,14 +100,11 @@ impl PredicateChecker<Fr, PassportInfo, PassportInfoVar, PassportComScheme, Pass
         date_to_field_elem(&dg1[EXPIRY_OFFSET..EXPIRY_OFFSET + DATE_LEN])?
             .enforce_equal(&attrs.expiry_date)?;
 
-        // Check correctness of DG2 hash
-        let dg2_hash = Sha256Gadget::digest(&dg2)?.0;
-        dg2_hash.enforce_equal(&attrs.biometric_hash.0)?;
-
         // Check pre-econtent structure
         let dg1_hash = Sha256Gadget::digest(&dg1)?.0;
+        let dg2_hash = &attrs.biometric_hash.0;
         pre_econtent[DG1_HASH_OFFSET..DG1_HASH_OFFSET + HASH_LEN].enforce_equal(&dg1_hash)?;
-        pre_econtent[DG2_HASH_OFFSET..DG2_HASH_OFFSET + HASH_LEN].enforce_equal(&dg2_hash)?;
+        pre_econtent[DG2_HASH_OFFSET..DG2_HASH_OFFSET + HASH_LEN].enforce_equal(dg2_hash)?;
 
         // Check the econtent structure
         let pre_econtent_hash = Sha256Gadget::digest(&pre_econtent)?.0;
