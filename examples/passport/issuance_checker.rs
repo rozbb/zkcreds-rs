@@ -101,15 +101,15 @@ impl PredicateChecker<Fr, PassportInfo, PassportInfoVar, PassportComScheme, Pass
             .enforce_equal(&attrs.expiry_date)?;
 
         // Check pre-econtent structure
-        let dg1_hash = Sha256Gadget::digest(&dg1)?.0;
+        let dg1_hash = Sha256Gadget::digest(&dg1)?;
         let dg2_hash = &attrs.biometric_hash.0;
-        pre_econtent[DG1_HASH_OFFSET..DG1_HASH_OFFSET + HASH_LEN].enforce_equal(&dg1_hash)?;
+        pre_econtent[DG1_HASH_OFFSET..DG1_HASH_OFFSET + HASH_LEN].enforce_equal(&dg1_hash.0)?;
         pre_econtent[DG2_HASH_OFFSET..DG2_HASH_OFFSET + HASH_LEN].enforce_equal(dg2_hash)?;
 
         // Check the econtent structure
-        let pre_econtent_hash = Sha256Gadget::digest(&pre_econtent)?.0;
+        let pre_econtent_hash = Sha256Gadget::digest(&pre_econtent)?;
         econtent[PRE_ECONTENT_HASH_OFFSET..PRE_ECONTENT_HASH_OFFSET + HASH_LEN]
-            .enforce_equal(&pre_econtent_hash)?;
+            .enforce_equal(&pre_econtent_hash.0)?;
 
         // Check the econtent hash
         econtent_hash.enforce_equal(&Sha256Gadget::digest(&econtent)?.0)?;
