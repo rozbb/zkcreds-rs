@@ -2,6 +2,7 @@ use crate::{
     attrs::{Attrs, AttrsVar},
     pred::PredicateChecker,
     proof_data_structures::{PredProof, PredVerifyingKey, TreeProof, TreeVerifyingKey},
+    Com,
 };
 
 use ark_crypto_primitives::{
@@ -35,7 +36,7 @@ impl<E: PairingEngine> LinkingKey<E> {
     pub fn link_proofs<R, P, A, AV, AC, ACG, H, HG>(
         &self,
         rng: &mut R,
-        attrs_com: &AC::Output,
+        attrs_com: &Com<AC>,
         merkle_root: &H::Output,
         pred_checker: &P,
         tree_proof: &TreeProof<E, A, AC, ACG, H, HG>,
@@ -168,7 +169,10 @@ mod test {
         attrs::Attrs,
         com_tree::{gen_tree_memb_crs, verify_tree_memb, ComTree},
         pred::{gen_pred_crs, prove_pred, test::AgeProver, verify_pred},
-        test_util::{BigComScheme, BigComSchemeG, NameAndBirthYear, H, HG, MERKLE_CRH_PARAM},
+        test_util::{
+            NameAndBirthYear, TestComScheme, TestComSchemeG, TestTreeH, TestTreeHG,
+            MERKLE_CRH_PARAM,
+        },
     };
 
     use ark_bls12_381::{Bls12_381 as E, Fr};
@@ -179,22 +183,25 @@ mod test {
         let mut rng = ark_std::test_rng();
         let tree_height = 32;
 
+        // Generate the predicate circuit's CRS
+        let tree_proving_key = gen_tree_memb_crs::<
+            _,
+            E,
+            NameAndBirthYear,
+            TestComScheme,
+            TestComSchemeG,
+            TestTreeH,
+            TestTreeHG,
+        >(&mut rng, MERKLE_CRH_PARAM.clone(), tree_height)
+        .unwrap();
+
         // Make a attribute to put in the tree
         let person = NameAndBirthYear::new(&mut rng, b"Andrew", 1992);
         let person_com = person.commit();
 
-        // Generate the predicate circuit's CRS
-        let tree_proving_key =
-            gen_tree_memb_crs::<_, E, NameAndBirthYear, BigComScheme, BigComSchemeG, H, HG>(
-                &mut rng,
-                MERKLE_CRH_PARAM.clone(),
-                tree_height,
-            )
-            .unwrap();
-
         // Make a tree and "issue", i.e., put the person commitment in the tree at index 17
         let leaf_idx = 17;
-        let mut tree = ComTree::<_, H, BigComScheme>::empty(MERKLE_CRH_PARAM.clone(), tree_height);
+        let mut tree = ComTree::empty(MERKLE_CRH_PARAM.clone(), tree_height);
         tree.insert(leaf_idx, &person_com);
 
         // The person can now prove membership in the tree. Calculate the root and prove wrt that
@@ -215,8 +222,11 @@ mod test {
         };
 
         // Generate the predicate circuit's CRS
-        let pred_pk =
-            gen_pred_crs::<_, _, E, _, _, _, _, H, HG>(&mut rng, age_checker.clone()).unwrap();
+        let pred_pk = gen_pred_crs::<_, _, E, _, _, _, _, TestTreeH, TestTreeHG>(
+            &mut rng,
+            age_checker.clone(),
+        )
+        .unwrap();
 
         // Prove the predicate
         let pred_proof = prove_pred(
@@ -231,7 +241,6 @@ mod test {
         // Ordinarily we wouldn't be able to verify a predicate proof, since it requires knowledge
         // of the attribute commitment. But this is testing mode and we know this value, so let's
         // make sure the predicate proof verifies.
-        let person_com = person.commit();
         let pred_verif_key = pred_pk.prepare_verifying_key();
         assert!(verify_pred(
             &pred_verif_key,

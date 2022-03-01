@@ -2,6 +2,7 @@ use crate::{
     attrs::{Attrs, AttrsVar},
     pred::PredicateChecker,
     proof_data_structures::{BirthProof, BirthProvingKey, BirthPublicInput, BirthVerifyingKey},
+    Com,
 };
 
 use core::marker::PhantomData;
@@ -74,7 +75,7 @@ pub fn verify_birth<C, E, A, AV, AC, ACG>(
     vk: &BirthVerifyingKey<E, A, AV, AC, ACG>,
     proof: &BirthProof<E, A, AV, AC, ACG>,
     birth_checker: &C,
-    attrs_com: &AC::Output,
+    attrs_com: &Com<AC>,
 ) -> Result<bool, SynthesisError>
 where
     C: PredicateChecker<E::Fr, A, AV, AC, ACG>,
@@ -154,8 +155,7 @@ where
         attrs_com_var.enforce_equal(&attrs_var.commit()?)?;
 
         // Finally assert the birth predicate is true
-        let success = self.birth_checker.pred(cs, &attrs_var)?;
-        success.enforce_equal(&Boolean::TRUE)
+        self.birth_checker.pred(cs, &attrs_var)
     }
 }
 

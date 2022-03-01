@@ -13,3 +13,13 @@ mod sparse_merkle;
 mod test_util;
 
 pub type Error = Box<dyn ark_std::error::Error>;
+pub use identity_crh::Bytestring;
+
+use ark_crypto_primitives::commitment::{constraints::CommitmentGadget, CommitmentScheme};
+
+pub type Com<C> = <C as CommitmentScheme>::Output;
+pub type ComVar<C, CG, F> = <CG as CommitmentGadget<C, F>>::OutputVar;
+pub type ComNonce<C> = <C as CommitmentScheme>::Randomness;
+pub type ComNonceVar<C, CG, F> = <CG as CommitmentGadget<C, F>>::RandomnessVar;
+pub type ComParam<C> = <C as CommitmentScheme>::Parameters;
+pub type ComParamVar<C, CG, F> = <CG as CommitmentGadget<C, F>>::ParametersVar;

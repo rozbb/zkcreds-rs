@@ -28,12 +28,8 @@ where
     ACG: CommitmentGadget<AC, ConstraintF>,
     AC::Output: ToConstraintField<ConstraintF>,
 {
-    /// Returns whether or not the predicate was satisfied
-    fn pred(
-        self,
-        cs: ConstraintSystemRef<ConstraintF>,
-        attrs: &AV,
-    ) -> Result<Boolean<ConstraintF>, SynthesisError>;
+    /// Enforces constraints on the given attributes
+    fn pred(self, cs: ConstraintSystemRef<ConstraintF>, attrs: &AV) -> Result<(), SynthesisError>;
 
     /// This outputs the field elements corresponding to the public inputs of this predicate. This
     /// DOES NOT include `attrs`.
@@ -205,8 +201,7 @@ where
         attrs_com_var.enforce_equal(&attrs_var.commit()?)?;
 
         // Finally assert the predicate is true
-        let success = self.checker.pred(cs, &attrs_var)?;
-        success.enforce_equal(&Boolean::TRUE)
+        self.checker.pred(cs, &attrs_var)
     }
 }
 
@@ -214,7 +209,7 @@ where
 pub(crate) mod test {
     use super::*;
     use crate::test_util::{
-        BigComScheme, BigComSchemeG, NameAndBirthYear, NameAndBirthYearVar, H, HG,
+        NameAndBirthYear, NameAndBirthYearVar, TestComScheme, TestComSchemeG, TestTreeH, TestTreeHG,
     };
 
     use ark_bls12_381::{Bls12_381 as E, Fr};
@@ -227,7 +222,7 @@ pub(crate) mod test {
         pub(crate) threshold_birth_year: Fr,
     }
 
-    impl PredicateChecker<Fr, NameAndBirthYear, NameAndBirthYearVar, BigComScheme, BigComSchemeG>
+    impl PredicateChecker<Fr, NameAndBirthYear, NameAndBirthYearVar, TestComScheme, TestComSchemeG>
         for AgeProver
     {
         /// Returns whether or not the predicate was satisfied
@@ -235,7 +230,7 @@ pub(crate) mod test {
             self,
             cs: ConstraintSystemRef<Fr>,
             attrs: &NameAndBirthYearVar,
-        ) -> Result<Boolean<Fr>, SynthesisError> {
+        ) -> Result<(), SynthesisError> {
             // Witness the threshold year as a public input
             let threshold_birth_year =
                 FpVar::<Fr>::new_input(
@@ -245,7 +240,7 @@ pub(crate) mod test {
             // Assert that attrs.birth_year ≤ threshold_birth_year
             attrs
                 .birth_year
-                .is_cmp(&threshold_birth_year, core::cmp::Ordering::Less, true)
+                .enforce_cmp(&threshold_birth_year, core::cmp::Ordering::Less, true)
         }
 
         /// This outputs the field elements corresponding to the public inputs of this predicate.
@@ -266,13 +261,15 @@ pub(crate) mod test {
         };
 
         // Generate the predicate circuit's CRS
-        let pk = gen_pred_crs::<_, _, E, _, _, _, _, H, HG>(&mut rng, checker.clone()).unwrap();
+        let pk =
+            gen_pred_crs::<_, _, E, _, _, _, _, TestTreeH, TestTreeHG>(&mut rng, checker.clone())
+                .unwrap();
 
         // First name is UTF-8 encoded, padded at the end with null bytes
         let person = NameAndBirthYear::new(&mut rng, b"Andrew", 1992);
         // Make a placeholder Merkle root. This value is only relevant when we start linking
         // proofs. Together. Ignore for this test.
-        let merkle_root = <H as TwoToOneCRH>::Output::default();
+        let merkle_root = <TestTreeH as TwoToOneCRH>::Output::default();
 
         // Prove the predicate
         let proof =

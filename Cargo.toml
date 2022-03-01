@@ -55,6 +55,7 @@ std = [
 [dev-dependencies]
 ark-bls12-381 = { version = "0.3" }
 criterion = { version = "0.3", features = [ "html_reports" ] }
+sha2 = "0.10"
 
 [profile.release]
 debug = true

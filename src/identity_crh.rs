@@ -70,7 +70,7 @@ impl<ConstraintF: PrimeField> AllocVar<(), ConstraintF> for UnitVar<ConstraintF>
 /// This type is the output of the `IdentityCRH`. It's just a `Vec<UInt8<F>>`. The reason we have
 /// to make a newtype is because `Vec<UInt8<F>>` doesn't implement `EqGadget` or `AllocVar`.
 #[derive(Clone, Debug)]
-pub(crate) struct Bytestring<ConstraintF: PrimeField>(Vec<UInt8<ConstraintF>>);
+pub struct Bytestring<ConstraintF: PrimeField>(pub Vec<UInt8<ConstraintF>>);
 
 // Implement all the necessary traits below
 

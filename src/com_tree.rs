@@ -1,5 +1,5 @@
 use crate::{
-    attrs::{Attrs, AttrsVar},
+    attrs::Attrs,
     identity_crh::{IdentityCRH, IdentityCRHGadget, UnitVar},
     proof_data_structures::{TreeProof, TreeProvingKey},
     sparse_merkle::{constraints::SparseMerkleTreePathVar, SparseMerkleTree, SparseMerkleTreePath},
@@ -300,7 +300,7 @@ where
 mod test {
     use super::*;
     use crate::test_util::{
-        BigComScheme, BigComSchemeG, NameAndBirthYear, H, HG, MERKLE_CRH_PARAM,
+        NameAndBirthYear, TestComScheme, TestComSchemeG, TestTreeH, TestTreeHG, MERKLE_CRH_PARAM,
     };
 
     use ark_bls12_381::Bls12_381 as E;
@@ -316,16 +316,21 @@ mod test {
         let person_com = person.commit();
 
         // Generate the predicate circuit's CRS
-        let pk = gen_tree_memb_crs::<_, E, NameAndBirthYear, BigComScheme, BigComSchemeG, H, HG>(
-            &mut rng,
-            MERKLE_CRH_PARAM.clone(),
-            tree_height,
-        )
+        let pk = gen_tree_memb_crs::<
+            _,
+            E,
+            NameAndBirthYear,
+            TestComScheme,
+            TestComSchemeG,
+            TestTreeH,
+            TestTreeHG,
+        >(&mut rng, MERKLE_CRH_PARAM.clone(), tree_height)
         .unwrap();
 
         // Make a tree and "issue", i.e., put the person commitment in the tree at index 17
         let leaf_idx = 17;
-        let mut tree = ComTree::<_, H, BigComScheme>::empty(MERKLE_CRH_PARAM.clone(), tree_height);
+        let mut tree =
+            ComTree::<_, TestTreeH, TestComScheme>::empty(MERKLE_CRH_PARAM.clone(), tree_height);
         tree.insert(leaf_idx, &person_com);
 
         // The person can now prove membership in the tree
