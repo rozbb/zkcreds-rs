@@ -1,10 +1,14 @@
-use crate::params::{
-    Fr, PassportComScheme, PassportComSchemeG, DOCUMENT_NUMBER_LEN, HASH_LEN, NAME_LEN,
-    PASSPORT_COM_PARAM, STATE_ID_LEN,
+use crate::{
+    params::{
+        Fr, PassportComScheme, PassportComSchemeG, DATE_LEN, DOB_OFFSET, HASH_LEN, NAME_LEN,
+        NAME_OFFSET, NATIONALITY_OFFSET, PASSPORT_COM_PARAM, STATE_ID_LEN,
+    },
+    passport_dump::PassportDump,
 };
 
 use core::borrow::Borrow;
 
+use sha2::{Digest, Sha256};
 use zeronym::{
     attrs::{Attrs, AttrsVar},
     Bytestring, ComNonce, ComNonceVar, ComParam, ComParamVar,
@@ -26,70 +30,93 @@ use ark_std::rand::Rng;
 
 /// Stores a subset of the info found in data groups 1 and 2 of a passport
 #[derive(Clone, Default)]
-pub(crate) struct PassportInfo {
+pub(crate) struct PersonalInfo {
     nonce: ComNonce<PassportComScheme>,
-    document_number: [u8; DOCUMENT_NUMBER_LEN],
-    issuer: [u8; STATE_ID_LEN],
     nationality: [u8; STATE_ID_LEN],
     name: [u8; NAME_LEN],
     dob: Fr,
-    expiry_date: Fr,
-    biometric_hash: [u8; HASH_LEN],
+    biometrics: Vec<u8>,
 }
 
 /// Stores a subset of the info found in data groups 1 and 2 of a passport
 #[derive(Clone)]
-pub(crate) struct PassportInfoVar {
+pub(crate) struct PersonalInfoVar {
     nonce: ComNonceVar<PassportComScheme, PassportComSchemeG, Fr>,
-    pub(crate) document_number: Bytestring<Fr>,
-    pub(crate) issuer: Bytestring<Fr>,
     pub(crate) nationality: Bytestring<Fr>,
     pub(crate) name: Bytestring<Fr>,
     pub(crate) dob: FpVar<Fr>,
-    pub(crate) expiry_date: FpVar<Fr>,
     pub(crate) biometric_hash: Bytestring<Fr>,
 }
 
-impl PassportInfo {
-    /// Constructs a new `PassportInfo`, sampling a random nonce for commitment
+/// Converts a date string of the form YYMMDD to a u32 whose base-10 representation is precisely
+/// that string.
+fn date_to_u32(date: &[u8]) -> u32 {
+    assert_eq!(date.len(), DATE_LEN);
+
+    // Converts ASCII numbers to the numbers they represent. E.g., int(b"9") = 9 (mod |Fr|)
+    fn int(char: u8) -> u32 {
+        (char as u32) - 48
+    }
+
+    // Convert the year, month, and day separately. b"YY" becomes YY (mod |Fr|), etc.
+    let year = (int(date[0]) * 10) + int(date[1]);
+    let month = (int(date[2]) * 10) + int(date[3]);
+    let day = (int(date[4]) * 10) + int(date[5]);
+
+    // Now combine the values by shifting and adding
+    (year * 10000) + (month * 100) + day
+}
+
+impl PersonalInfo {
+    /// Constructs a new `PersonalInfo`, sampling a random nonce for commitment
     pub(crate) fn new<R: Rng>(
         rng: &mut R,
-        document_number: [u8; DOCUMENT_NUMBER_LEN],
-        issuer: [u8; STATE_ID_LEN],
         nationality: [u8; STATE_ID_LEN],
         name: [u8; NAME_LEN],
         dob: u32,
-        expiry_date: u32,
-        biometric_hash: [u8; HASH_LEN],
-    ) -> PassportInfo {
+        biometrics: Vec<u8>,
+    ) -> PersonalInfo {
         let nonce = ComNonce::<PassportComScheme>::rand(rng);
 
-        PassportInfo {
+        PersonalInfo {
             nonce,
-            document_number,
-            issuer,
             nationality,
             name,
             dob: Fr::from(dob),
-            expiry_date: Fr::from(expiry_date),
-            biometric_hash,
+            biometrics,
+        }
+    }
+
+    pub fn from_passport<R: Rng>(rng: &mut R, dump: &PassportDump) -> PersonalInfo {
+        let nonce = ComNonce::<PassportComScheme>::rand(rng);
+
+        let nationality = {
+            let mut buf = [0u8; STATE_ID_LEN];
+            buf.copy_from_slice(&dump.dg1[NATIONALITY_OFFSET..NATIONALITY_OFFSET + STATE_ID_LEN]);
+            buf
+        };
+        let name = {
+            let mut buf = [0u8; NAME_LEN];
+            buf.copy_from_slice(&dump.dg1[NAME_OFFSET..NAME_OFFSET + NAME_LEN]);
+            buf
+        };
+        let dob = date_to_u32(&dump.dg1[DOB_OFFSET..DOB_OFFSET + DATE_LEN]);
+
+        PersonalInfo {
+            nonce,
+            nationality,
+            name,
+            dob: Fr::from(dob),
+            biometrics: dump.dg2.clone(),
         }
     }
 }
 
-impl Attrs<Fr, PassportComScheme> for PassportInfo {
+impl Attrs<Fr, PassportComScheme> for PersonalInfo {
     /// Serializes the attrs into bytes
     fn to_bytes(&self) -> Vec<u8> {
-        to_bytes![
-            self.document_number,
-            self.issuer,
-            self.nationality,
-            self.name,
-            self.dob,
-            self.expiry_date,
-            self.biometric_hash
-        ]
-        .unwrap()
+        let biometric_hash = Sha256::digest(&self.biometrics).to_vec();
+        to_bytes![self.nationality, self.name, self.dob, biometric_hash].unwrap()
     }
 
     fn get_com_param(&self) -> &ComParam<PassportComScheme> {
@@ -101,25 +128,22 @@ impl Attrs<Fr, PassportComScheme> for PassportInfo {
     }
 }
 
-impl ToBytesGadget<Fr> for PassportInfoVar {
+impl ToBytesGadget<Fr> for PersonalInfoVar {
     fn to_bytes(&self) -> Result<Vec<UInt8<Fr>>, SynthesisError> {
         Ok([
-            self.document_number.0.to_bytes()?,
-            self.issuer.0.to_bytes()?,
             self.nationality.0.to_bytes()?,
             self.name.0.to_bytes()?,
             self.dob.to_bytes()?,
-            self.expiry_date.to_bytes()?,
             self.biometric_hash.0.to_bytes()?,
         ]
         .concat())
     }
 }
 
-impl AllocVar<PassportInfo, Fr> for PassportInfoVar {
+impl AllocVar<PersonalInfo, Fr> for PersonalInfoVar {
     // Allocates a vector of UInt8s. This panics if `f()` is `Err`, since we don't know how many
     // bytes to allocate
-    fn new_variable<T: Borrow<PassportInfo>>(
+    fn new_variable<T: Borrow<PersonalInfo>>(
         cs: impl Into<Namespace<Fr>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
         mode: AllocationMode,
@@ -128,22 +152,21 @@ impl AllocVar<PassportInfo, Fr> for PassportInfoVar {
         let native_attrs = f();
 
         // Make placeholder content if native_attrs is empty
-        let default_info = PassportInfo::default();
+        let default_info = PersonalInfo::default();
 
         // Unpack the given attributes
-        let PassportInfo {
+        let PersonalInfo {
             ref nonce,
-            ref document_number,
-            ref issuer,
             ref nationality,
             ref name,
             ref dob,
-            ref expiry_date,
-            ref biometric_hash,
+            ref biometrics,
         } = native_attrs
             .as_ref()
             .map(Borrow::borrow)
             .unwrap_or(&default_info);
+
+        let biometric_hash = Sha256::digest(biometrics).to_vec();
 
         // Witness the nonce
         let nonce = ComNonceVar::<PassportComScheme, PassportComSchemeG, Fr>::new_variable(
@@ -153,15 +176,10 @@ impl AllocVar<PassportInfo, Fr> for PassportInfoVar {
         )?;
 
         // Witness all the other variables
-        let document_number =
-            Bytestring::new_variable(ns!(cs, "doc number"), || Ok(document_number.to_vec()), mode)?;
-        let issuer = Bytestring::new_variable(ns!(cs, "issuer"), || Ok(issuer.to_vec()), mode)?;
         let nationality =
             Bytestring::new_variable(ns!(cs, "nationality"), || Ok(nationality.to_vec()), mode)?;
         let name = Bytestring::new_variable(ns!(cs, "name"), || Ok(name.to_vec()), mode)?;
         let dob = FpVar::<Fr>::new_variable(ns!(cs, "birth year"), || Ok(dob), mode)?;
-        let expiry_date =
-            FpVar::<Fr>::new_variable(ns!(cs, "birth year"), || Ok(expiry_date), mode)?;
         let biometric_hash = Bytestring::new_variable(
             ns!(cs, "biometric_hash"),
             || Ok(biometric_hash.to_vec()),
@@ -169,31 +187,25 @@ impl AllocVar<PassportInfo, Fr> for PassportInfoVar {
         )?;
 
         // Return the witnessed values
-        Ok(PassportInfoVar {
+        Ok(PersonalInfoVar {
             nonce,
-            document_number,
-            issuer,
             nationality,
             name,
             dob,
-            expiry_date,
             biometric_hash,
         })
     }
 }
 
-impl AttrsVar<Fr, PassportInfo, PassportComScheme, PassportComSchemeG> for PassportInfoVar {
+impl AttrsVar<Fr, PersonalInfo, PassportComScheme, PassportComSchemeG> for PersonalInfoVar {
     fn get_com_param(
         &self,
     ) -> Result<ComParamVar<PassportComScheme, PassportComSchemeG, Fr>, SynthesisError> {
         let cs = self
-            .document_number
+            .nationality
             .cs()
-            .or(self.issuer.cs())
-            .or(self.nationality.cs())
             .or(self.name.cs())
             .or(self.dob.cs())
-            .or(self.expiry_date.cs())
             .or(self.biometric_hash.cs());
         ComParamVar::<_, PassportComSchemeG, _>::new_constant(cs, &*PASSPORT_COM_PARAM)
     }

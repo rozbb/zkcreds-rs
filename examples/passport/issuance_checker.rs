@@ -2,54 +2,76 @@ use crate::{
     ark_sha256::Sha256Gadget,
     params::{
         Fr, PassportComScheme, PassportComSchemeG, DATE_LEN, DG1_HASH_OFFSET, DG1_LEN,
-        DG2_HASH_OFFSET, DOB_OFFSET, DOCUMENT_NUMBER_LEN, DOCUMENT_NUMBER_OFFSET, ECONTENT_LEN,
-        EXPIRY_OFFSET, HASH_LEN, ISSUER_OFFSET, NAME_LEN, NAME_OFFSET, NATIONALITY_OFFSET,
-        PRE_ECONTENT_HASH_OFFSET, PRE_ECONTENT_LEN, SIG_HASH_LEN, STATE_ID_LEN,
+        DG2_HASH_OFFSET, DOB_OFFSET, ECONTENT_LEN, EXPIRY_OFFSET, HASH_LEN, ISSUER_OFFSET,
+        NAME_LEN, NAME_OFFSET, NATIONALITY_OFFSET, PRE_ECONTENT_HASH_OFFSET, PRE_ECONTENT_LEN,
+        SIG_HASH_LEN, STATE_ID_LEN,
     },
-    passport_info::{PassportInfo, PassportInfoVar},
+    passport_dump::PassportDump,
+    passport_info::{PersonalInfo, PersonalInfoVar},
 };
 
-use zeronym::{
-    attrs::{Attrs, AttrsVar},
-    pred::PredicateChecker,
-};
+use zeronym::pred::PredicateChecker;
 
-use core::marker::PhantomData;
-
-use ark_crypto_primitives::{
-    commitment::{constraints::CommitmentGadget, CommitmentScheme},
-    crh::{TwoToOneCRH, TwoToOneCRHGadget},
-};
-use ark_ec::PairingEngine;
-use ark_ff::{PrimeField, ToConstraintField};
+use ark_ff::ToConstraintField;
 use ark_r1cs_std::{
     alloc::AllocVar,
     bits::{uint8::UInt8, ToBitsGadget},
     boolean::Boolean,
     eq::EqGadget,
     fields::fp::FpVar,
-    ToConstraintFieldGadget,
 };
 use ark_relations::{
     ns,
-    r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError},
+    r1cs::{ConstraintSystemRef, SynthesisError},
 };
-use ark_std::rand::Rng;
+use sha2::{Digest, Sha256};
 
-/// Verifies that a given `PassportInfo` hashes to the correct `econtent_hash`
-struct IssuanceChecker {
+/// Verifies that the `PassportDump` hashes to the correct `econtent_hash`, and that the
+/// `PersonalAttrs` corresponds to its contents.
+#[derive(Clone)]
+pub struct IssuanceChecker {
     // Public inputs
     econtent_hash: [u8; SIG_HASH_LEN],
+    expected_issuer: [u8; STATE_ID_LEN],
+    expiry_date_threshold: Fr,
 
     // Private inputs
     dg1: [u8; DG1_LEN],
-    dg2_hash: [u8; HASH_LEN],
     pre_econtent: [u8; PRE_ECONTENT_LEN],
     econtent: [u8; ECONTENT_LEN],
 }
 
-/// Converts a date string of the form YYMMDD to a u32 whose base-10 representation is precisely
-/// that string.
+impl IssuanceChecker {
+    /// Makes an issuance checker given a passport, 3-letter issuing state, and DOB in the form
+    /// YYMMDD in base-10
+    pub fn from_passport(
+        dump: &PassportDump,
+        expected_issuer: [u8; STATE_ID_LEN],
+        expiry_date_threshold: u32,
+    ) -> IssuanceChecker {
+        let mut dg1 = [0u8; DG1_LEN];
+        let mut pre_econtent = [0u8; PRE_ECONTENT_LEN];
+        let mut econtent = [0u8; ECONTENT_LEN];
+        let mut econtent_hash = [0u8; SIG_HASH_LEN];
+
+        dg1.copy_from_slice(&dump.dg1);
+        pre_econtent.copy_from_slice(&dump.pre_econtent);
+        econtent.copy_from_slice(&dump.econtent);
+        econtent_hash.copy_from_slice(&Sha256::digest(econtent));
+
+        IssuanceChecker {
+            econtent_hash,
+            expected_issuer,
+            expiry_date_threshold: Fr::from(expiry_date_threshold),
+            dg1,
+            pre_econtent,
+            econtent,
+        }
+    }
+}
+
+/// Converts a date string of the form YYMMDD to a field element whose canonical base-10
+/// representation is precisely that string.
 fn date_to_field_elem(date: &[UInt8<Fr>]) -> Result<FpVar<Fr>, SynthesisError> {
     assert_eq!(date.len(), DATE_LEN);
 
@@ -67,11 +89,11 @@ fn date_to_field_elem(date: &[UInt8<Fr>]) -> Result<FpVar<Fr>, SynthesisError> {
     let month = (int(&date[2])? * ten) + int(&date[3])?;
     let day = (int(&date[4])? * ten) + int(&date[5])?;
 
-    // Now
+    // Now combine the values by shifting and adding
     Ok((year * Fr::from(10000u16)) + (month * Fr::from(100u16)) + day)
 }
 
-impl PredicateChecker<Fr, PassportInfo, PassportInfoVar, PassportComScheme, PassportComSchemeG>
+impl PredicateChecker<Fr, PersonalInfo, PersonalInfoVar, PassportComScheme, PassportComSchemeG>
     for IssuanceChecker
 {
     /// Enforces that the given passport info hashes to the given econtent hash. The process of
@@ -79,28 +101,34 @@ impl PredicateChecker<Fr, PassportInfo, PassportInfoVar, PassportComScheme, Pass
     fn pred(
         self,
         cs: ConstraintSystemRef<Fr>,
-        attrs: &PassportInfoVar,
+        attrs: &PersonalInfoVar,
     ) -> Result<(), SynthesisError> {
         // Witness everything
         let dg1 = UInt8::new_witness_vec(ns!(cs, "dg1"), &self.dg1)?;
         let pre_econtent = UInt8::new_witness_vec(ns!(cs, "pre-econtent"), &self.pre_econtent)?;
         let econtent = UInt8::new_witness_vec(ns!(cs, "econtent"), &self.econtent)?;
-        let econtent_hash = UInt8::new_input_vec(ns!(cs, "econtent hash"), &self.econtent)?;
+        let econtent_hash = UInt8::new_input_vec(ns!(cs, "econtent hash"), &self.econtent_hash)?;
+        let expected_issuer =
+            UInt8::new_input_vec(ns!(cs, "expected issuer"), &self.expected_issuer)?;
+        let expiry_date_threshold = FpVar::<Fr>::new_input(ns!(cs, "expiry threshold"), || {
+            Ok(self.expiry_date_threshold)
+        })?;
 
-        // Check that all the base-level bytestrings match
-        dg1[DOCUMENT_NUMBER_OFFSET..DOCUMENT_NUMBER_OFFSET + DOCUMENT_NUMBER_LEN]
-            .enforce_equal(&attrs.document_number.0)?;
-        dg1[ISSUER_OFFSET..ISSUER_OFFSET + STATE_ID_LEN].enforce_equal(&attrs.issuer.0)?;
+        // Check that the issuer is the expected one, and the passport isn't expired
+        dg1[ISSUER_OFFSET..ISSUER_OFFSET + STATE_ID_LEN].enforce_equal(&expected_issuer)?;
+        date_to_field_elem(&dg1[EXPIRY_OFFSET..EXPIRY_OFFSET + DATE_LEN])?.enforce_cmp(
+            &expiry_date_threshold,
+            core::cmp::Ordering::Greater,
+            false,
+        )?;
+
+        // Check that the attr's name, nationality, and DOB match the passport's
         dg1[NATIONALITY_OFFSET..NATIONALITY_OFFSET + STATE_ID_LEN]
             .enforce_equal(&attrs.nationality.0)?;
         dg1[NAME_OFFSET..NAME_OFFSET + NAME_LEN].enforce_equal(&attrs.name.0)?;
-
-        // Check the dates match
         date_to_field_elem(&dg1[DOB_OFFSET..DOB_OFFSET + DATE_LEN])?.enforce_equal(&attrs.dob)?;
-        date_to_field_elem(&dg1[EXPIRY_OFFSET..EXPIRY_OFFSET + DATE_LEN])?
-            .enforce_equal(&attrs.expiry_date)?;
 
-        // Check pre-econtent structure
+        // Check pre-econtent structure, and check that the biometric hash matches the passport's
         let dg1_hash = Sha256Gadget::digest(&dg1)?;
         let dg2_hash = &attrs.biometric_hash.0;
         pre_econtent[DG1_HASH_OFFSET..DG1_HASH_OFFSET + HASH_LEN].enforce_equal(&dg1_hash.0)?;
@@ -111,7 +139,7 @@ impl PredicateChecker<Fr, PassportInfo, PassportInfoVar, PassportComScheme, Pass
         econtent[PRE_ECONTENT_HASH_OFFSET..PRE_ECONTENT_HASH_OFFSET + HASH_LEN]
             .enforce_equal(&pre_econtent_hash.0)?;
 
-        // Check the econtent hash
+        // Check the econtent hash matches the passport's
         econtent_hash.enforce_equal(&Sha256Gadget::digest(&econtent)?.0)?;
 
         // All done
