@@ -56,6 +56,8 @@ std = [
 ark-bls12-381 = { version = "0.3" }
 base64 = "0.13"
 criterion = { version = "0.3", features = [ "html_reports" ] }
+#openssl = "0.10"
+rsa = { version = "0.5", features = [ "alloc" ] }
 serde = { version = "1", features = [ "derive" ] }
 serde_json = "1"
 sha2 = "0.10"

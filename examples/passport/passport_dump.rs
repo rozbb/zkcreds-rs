@@ -21,6 +21,12 @@ pub struct PassportDump {
     pub(crate) sig_alg: String,
 }
 
+impl PassportDump {
+    pub fn econtent_hash(&self) -> Vec<u8> {
+        Sha256::digest(&self.econtent).to_vec()
+    }
+}
+
 /// Prints all the information stored in a passport's machine-readable zone (MRZ), plus the hash of
 /// the biometrics
 pub(crate) fn print_dump_info(dump: &PassportDump) {

@@ -3,12 +3,14 @@ mod issuance_checker;
 mod params;
 mod passport_dump;
 mod passport_info;
+mod sig_verif;
 
 use crate::{
     issuance_checker::IssuanceChecker,
     params::{PassportComScheme, PassportComSchemeG, H, HG},
     passport_dump::PassportDump,
     passport_info::{PersonalInfo, PersonalInfoVar},
+    sig_verif::{load_usa_pubkey, IssuerPubkey},
 };
 
 use zeronym::{
@@ -26,10 +28,17 @@ fn load_dump() -> PassportDump {
     serde_json::from_reader(file).unwrap()
 }
 
+fn check_sig(pk: &IssuerPubkey, sig: &[u8], hash: &[u8]) {
+    assert!(pk.verify(sig, hash));
+}
+
 fn check_issuance(attrs: PersonalInfo, checker: IssuanceChecker) {
     let mut rng = ark_std::test_rng();
 
-    println!("Making issuance predicate CRS");
+    // Commit to the attributes. This is what the issuer sees
+    let cred = attrs.commit();
+
+    // Make the CRS. The merkle root doesn't matter for now
     let pk = gen_pred_crs::<
         _,
         _,
@@ -42,26 +51,37 @@ fn check_issuance(attrs: PersonalInfo, checker: IssuanceChecker) {
         HG,
     >(&mut rng, checker.clone())
     .unwrap();
-    let merkle_root = <H as TwoToOneCRH>::Output::default();
-    let cred = attrs.commit();
-
-    println!("Proving issuance predicate");
-    let proof = prove_pred(&mut rng, &pk, checker.clone(), attrs, merkle_root).unwrap();
-
-    println!("Verifying issuance predicate");
+    println!("Made issuance predicate CRS");
     let vk = pk.prepare_verifying_key();
+    let merkle_root = <H as TwoToOneCRH>::Output::default();
+
+    // Prove that the attributes match the econtent hash of the passport, that the passport is
+    // not expired, and the passport is issued by the US
+    let proof = prove_pred(&mut rng, &pk, checker.clone(), attrs, merkle_root).unwrap();
+    println!("Proved issuance predicate");
+
+    // Verify the above
     assert!(verify_pred(&vk, &proof, &checker, &cred, &merkle_root).unwrap());
-    println!("Verified");
+    println!("Verified issuance predicate");
 }
 
 fn main() {
     let mut rng = ark_std::test_rng();
 
-    // Make sure the passport did not expire before Jan 1, 2022
-    let today = 220101u32;
+    // Load the US State Dept. pubkey
+    let usa_pubkey = load_usa_pubkey();
+
     // Load the passport
     let dump = load_dump();
     let attrs = PersonalInfo::from_passport(&mut rng, &dump);
-    let checker = IssuanceChecker::from_passport(&dump, *b"USA", today);
-    check_issuance(attrs, checker);
+
+    // Check that the attributes match the econtent hash of the passport, that the passport is
+    // not expired, and the passport is issued by the US
+    let today = 220101u32;
+    let hash_checker = IssuanceChecker::from_passport(&dump, *b"USA", today);
+    check_issuance(attrs, hash_checker);
+
+    // Check that the econtent hash is signed by the US State Dept
+    check_sig(&usa_pubkey, &dump.sig, &dump.econtent_hash());
+    println!("Passport signature verifies");
 }

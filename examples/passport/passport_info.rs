@@ -120,6 +120,10 @@ impl PersonalInfo {
 
         info
     }
+
+    pub fn biometrics_hash(&self) -> Vec<u8> {
+        Sha256::digest(&self.biometrics).to_vec()
+    }
 }
 
 impl Attrs<Fr, PassportComScheme> for PersonalInfo {
