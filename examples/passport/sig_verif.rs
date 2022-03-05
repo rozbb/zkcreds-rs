@@ -1,4 +1,6 @@
+use crate::passport_dump::PassportDump;
 use rsa::{padding::PaddingScheme, pkcs8::FromPublicKey, Hash, PublicKey, RsaPublicKey};
+use x509_parser::parse_x509_certificate;
 
 // A PKCS#8 encoding of the US State Department's passport signing pubkey. This was a pain to
 // extract. See the below link for instructions
@@ -18,6 +20,12 @@ pub struct IssuerPubkey(RsaPublicKey);
 
 pub fn load_usa_pubkey() -> IssuerPubkey {
     let pubkey = RsaPublicKey::from_public_key_pem(USA_PUBKEY).unwrap();
+    IssuerPubkey(pubkey)
+}
+
+pub fn load_pubkey_from_dump(dump: &PassportDump) -> IssuerPubkey {
+    let cert = (parse_x509_certificate(&dump.cert).unwrap()).1;
+    let pubkey = RsaPublicKey::from_public_key_der(cert.public_key().raw).unwrap();
     IssuerPubkey(pubkey)
 }
 

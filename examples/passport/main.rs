@@ -68,12 +68,15 @@ fn check_issuance(attrs: PersonalInfo, checker: IssuanceChecker) {
 fn main() {
     let mut rng = ark_std::test_rng();
 
-    // Load the US State Dept. pubkey
-    let usa_pubkey = load_usa_pubkey();
-
     // Load the passport
     let dump = load_dump();
     let attrs = PersonalInfo::from_passport(&mut rng, &dump);
+
+    // We can load the cert directly from the dump or load a fixed cert. The former doesn't make
+    // any sense if you're actually deploying this, but it's convenient for testing
+    let pubkey = crate::sig_verif::load_pubkey_from_dump(&dump);
+    // Load the US State Dept. pubkey
+    //let pubkey = load_usa_pubkey();
 
     // Check that the attributes match the econtent hash of the passport, that the passport is
     // not expired, and the passport is issued by the US
@@ -81,7 +84,7 @@ fn main() {
     let hash_checker = IssuanceChecker::from_passport(&dump, *b"USA", today);
     check_issuance(attrs, hash_checker);
 
-    // Check that the econtent hash is signed by the US State Dept
-    check_sig(&usa_pubkey, &dump.sig, &dump.econtent_hash());
+    // Check that the econtent hash is signed by the pubkey
+    check_sig(&pubkey, &dump.sig, &dump.econtent_hash());
     println!("Passport signature verifies");
 }
