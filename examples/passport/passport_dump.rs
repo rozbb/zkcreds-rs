@@ -1,4 +1,5 @@
 use serde::{de::Error as SError, Deserialize, Deserializer};
+use sha2::{Digest, Sha256};
 
 #[derive(Default, Debug, Deserialize)]
 pub struct PassportDump {
@@ -20,36 +21,38 @@ pub struct PassportDump {
     pub(crate) sig_alg: String,
 }
 
-/// Prints all the information stored in a passport's machine-readable zone (MRZ)
-pub(crate) fn print_mrz_info(dump: &PassportDump) {
+/// Prints all the information stored in a passport's machine-readable zone (MRZ), plus the hash of
+/// the biometrics
+pub(crate) fn print_dump_info(dump: &PassportDump) {
     use crate::params::*;
 
-    eprintln!(
+    println!(
         "Issuer == {}",
         String::from_utf8_lossy(&dump.dg1[ISSUER_OFFSET..ISSUER_OFFSET + STATE_ID_LEN])
     );
-    eprintln!(
+    println!(
         "Name == {}",
         String::from_utf8_lossy(&dump.dg1[NAME_OFFSET..NAME_OFFSET + NAME_LEN])
     );
-    eprintln!(
+    println!(
         "Doc # == {}",
         String::from_utf8_lossy(
             &dump.dg1[DOCUMENT_NUMBER_OFFSET..DOCUMENT_NUMBER_OFFSET + DOCUMENT_NUMBER_LEN]
         )
     );
-    eprintln!(
+    println!(
         "Nationality == {}",
         String::from_utf8_lossy(&dump.dg1[NATIONALITY_OFFSET..NATIONALITY_OFFSET + STATE_ID_LEN])
     );
-    eprintln!(
+    println!(
         "DOB == {}",
         String::from_utf8_lossy(&dump.dg1[DOB_OFFSET..DOB_OFFSET + DATE_LEN])
     );
-    eprintln!(
+    println!(
         "Expiry == {}",
         String::from_utf8_lossy(&dump.dg1[EXPIRY_OFFSET..EXPIRY_OFFSET + DATE_LEN])
     );
+    println!("Biometrics hash == {:x}", Sha256::digest(&dump.dg2),);
 }
 
 // Tells serde how to deserialize bytes from base64

@@ -3,7 +3,7 @@ use crate::{
         Fr, PassportComScheme, PassportComSchemeG, DATE_LEN, DOB_OFFSET, NAME_LEN, NAME_OFFSET,
         NATIONALITY_OFFSET, PASSPORT_COM_PARAM, STATE_ID_LEN,
     },
-    passport_dump::PassportDump,
+    passport_dump::{print_dump_info, PassportDump},
 };
 
 use core::borrow::Borrow;
@@ -101,7 +101,7 @@ impl PersonalInfo {
 
     pub fn from_passport<R: Rng>(rng: &mut R, dump: &PassportDump) -> PersonalInfo {
         println!("Creating attrs with info from passport");
-        crate::passport_dump::print_mrz_info(dump);
+        print_dump_info(dump);
 
         // Create an empty info struct that we'll fill with data
         let mut info = PersonalInfo {
