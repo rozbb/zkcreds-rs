@@ -99,8 +99,8 @@ where
     })
 }
 
-#[cfg(test)]
-pub(crate) fn verify_pred<P, E, A, AV, AC, ACG, H, HG>(
+/// For testing purposes only. This verifies a predicate proof
+pub fn verify_pred<P, E, A, AV, AC, ACG, H, HG>(
     vk: &PredVerifyingKey<E, A, AV, AC, ACG, H, HG>,
     proof: &PredProof<E, A, AV, AC, ACG, H, HG>,
     checker: &P,

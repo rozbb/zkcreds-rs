@@ -11,16 +11,15 @@ use crate::{
     passport_info::{PersonalInfo, PersonalInfoVar},
 };
 
-use zeronym::pred::{gen_pred_crs, prove_pred, PredicateChecker};
+use zeronym::{
+    attrs::Attrs,
+    pred::{gen_pred_crs, prove_pred, verify_pred},
+};
 
 use std::fs::File;
 
 use ark_bls12_381::Bls12_381;
 use ark_crypto_primitives::crh::TwoToOneCRH;
-use ark_relations::{
-    ns,
-    r1cs::{ConstraintSynthesizer, ConstraintSystem, SynthesisError},
-};
 
 fn load_dump() -> PassportDump {
     let file = File::open("examples/passport/full_dump.json").unwrap();
@@ -29,6 +28,8 @@ fn load_dump() -> PassportDump {
 
 fn check_issuance(attrs: PersonalInfo, checker: IssuanceChecker) {
     let mut rng = ark_std::test_rng();
+
+    println!("Making issuance predicate CRS");
     let pk = gen_pred_crs::<
         _,
         _,
@@ -42,7 +43,15 @@ fn check_issuance(attrs: PersonalInfo, checker: IssuanceChecker) {
     >(&mut rng, checker.clone())
     .unwrap();
     let merkle_root = <H as TwoToOneCRH>::Output::default();
-    prove_pred(&mut rng, &pk, checker, attrs, merkle_root).unwrap();
+    let cred = attrs.commit();
+
+    println!("Proving issuance predicate");
+    let proof = prove_pred(&mut rng, &pk, checker.clone(), attrs, merkle_root).unwrap();
+
+    println!("Verifying issuance predicate");
+    let vk = pk.prepare_verifying_key();
+    assert!(verify_pred(&vk, &proof, &checker, &cred, &merkle_root).unwrap());
+    println!("Verified");
 }
 
 fn main() {

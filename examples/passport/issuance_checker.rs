@@ -19,6 +19,7 @@ use ark_r1cs_std::{
     boolean::Boolean,
     eq::EqGadget,
     fields::fp::FpVar,
+    R1CSVar,
 };
 use ark_relations::{
     ns,
@@ -33,7 +34,7 @@ pub struct IssuanceChecker {
     // Public inputs
     econtent_hash: [u8; SIG_HASH_LEN],
     expected_issuer: [u8; STATE_ID_LEN],
-    expiry_date_threshold: Fr,
+    today: Fr,
 
     // Private inputs
     dg1: [u8; DG1_LEN],
@@ -47,7 +48,7 @@ impl IssuanceChecker {
     pub fn from_passport(
         dump: &PassportDump,
         expected_issuer: [u8; STATE_ID_LEN],
-        expiry_date_threshold: u32,
+        today: u32,
     ) -> IssuanceChecker {
         let mut dg1 = [0u8; DG1_LEN];
         let mut pre_econtent = [0u8; PRE_ECONTENT_LEN];
@@ -62,7 +63,7 @@ impl IssuanceChecker {
         IssuanceChecker {
             econtent_hash,
             expected_issuer,
-            expiry_date_threshold: Fr::from(expiry_date_threshold),
+            today: Fr::from(today),
             dg1,
             pre_econtent,
             econtent,
@@ -90,7 +91,8 @@ fn date_to_field_elem(date: &[UInt8<Fr>]) -> Result<FpVar<Fr>, SynthesisError> {
     let day = (int(&date[4])? * ten) + int(&date[5])?;
 
     // Now combine the values by shifting and adding
-    Ok((year * Fr::from(10000u16)) + (month * Fr::from(100u16)) + day)
+    let f = (year * Fr::from(10000u16)) + (month * Fr::from(100u16)) + day;
+    Ok(f)
 }
 
 impl PredicateChecker<Fr, PersonalInfo, PersonalInfoVar, PassportComScheme, PassportComSchemeG>
@@ -103,21 +105,21 @@ impl PredicateChecker<Fr, PersonalInfo, PersonalInfoVar, PassportComScheme, Pass
         cs: ConstraintSystemRef<Fr>,
         attrs: &PersonalInfoVar,
     ) -> Result<(), SynthesisError> {
-        // Witness everything
-        let dg1 = UInt8::new_witness_vec(ns!(cs, "dg1"), &self.dg1)?;
-        let pre_econtent = UInt8::new_witness_vec(ns!(cs, "pre-econtent"), &self.pre_econtent)?;
-        let econtent = UInt8::new_witness_vec(ns!(cs, "econtent"), &self.econtent)?;
+        // Witness public inputs
         let econtent_hash = UInt8::new_input_vec(ns!(cs, "econtent hash"), &self.econtent_hash)?;
         let expected_issuer =
             UInt8::new_input_vec(ns!(cs, "expected issuer"), &self.expected_issuer)?;
-        let expiry_date_threshold = FpVar::<Fr>::new_input(ns!(cs, "expiry threshold"), || {
-            Ok(self.expiry_date_threshold)
-        })?;
+        let today = FpVar::<Fr>::new_input(ns!(cs, "expiry threshold"), || Ok(self.today))?;
+
+        // Witness private inputs
+        let dg1 = UInt8::new_witness_vec(ns!(cs, "dg1"), &self.dg1)?;
+        let pre_econtent = UInt8::new_witness_vec(ns!(cs, "pre-econtent"), &self.pre_econtent)?;
+        let econtent = UInt8::new_witness_vec(ns!(cs, "econtent"), &self.econtent)?;
 
         // Check that the issuer is the expected one, and the passport isn't expired
         dg1[ISSUER_OFFSET..ISSUER_OFFSET + STATE_ID_LEN].enforce_equal(&expected_issuer)?;
         date_to_field_elem(&dg1[EXPIRY_OFFSET..EXPIRY_OFFSET + DATE_LEN])?.enforce_cmp(
-            &expiry_date_threshold,
+            &today,
             core::cmp::Ordering::Greater,
             false,
         )?;
@@ -146,8 +148,13 @@ impl PredicateChecker<Fr, PersonalInfo, PersonalInfoVar, PassportComScheme, Pass
         Ok(())
     }
 
-    /// The public input is just the econtent hash
+    // The public inputs are: econtent_hash, expected_issuer, today
     fn public_inputs(&self) -> Vec<Fr> {
-        self.econtent_hash.to_field_elements().unwrap()
+        [
+            self.econtent_hash.to_field_elements().unwrap(),
+            self.expected_issuer.to_field_elements().unwrap(),
+            vec![self.today],
+        ]
+        .concat()
     }
 }

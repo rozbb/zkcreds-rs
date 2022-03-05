@@ -1,7 +1,7 @@
 use crate::{
     params::{
-        Fr, PassportComScheme, PassportComSchemeG, DATE_LEN, DOB_OFFSET, HASH_LEN, NAME_LEN,
-        NAME_OFFSET, NATIONALITY_OFFSET, PASSPORT_COM_PARAM, STATE_ID_LEN,
+        Fr, PassportComScheme, PassportComSchemeG, DATE_LEN, DOB_OFFSET, NAME_LEN, NAME_OFFSET,
+        NATIONALITY_OFFSET, PASSPORT_COM_PARAM, STATE_ID_LEN,
     },
     passport_dump::PassportDump,
 };
@@ -29,13 +29,25 @@ use ark_relations::{
 use ark_std::rand::Rng;
 
 /// Stores a subset of the info found in data groups 1 and 2 of a passport
-#[derive(Clone, Default)]
-pub(crate) struct PersonalInfo {
+#[derive(Clone)]
+pub struct PersonalInfo {
     nonce: ComNonce<PassportComScheme>,
-    nationality: [u8; STATE_ID_LEN],
-    name: [u8; NAME_LEN],
-    dob: Fr,
-    biometrics: Vec<u8>,
+    pub nationality: [u8; STATE_ID_LEN],
+    pub name: [u8; NAME_LEN],
+    pub dob: Fr,
+    pub biometrics: Vec<u8>,
+}
+
+impl Default for PersonalInfo {
+    fn default() -> PersonalInfo {
+        PersonalInfo {
+            nonce: ComNonce::<PassportComScheme>::default(),
+            nationality: [0u8; STATE_ID_LEN],
+            name: [0u8; NAME_LEN],
+            dob: Fr::default(),
+            biometrics: Vec::new(),
+        }
+    }
 }
 
 /// Stores a subset of the info found in data groups 1 and 2 of a passport
@@ -88,27 +100,25 @@ impl PersonalInfo {
     }
 
     pub fn from_passport<R: Rng>(rng: &mut R, dump: &PassportDump) -> PersonalInfo {
-        let nonce = ComNonce::<PassportComScheme>::rand(rng);
+        println!("Creating attrs with info from passport");
+        crate::passport_dump::print_mrz_info(dump);
 
-        let nationality = {
-            let mut buf = [0u8; STATE_ID_LEN];
-            buf.copy_from_slice(&dump.dg1[NATIONALITY_OFFSET..NATIONALITY_OFFSET + STATE_ID_LEN]);
-            buf
+        // Create an empty info struct that we'll fill with data
+        let mut info = PersonalInfo {
+            nonce: ComNonce::<PassportComScheme>::rand(rng),
+            ..Default::default()
         };
-        let name = {
-            let mut buf = [0u8; NAME_LEN];
-            buf.copy_from_slice(&dump.dg1[NAME_OFFSET..NAME_OFFSET + NAME_LEN]);
-            buf
-        };
-        let dob = date_to_u32(&dump.dg1[DOB_OFFSET..DOB_OFFSET + DATE_LEN]);
 
-        PersonalInfo {
-            nonce,
-            nationality,
-            name,
-            dob: Fr::from(dob),
-            biometrics: dump.dg2.clone(),
-        }
+        // Extract the nationality, name, and DOB from the DG1 blob. The biometrics are set equal
+        // to the entire DG2 blob
+        info.nationality
+            .copy_from_slice(&dump.dg1[NATIONALITY_OFFSET..NATIONALITY_OFFSET + STATE_ID_LEN]);
+        info.name
+            .copy_from_slice(&dump.dg1[NAME_OFFSET..NAME_OFFSET + NAME_LEN]);
+        info.dob = Fr::from(date_to_u32(&dump.dg1[DOB_OFFSET..DOB_OFFSET + DATE_LEN]));
+        info.biometrics = dump.dg2.clone();
+
+        info
     }
 }
 
@@ -180,11 +190,8 @@ impl AllocVar<PersonalInfo, Fr> for PersonalInfoVar {
             Bytestring::new_variable(ns!(cs, "nationality"), || Ok(nationality.to_vec()), mode)?;
         let name = Bytestring::new_variable(ns!(cs, "name"), || Ok(name.to_vec()), mode)?;
         let dob = FpVar::<Fr>::new_variable(ns!(cs, "birth year"), || Ok(dob), mode)?;
-        let biometric_hash = Bytestring::new_variable(
-            ns!(cs, "biometric_hash"),
-            || Ok(biometric_hash.to_vec()),
-            mode,
-        )?;
+        let biometric_hash =
+            Bytestring::new_variable(ns!(cs, "biometric_hash"), || Ok(biometric_hash), mode)?;
 
         // Return the witnessed values
         Ok(PersonalInfoVar {

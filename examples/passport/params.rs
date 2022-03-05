@@ -18,10 +18,10 @@ use lazy_static::lazy_static;
 // used is TD3 (as opposed to TD1 or TD2).
 // The lengths of the fields below are derived from or directly given in ICAO doc 9303, part 10,
 // §4.7.1.3, which can be found at https://www.icao.int/publications/Documents/9303_p10_cons_en.pdf
-pub(crate) const NAME_LEN: usize = 31;
+pub(crate) const NAME_LEN: usize = 39;
 pub(crate) const DATE_LEN: usize = 6;
 pub(crate) const STATE_ID_LEN: usize = 3;
-pub(crate) const DOCUMENT_NUMBER_LEN: usize = 2;
+pub(crate) const DOCUMENT_NUMBER_LEN: usize = 9;
 pub(crate) const DG1_LEN: usize = 93;
 pub(crate) const ISSUER_OFFSET: usize = 7;
 pub(crate) const NAME_OFFSET: usize = ISSUER_OFFSET + STATE_ID_LEN;
@@ -45,7 +45,7 @@ pub(crate) const DG1_HASH_OFFSET: usize = 31;
 // The location of the DG2 hash inside pre-econtent
 pub(crate) const DG2_HASH_OFFSET: usize = 70;
 // The location of the pre-econtent hash inside econtent
-pub(crate) const PRE_ECONTENT_HASH_OFFSET: usize = 56;
+pub(crate) const PRE_ECONTENT_HASH_OFFSET: usize = 72;
 
 #[derive(Clone)]
 pub(crate) struct Window8x128;
