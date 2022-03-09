@@ -2,6 +2,7 @@
 pub mod attrs;
 pub mod birth;
 pub mod com_tree;
+pub mod com_forest;
 mod common;
 mod identity_crh;
 pub mod link;

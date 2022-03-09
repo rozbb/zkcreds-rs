@@ -271,3 +271,75 @@ where
     pub(crate) proof: Groth16Proof<E>,
     pub(crate) _marker: PhantomData<(A, AC, ACG, H, HG)>,
 }
+
+//
+// Merkle forest membership data structures
+//
+
+/// Represents the proving key for a Merkle forest membership proof
+pub struct ForestProvingKey<E, A, AC, ACG, H, HG>
+where
+    E: PairingEngine,
+    A: Attrs<E::Fr, AC>,
+    AC: CommitmentScheme,
+    ACG: CommitmentGadget<AC, E::Fr>,
+    AC::Output: ToConstraintField<E::Fr>,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<E::Fr>,
+    HG: TwoToOneCRHGadget<H, E::Fr>,
+{
+    pub(crate) pk: Groth16ProvingKey<E>,
+    pub(crate) _marker: PhantomData<(A, AC, ACG, H, HG)>,
+}
+
+impl<E, A, AC, ACG, H, HG> ForestProvingKey<E, A, AC, ACG, H, HG>
+where
+    E: PairingEngine,
+    A: Attrs<E::Fr, AC>,
+    AC: CommitmentScheme,
+    AC::Output: ToConstraintField<E::Fr>,
+    ACG: CommitmentGadget<AC, E::Fr>,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<E::Fr>,
+    HG: TwoToOneCRHGadget<H, E::Fr>,
+{
+    pub fn prepare_verifying_key(&self) -> ForestVerifyingKey<E, A, AC, ACG, H, HG> {
+        let pvk = ark_groth16::prepare_verifying_key(&self.pk.vk);
+        ForestVerifyingKey {
+            pvk,
+            _marker: self._marker,
+        }
+    }
+}
+
+/// Represents the verifying key for Merkle forest membership proofs
+pub struct ForestVerifyingKey<E, A, AC, ACG, H, HG>
+where
+    E: PairingEngine,
+    A: Attrs<E::Fr, AC>,
+    AC: CommitmentScheme,
+    ACG: CommitmentGadget<AC, E::Fr>,
+    AC::Output: ToConstraintField<E::Fr>,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<E::Fr>,
+    HG: TwoToOneCRHGadget<H, E::Fr>,
+{
+    pub(crate) pvk: Groth16PreparedVerifyingKey<E>,
+    pub(crate) _marker: PhantomData<(A, AC, ACG, H, HG)>,
+}
+
+/// Represents a Merkle forest membership proof
+pub struct ForestProof<E, A, AC, ACG, H, HG>
+where
+    E: PairingEngine,
+    A: Attrs<E::Fr, AC>,
+    AC: CommitmentScheme,
+    AC::Output: ToConstraintField<E::Fr>,
+    ACG: CommitmentGadget<AC, E::Fr>,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<E::Fr>,
+    HG: TwoToOneCRHGadget<H, E::Fr>,
+{
+    pub(crate) proof: Groth16Proof<E>,
+    pub(crate) _marker: PhantomData<(A, AC, ACG, H, HG)>,
+}
