@@ -19,7 +19,7 @@ use ark_relations::{
 use ark_std::rand::Rng;
 
 /// Describes any predicate that someone might want to prove over an `Attrs` object.
-pub trait PredicateChecker<ConstraintF, A, AV, AC, ACG>: Sized
+pub trait PredicateChecker<ConstraintF, A, AV, AC, ACG>: Sized + Clone
 where
     ConstraintF: PrimeField,
     A: Attrs<ConstraintF, AC>,

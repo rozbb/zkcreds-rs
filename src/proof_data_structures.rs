@@ -72,6 +72,26 @@ where
     pub(crate) _marker: PhantomData<(A, AV, AC, ACG, H, HG)>,
 }
 
+impl<E, A, AV, AC, ACG, H, HG> Clone for PredVerifyingKey<E, A, AV, AC, ACG, H, HG>
+where
+    E: PairingEngine,
+    A: Attrs<E::Fr, AC>,
+    AV: AttrsVar<E::Fr, A, AC, ACG>,
+    AC: CommitmentScheme,
+    AC::Output: ToConstraintField<E::Fr>,
+    ACG: CommitmentGadget<AC, E::Fr>,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<E::Fr>,
+    HG: TwoToOneCRHGadget<H, E::Fr>,
+{
+    fn clone(&self) -> Self {
+        Self {
+            pvk: self.pvk.clone(),
+            _marker: PhantomData,
+        }
+    }
+}
+
 /// Represents the prepared public inputs to a predicate proof
 pub struct PredPublicInput<E, A, AV, AC, ACG, H, HG>
 where
@@ -240,6 +260,25 @@ where
     pub(crate) _marker: PhantomData<(A, AC, ACG, H, HG)>,
 }
 
+impl<E, A, AC, ACG, H, HG> Clone for TreeVerifyingKey<E, A, AC, ACG, H, HG>
+where
+    E: PairingEngine,
+    A: Attrs<E::Fr, AC>,
+    AC: CommitmentScheme,
+    ACG: CommitmentGadget<AC, E::Fr>,
+    AC::Output: ToConstraintField<E::Fr>,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<E::Fr>,
+    HG: TwoToOneCRHGadget<H, E::Fr>,
+{
+    fn clone(&self) -> Self {
+        Self {
+            pvk: self.pvk.clone(),
+            _marker: PhantomData,
+        }
+    }
+}
+
 /// Represents the prepared public inputs to a Merkle tree membership proof
 pub struct TreePublicInput<E, A, AC, ACG, H, HG>
 where
@@ -326,6 +365,25 @@ where
 {
     pub(crate) pvk: Groth16PreparedVerifyingKey<E>,
     pub(crate) _marker: PhantomData<(A, AC, ACG, H, HG)>,
+}
+
+impl<E, A, AC, ACG, H, HG> Clone for ForestVerifyingKey<E, A, AC, ACG, H, HG>
+where
+    E: PairingEngine,
+    A: Attrs<E::Fr, AC>,
+    AC: CommitmentScheme,
+    ACG: CommitmentGadget<AC, E::Fr>,
+    AC::Output: ToConstraintField<E::Fr>,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<E::Fr>,
+    HG: TwoToOneCRHGadget<H, E::Fr>,
+{
+    fn clone(&self) -> Self {
+        Self {
+            pvk: self.pvk.clone(),
+            _marker: PhantomData,
+        }
+    }
 }
 
 /// Represents a Merkle forest membership proof

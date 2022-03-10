@@ -22,6 +22,69 @@ use ark_std::rand::Rng;
 #[cfg(test)]
 use crate::proof_data_structures::ForestVerifyingKey;
 
+/// Roots of a `ComForest`
+pub struct ComForestRoots<ConstraintF, H>
+where
+    ConstraintF: PrimeField,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<ConstraintF>,
+{
+    pub roots: Vec<H::Output>,
+    _marker: PhantomData<ConstraintF>,
+}
+
+impl<ConstraintF, H> Clone for ComForestRoots<ConstraintF, H>
+where
+    ConstraintF: PrimeField,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<ConstraintF>,
+{
+    fn clone(&self) -> Self {
+        Self {
+            roots: self.roots.clone(),
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<ConstraintF, H> ComForestRoots<ConstraintF, H>
+where
+    ConstraintF: PrimeField,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<ConstraintF>,
+{
+    #[cfg(test)]
+    pub(crate) fn verify_memb<E, A, AC, ACG, HG>(
+        &self,
+        vk: &ForestVerifyingKey<E, A, AC, ACG, H, HG>,
+        proof: &ForestProof<E, A, AC, ACG, H, HG>,
+        attrs_com: &AC::Output,
+        member_root: &H::Output,
+    ) -> Result<bool, SynthesisError>
+    where
+        E: PairingEngine<Fr = ConstraintF>,
+        A: Attrs<E::Fr, AC>,
+        ACG: CommitmentGadget<AC, E::Fr>,
+        AC: CommitmentScheme,
+        AC::Output: ToConstraintField<ConstraintF>,
+        HG: TwoToOneCRHGadget<H, E::Fr>,
+    {
+        let attr_com_input = attrs_com.to_field_elements().unwrap();
+        let member_root_input = member_root.to_field_elements().unwrap();
+        let roots_input = self.public_inputs();
+
+        let all_inputs = [attr_com_input, member_root_input, roots_input].concat();
+        ark_groth16::verify_proof(&vk.pvk, &proof.proof, &all_inputs)
+    }
+
+    pub(crate) fn public_inputs(&self) -> Vec<ConstraintF> {
+        self.roots
+            .iter()
+            .flat_map(|t| t.to_field_elements().unwrap())
+            .collect()
+    }
+}
+
 /// A forest of commitment trees
 pub struct ComForest<ConstraintF, H, AC>
 where
@@ -72,31 +135,12 @@ where
         })
     }
 
-    #[cfg(test)]
-    pub(crate) fn verify_memb<E, A, ACG, HG>(
-        &self,
-        vk: &ForestVerifyingKey<E, A, AC, ACG, H, HG>,
-        proof: &ForestProof<E, A, AC, ACG, H, HG>,
-        attrs_com: &AC::Output,
-        member_root: &H::Output,
-    ) -> Result<bool, SynthesisError>
-    where
-        E: PairingEngine<Fr = ConstraintF>,
-        A: Attrs<E::Fr, AC>,
-        ACG: CommitmentGadget<AC, E::Fr>,
-        AC::Output: ToConstraintField<E::Fr>,
-        HG: TwoToOneCRHGadget<H, E::Fr>,
-    {
-        let attr_com_input = attrs_com.to_field_elements().unwrap();
-        let member_root_input = member_root.to_field_elements().unwrap();
-        let roots_input = self
-            .trees
-            .iter()
-            .flat_map(|t| t.root().to_field_elements().unwrap())
-            .collect::<Vec<_>>();
-
-        let all_inputs = [attr_com_input, member_root_input, roots_input].concat();
-        ark_groth16::verify_proof(&vk.pvk, &proof.proof, &all_inputs)
+    pub fn roots(&self) -> ComForestRoots<ConstraintF, H> {
+        let roots = self.trees.iter().map(ComTree::root).collect();
+        ComForestRoots {
+            roots,
+            _marker: PhantomData,
+        }
     }
 }
 
@@ -190,14 +234,22 @@ where
 }
 
 #[cfg(test)]
-mod test {
+pub(crate) mod test {
     use super::*;
     use crate::test_util::{
         NameAndBirthYear, TestComScheme, TestComSchemeG, TestTreeH, TestTreeHG, MERKLE_CRH_PARAM,
     };
 
-    use ark_bls12_381::Bls12_381 as E;
+    use ark_bls12_381::{Bls12_381 as E, Fr};
     use ark_ff::UniformRand;
+
+    pub(crate) fn random_tree<R: Rng>(rng: &mut R) -> ComTree<Fr, TestTreeH, TestComScheme> {
+        let mut tree = ComTree::empty(MERKLE_CRH_PARAM.clone(), 32);
+        let idx: u16 = rng.gen();
+        let leaf = <<TestComScheme as CommitmentScheme>::Output as UniformRand>::rand(rng);
+        tree.insert(idx as u64, &leaf);
+        tree
+    }
 
     /// Tests a predicate that returns true iff the given `NameAndBirthYear` is at least 21
     #[test]
@@ -222,15 +274,8 @@ mod test {
         .unwrap();
 
         // Make a bunch of trees with random elements inerted in them
-        let trees: Vec<_> = (0..num_trees)
-            .map(|_| {
-                let mut tree = ComTree::empty(MERKLE_CRH_PARAM.clone(), 32);
-                let idx: u16 = rng.gen();
-                let leaf =
-                    <<TestComScheme as CommitmentScheme>::Output as UniformRand>::rand(&mut rng);
-                tree.insert(idx as u64, &leaf);
-                tree
-            })
+        let trees: Vec<_> = core::iter::repeat_with(|| random_tree(&mut rng))
+            .take(num_trees)
             .collect();
         let forest = ComForest { trees };
 
@@ -246,8 +291,9 @@ mod test {
 
         // Verify
 
+        let roots = forest.roots();
         let vk = pk.prepare_verifying_key();
-        assert!(forest
+        assert!(roots
             .verify_memb(&vk, &proof, &attrs_com, &member_root)
             .unwrap());
     }
