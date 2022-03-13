@@ -100,9 +100,6 @@ impl PersonalInfo {
     }
 
     pub fn from_passport<R: Rng>(rng: &mut R, dump: &PassportDump) -> PersonalInfo {
-        println!("Creating attrs with info from passport");
-        print_dump_info(dump);
-
         // Create an empty info struct that we'll fill with data
         let mut info = PersonalInfo {
             nonce: ComNonce::<PassportComScheme>::rand(rng),

@@ -3,11 +3,16 @@ mod issuance_checker;
 mod params;
 mod passport_dump;
 mod passport_info;
+mod preds;
 mod sig_verif;
 
 use crate::{
-    issuance_checker::IssuanceChecker,
-    params::{PassportComScheme, PassportComSchemeG, H, HG},
+    issuance_checker::{IssuanceReq, PassportHashChecker},
+    params::{
+        ForestProvingKey, ForestVerifyingKey, PassportComScheme, PassportComSchemeG, PredProof,
+        PredProvingKey, PredVerifyingKey, TreeProvingKey, TreeVerifyingKey, H, HG,
+        MERKLE_CRH_PARAM, SIG_HASH_LEN, STATE_ID_LEN,
+    },
     passport_dump::PassportDump,
     passport_info::{PersonalInfo, PersonalInfoVar},
     sig_verif::{load_usa_pubkey, IssuerPubkey},
@@ -15,31 +20,39 @@ use crate::{
 
 use zeronym::{
     attrs::Attrs,
-    pred::{gen_pred_crs, prove_pred, verify_pred},
+    com_tree::ComTree,
+    pred::{prove_birth, prove_pred, verify_birth, verify_pred},
+    Com,
 };
 
 use std::fs::File;
 
-use ark_bls12_381::Bls12_381;
+use ark_bls12_381::{Bls12_381, Fr};
 use ark_crypto_primitives::crh::TwoToOneCRH;
+use ark_ff::UniformRand;
+use ark_std::rand::Rng;
+
+const TREE_HEIGHT: u32 = 32;
+const FOREST_SIZE: usize = 10;
+
+// Parameters for passport validation. All passports must expire after TODAY, and must have
+// nationality USER_NATIONALITY
+const TODAY: u32 = 220101u32;
+const USER_NATIONALITY: [u8; STATE_ID_LEN] = *b"USA";
 
 fn load_dump() -> PassportDump {
     let file = File::open("examples/passport/full_dump.json").unwrap();
     serde_json::from_reader(file).unwrap()
 }
 
-fn check_sig(pk: &IssuerPubkey, sig: &[u8], hash: &[u8]) {
-    assert!(pk.verify(sig, hash));
-}
-
-fn check_issuance(attrs: PersonalInfo, checker: IssuanceChecker) {
+fn check_issuance(attrs: PersonalInfo, checker: PassportHashChecker) {
     let mut rng = ark_std::test_rng();
 
     // Commit to the attributes. This is what the issuer sees
     let cred = attrs.commit();
 
     // Make the CRS. The merkle root doesn't matter for now
-    let pk = gen_pred_crs::<
+    let pk = zeronym::pred::gen_pred_crs::<
         _,
         _,
         Bls12_381,
@@ -65,26 +78,110 @@ fn check_issuance(attrs: PersonalInfo, checker: IssuanceChecker) {
     println!("Verified issuance predicate");
 }
 
+fn rand_tree<R: Rng>(rng: &mut R) -> ComTree<Fr, H, PassportComScheme> {
+    let mut tree = ComTree::empty(MERKLE_CRH_PARAM.clone(), TREE_HEIGHT);
+    let idx: u16 = rng.gen();
+    let leaf = Com::<PassportComScheme>::rand(rng);
+    tree.insert(idx as u64, &leaf);
+    tree
+}
+
+fn gen_issuance_crs<R: Rng>(rng: &mut R) -> (PredProvingKey, PredVerifyingKey) {
+    // Generate the hash checker circuit's CRS
+    let pk = zeronym::pred::gen_pred_crs::<
+        _,
+        _,
+        Bls12_381,
+        PersonalInfo,
+        PersonalInfoVar,
+        PassportComScheme,
+        PassportComSchemeG,
+        H,
+        HG,
+    >(rng, PassportHashChecker::default())
+    .unwrap();
+
+    (pk.clone(), pk.prepare_verifying_key())
+}
+
+fn gen_tree_crs<R: Rng>(rng: &mut R) -> (TreeProvingKey, TreeVerifyingKey) {
+    // Generate the predicate circuit's CRS
+    let pk = zeronym::com_tree::gen_tree_memb_crs::<
+        _,
+        Bls12_381,
+        PersonalInfo,
+        PassportComScheme,
+        PassportComSchemeG,
+        H,
+        HG,
+    >(rng, MERKLE_CRH_PARAM.clone(), TREE_HEIGHT)
+    .unwrap();
+
+    (pk.clone(), pk.prepare_verifying_key())
+}
+
+fn gen_forest_crs<R: Rng>(rng: &mut R) -> (ForestProvingKey, ForestVerifyingKey) {
+    // Generate the predicate circuit's CRS
+    let pk = zeronym::com_forest::gen_forest_memb_crs::<
+        _,
+        Bls12_381,
+        PersonalInfo,
+        PassportComScheme,
+        PassportComSchemeG,
+        H,
+        HG,
+    >(rng, FOREST_SIZE)
+    .unwrap();
+
+    (pk.clone(), pk.prepare_verifying_key())
+}
+
+/// An issuer takes an issuance request and validates it
+fn issue(birth_vk: &PredVerifyingKey, req: &IssuanceReq) {
+    // Check that the hash was computed correctly
+    let checker = PassportHashChecker::from_issuance_req(req, USER_NATIONALITY, TODAY);
+    assert!(verify_birth(birth_vk, &req.hash_proof, &checker, &req.attrs_com).unwrap());
+
+    // Now check that the signature of the hash is correct
+    let sig_pubkey = load_usa_pubkey();
+    assert!(sig_pubkey.verify(&req.sig, &req.econtent_hash));
+}
+
+/// With their passport, a user constructs a `PersonalInfo` struct and requests issuance
+fn user_req_issuance<R: Rng>(
+    rng: &mut R,
+    issuance_pk: &PredProvingKey,
+) -> (PersonalInfo, IssuanceReq) {
+    // Load the passport and parse it into a `PersonalInfo` struct
+    let dump = load_dump();
+    let my_info = PersonalInfo::from_passport(rng, &dump);
+    let attrs_com = my_info.commit();
+
+    // Make a hash checker struct using our private data
+    let hash_checker = PassportHashChecker::from_passport(&dump, USER_NATIONALITY, TODAY);
+
+    // Prove the passport hash is correctly computed
+    let hash_proof = prove_birth(rng, issuance_pk, hash_checker, my_info.clone()).unwrap();
+
+    // Now put together the issuance request
+    let req = IssuanceReq {
+        attrs_com,
+        econtent_hash: dump.econtent_hash(),
+        sig: dump.sig,
+        hash_proof,
+    };
+
+    (my_info, req)
+}
+
 fn main() {
     let mut rng = ark_std::test_rng();
 
-    // Load the passport
-    let dump = load_dump();
-    let attrs = PersonalInfo::from_passport(&mut rng, &dump);
+    let (issuance_pk, issuance_vk) = gen_issuance_crs(&mut rng);
+    println!("Generated CRSs");
 
-    // We can load the cert directly from the dump or load a fixed cert. The former doesn't make
-    // any sense if you're actually deploying this, but it's convenient for testing
-    let pubkey = crate::sig_verif::load_pubkey_from_dump(&dump);
-    // Load the US State Dept. pubkey
-    //let pubkey = load_usa_pubkey();
-
-    // Check that the attributes match the econtent hash of the passport, that the passport is
-    // not expired, and the passport is issued by the US
-    let today = 220101u32;
-    let hash_checker = IssuanceChecker::from_passport(&dump, *b"USA", today);
-    check_issuance(attrs, hash_checker);
-
-    // Check that the econtent hash is signed by the pubkey
-    check_sig(&pubkey, &dump.sig, &dump.econtent_hash());
-    println!("Passport signature verifies");
+    println!("Requesting issuance");
+    let (user_info, issuance_req) = user_req_issuance(&mut rng, &issuance_pk);
+    issue(&issuance_vk, &issuance_req);
+    println!("Issuance request granted");
 }

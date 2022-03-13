@@ -55,6 +55,26 @@ where
     }
 }
 
+impl<E, A, AV, AC, ACG, H, HG> Clone for PredProvingKey<E, A, AV, AC, ACG, H, HG>
+where
+    E: PairingEngine,
+    A: Attrs<E::Fr, AC>,
+    AV: AttrsVar<E::Fr, A, AC, ACG>,
+    AC: CommitmentScheme,
+    ACG: CommitmentGadget<AC, E::Fr>,
+    AC::Output: ToConstraintField<E::Fr>,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<E::Fr>,
+    HG: TwoToOneCRHGadget<H, E::Fr>,
+{
+    fn clone(&self) -> Self {
+        Self {
+            pk: self.pk.clone(),
+            _marker: PhantomData,
+        }
+    }
+}
+
 /// Represents the verifying key for a predicate proofs
 pub struct PredVerifyingKey<E, A, AV, AC, ACG, H, HG>
 where
@@ -224,6 +244,25 @@ where
     pub(crate) _marker: PhantomData<(A, AC, ACG, H, HG)>,
 }
 
+impl<E, A, AC, ACG, H, HG> Clone for TreeProvingKey<E, A, AC, ACG, H, HG>
+where
+    E: PairingEngine,
+    A: Attrs<E::Fr, AC>,
+    AC: CommitmentScheme,
+    ACG: CommitmentGadget<AC, E::Fr>,
+    AC::Output: ToConstraintField<E::Fr>,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<E::Fr>,
+    HG: TwoToOneCRHGadget<H, E::Fr>,
+{
+    fn clone(&self) -> Self {
+        Self {
+            pk: self.pk.clone(),
+            _marker: PhantomData,
+        }
+    }
+}
+
 impl<E, A, AC, ACG, H, HG> TreeProvingKey<E, A, AC, ACG, H, HG>
 where
     E: PairingEngine,
@@ -329,6 +368,25 @@ where
 {
     pub(crate) pk: Groth16ProvingKey<E>,
     pub(crate) _marker: PhantomData<(A, AC, ACG, H, HG)>,
+}
+
+impl<E, A, AC, ACG, H, HG> Clone for ForestProvingKey<E, A, AC, ACG, H, HG>
+where
+    E: PairingEngine,
+    A: Attrs<E::Fr, AC>,
+    AC: CommitmentScheme,
+    ACG: CommitmentGadget<AC, E::Fr>,
+    AC::Output: ToConstraintField<E::Fr>,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<E::Fr>,
+    HG: TwoToOneCRHGadget<H, E::Fr>,
+{
+    fn clone(&self) -> Self {
+        Self {
+            pk: self.pk.clone(),
+            _marker: PhantomData,
+        }
+    }
 }
 
 impl<E, A, AC, ACG, H, HG> ForestProvingKey<E, A, AC, ACG, H, HG>

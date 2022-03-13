@@ -1,7 +1,7 @@
 use crate::{
     ark_sha256::Sha256Gadget,
     params::{
-        Fr, PassportComScheme, PassportComSchemeG, DATE_LEN, DG1_HASH_OFFSET, DG1_LEN,
+        Fr, PassportComScheme, PassportComSchemeG, PredProof, DATE_LEN, DG1_HASH_OFFSET, DG1_LEN,
         DG2_HASH_OFFSET, DOB_OFFSET, ECONTENT_LEN, EXPIRY_OFFSET, HASH_LEN, ISSUER_OFFSET,
         NAME_LEN, NAME_OFFSET, NATIONALITY_OFFSET, PRE_ECONTENT_HASH_OFFSET, PRE_ECONTENT_LEN,
         SIG_HASH_LEN, STATE_ID_LEN,
@@ -10,7 +10,7 @@ use crate::{
     passport_info::{PersonalInfo, PersonalInfoVar},
 };
 
-use zeronym::pred::PredicateChecker;
+use zeronym::{pred::PredicateChecker, Com};
 
 use ark_ff::ToConstraintField;
 use ark_r1cs_std::{
@@ -19,7 +19,6 @@ use ark_r1cs_std::{
     boolean::Boolean,
     eq::EqGadget,
     fields::fp::FpVar,
-    R1CSVar,
 };
 use ark_relations::{
     ns,
@@ -27,10 +26,19 @@ use ark_relations::{
 };
 use sha2::{Digest, Sha256};
 
-/// Verifies that the `PassportDump` hashes to the correct `econtent_hash`, and that the
-/// `PersonalAttrs` corresponds to its contents.
+/// A request to issue attrs_com. This is includes a proof that opens the attrs and a signature
+/// over the corresponding passport's econtent hash
+pub(crate) struct IssuanceReq {
+    pub(crate) attrs_com: Com<PassportComScheme>,
+    pub(crate) econtent_hash: [u8; HASH_LEN],
+    pub(crate) sig: Vec<u8>,
+    pub(crate) hash_proof: PredProof,
+}
+
+/// Verifies that the given passport contents hashes to the correct `econtent_hash`, and that the
+/// provided `PersonalInfo` corresponds to its contents.
 #[derive(Clone)]
-pub struct IssuanceChecker {
+pub(crate) struct PassportHashChecker {
     // Public inputs
     econtent_hash: [u8; SIG_HASH_LEN],
     expected_issuer: [u8; STATE_ID_LEN],
@@ -42,14 +50,27 @@ pub struct IssuanceChecker {
     econtent: [u8; ECONTENT_LEN],
 }
 
-impl IssuanceChecker {
-    /// Makes an issuance checker given a passport, 3-letter issuing state, and DOB in the form
-    /// YYMMDD in base-10
-    pub fn from_passport(
+impl Default for PassportHashChecker {
+    fn default() -> PassportHashChecker {
+        PassportHashChecker {
+            econtent_hash: [0u8; SIG_HASH_LEN],
+            expected_issuer: [0u8; STATE_ID_LEN],
+            today: Fr::default(),
+            dg1: [0u8; DG1_LEN],
+            pre_econtent: [0u8; PRE_ECONTENT_LEN],
+            econtent: [0u8; ECONTENT_LEN],
+        }
+    }
+}
+
+impl PassportHashChecker {
+    /// Makes an issuance checker given a passport, 3-letter issuing state, and today's date in the
+    /// form YYMMDD in base-10 (this is to check expiry)
+    pub(crate) fn from_passport(
         dump: &PassportDump,
         expected_issuer: [u8; STATE_ID_LEN],
         today: u32,
-    ) -> IssuanceChecker {
+    ) -> PassportHashChecker {
         let mut dg1 = [0u8; DG1_LEN];
         let mut pre_econtent = [0u8; PRE_ECONTENT_LEN];
         let mut econtent = [0u8; ECONTENT_LEN];
@@ -60,13 +81,28 @@ impl IssuanceChecker {
         econtent.copy_from_slice(&dump.econtent);
         econtent_hash.copy_from_slice(&Sha256::digest(econtent));
 
-        IssuanceChecker {
+        PassportHashChecker {
             econtent_hash,
             expected_issuer,
             today: Fr::from(today),
             dg1,
             pre_econtent,
             econtent,
+        }
+    }
+
+    /// Makes an issuance checker given an issuance request, a 3-letter issuing state, and today's date in the
+    /// form YYMMDD in base-10 (this is to check expiry)
+    pub(crate) fn from_issuance_req(
+        req: &IssuanceReq,
+        expected_issuer: [u8; STATE_ID_LEN],
+        today: u32,
+    ) -> PassportHashChecker {
+        PassportHashChecker {
+            econtent_hash: req.econtent_hash,
+            expected_issuer,
+            today: Fr::from(today),
+            ..Default::default()
         }
     }
 }
@@ -96,7 +132,7 @@ fn date_to_field_elem(date: &[UInt8<Fr>]) -> Result<FpVar<Fr>, SynthesisError> {
 }
 
 impl PredicateChecker<Fr, PersonalInfo, PersonalInfoVar, PassportComScheme, PassportComSchemeG>
-    for IssuanceChecker
+    for PassportHashChecker
 {
     /// Enforces that the given passport info hashes to the given econtent hash. The process of
     /// constructing econtent is complicated, so this is multiple steps

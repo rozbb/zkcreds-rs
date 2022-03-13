@@ -66,6 +66,7 @@ where
     })
 }
 
+/// Proves the given predicate over the attributes
 pub fn prove_pred<R, P, E, A, AV, AC, ACG, H, HG>(
     rng: &mut R,
     pk: &PredProvingKey<E, A, AV, AC, ACG, H, HG>,
@@ -99,7 +100,32 @@ where
     })
 }
 
-/// For testing purposes only. This verifies a predicate proof
+/// Proves the given birth predicate over the given attribute. Same as prove_pred except we don't
+/// care about the merkle root
+pub fn prove_birth<R, P, E, A, AV, AC, ACG, H, HG>(
+    rng: &mut R,
+    pk: &PredProvingKey<E, A, AV, AC, ACG, H, HG>,
+    checker: P,
+    attrs: A,
+) -> Result<PredProof<E, A, AV, AC, ACG, H, HG>, SynthesisError>
+where
+    R: Rng,
+    P: PredicateChecker<E::Fr, A, AV, AC, ACG>,
+    E: PairingEngine,
+    A: Attrs<E::Fr, AC>,
+    AV: AttrsVar<E::Fr, A, AC, ACG>,
+    AC: CommitmentScheme,
+    ACG: CommitmentGadget<AC, E::Fr>,
+    AC::Output: ToConstraintField<E::Fr>,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<E::Fr>,
+    HG: TwoToOneCRHGadget<H, E::Fr>,
+{
+    let merkle_root = H::Output::default();
+    prove_pred(rng, pk, checker, attrs, merkle_root)
+}
+
+/// Verifies a predicate proof
 pub fn verify_pred<P, E, A, AV, AC, ACG, H, HG>(
     vk: &PredVerifyingKey<E, A, AV, AC, ACG, H, HG>,
     proof: &PredProof<E, A, AV, AC, ACG, H, HG>,
@@ -124,6 +150,30 @@ where
 
     let all_inputs = [attr_com_input, root_input, checker.public_inputs()].concat();
     ark_groth16::verify_proof(&vk.pvk, &proof.proof, &all_inputs)
+}
+
+/// Verifies a birth predicate proof. Same as a predicate proof but we don't care about the merkle
+/// root
+pub fn verify_birth<P, E, A, AV, AC, ACG, H, HG>(
+    vk: &PredVerifyingKey<E, A, AV, AC, ACG, H, HG>,
+    proof: &PredProof<E, A, AV, AC, ACG, H, HG>,
+    checker: &P,
+    attrs_com: &AC::Output,
+) -> Result<bool, SynthesisError>
+where
+    P: PredicateChecker<E::Fr, A, AV, AC, ACG>,
+    E: PairingEngine,
+    A: Attrs<E::Fr, AC>,
+    AV: AttrsVar<E::Fr, A, AC, ACG>,
+    AC: CommitmentScheme,
+    ACG: CommitmentGadget<AC, E::Fr>,
+    AC::Output: ToConstraintField<E::Fr>,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<E::Fr>,
+    HG: TwoToOneCRHGadget<H, E::Fr>,
+{
+    let merkle_root = H::Output::default();
+    verify_pred(vk, proof, checker, attrs_com, &merkle_root)
 }
 
 pub fn prepare_pred_inputs<R, P, E, A, AV, AC, ACG, H, HG>(
@@ -218,12 +268,12 @@ pub(crate) mod test {
     // Define a predicate that will tell whether the given `NameAndBirthYear` is at least X years
     // old. The predicate is: attrs.birth_year ≤ self.threshold_birth_year
     #[derive(Clone)]
-    pub(crate) struct AgeProver {
+    pub(crate) struct AgeChecker {
         pub(crate) threshold_birth_year: Fr,
     }
 
     impl PredicateChecker<Fr, NameAndBirthYear, NameAndBirthYearVar, TestComScheme, TestComSchemeG>
-        for AgeProver
+        for AgeChecker
     {
         /// Returns whether or not the predicate was satisfied
         fn pred(
@@ -256,7 +306,7 @@ pub(crate) mod test {
         let mut rng = ark_std::test_rng();
 
         // We choose that anyone born in 2001 or earlier satisfies our predicate
-        let checker = AgeProver {
+        let checker = AgeChecker {
             threshold_birth_year: Fr::from(2001u16),
         };
 

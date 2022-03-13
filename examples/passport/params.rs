@@ -1,3 +1,12 @@
+use crate::passport_info::{PersonalInfo, PersonalInfoVar};
+
+use zeronym::proof_data_structures::{
+    ForestProvingKey as ZeronymForestPk, ForestVerifyingKey as ZeronymForestVk,
+    PredProof as ZeronymPredProof, PredProvingKey as ZeronymPredPk,
+    PredVerifyingKey as ZeronymPredVk, TreeProvingKey as ZeronymTreePk,
+    TreeVerifyingKey as ZeronymTreeVk,
+};
+
 use ark_bls12_381::Bls12_381;
 use ark_crypto_primitives::{
     commitment::{self, CommitmentScheme},
@@ -75,6 +84,43 @@ pub(crate) type HG = bowe_hopwood::constraints::CRHGadget<P, FqV>;
 pub(crate) type PassportComScheme = commitment::pedersen::Commitment<Jubjub, Window8x128>;
 pub(crate) type PassportComSchemeG =
     commitment::pedersen::constraints::CommGadget<Jubjub, JubjubVar, Window8x128>;
+
+/// Type aliases for Groth16 stuff
+pub(crate) type PredProvingKey = ZeronymPredPk<
+    Bls12_381,
+    PersonalInfo,
+    PersonalInfoVar,
+    PassportComScheme,
+    PassportComSchemeG,
+    H,
+    HG,
+>;
+pub(crate) type PredVerifyingKey = ZeronymPredVk<
+    Bls12_381,
+    PersonalInfo,
+    PersonalInfoVar,
+    PassportComScheme,
+    PassportComSchemeG,
+    H,
+    HG,
+>;
+pub(crate) type TreeProvingKey =
+    ZeronymTreePk<Bls12_381, PersonalInfo, PassportComScheme, PassportComSchemeG, H, HG>;
+pub(crate) type TreeVerifyingKey =
+    ZeronymTreeVk<Bls12_381, PersonalInfo, PassportComScheme, PassportComSchemeG, H, HG>;
+pub(crate) type ForestProvingKey =
+    ZeronymForestPk<Bls12_381, PersonalInfo, PassportComScheme, PassportComSchemeG, H, HG>;
+pub(crate) type ForestVerifyingKey =
+    ZeronymForestVk<Bls12_381, PersonalInfo, PassportComScheme, PassportComSchemeG, H, HG>;
+pub(crate) type PredProof = ZeronymPredProof<
+    Bls12_381,
+    PersonalInfo,
+    PersonalInfoVar,
+    PassportComScheme,
+    PassportComSchemeG,
+    H,
+    HG,
+>;
 
 // Set params
 lazy_static! {

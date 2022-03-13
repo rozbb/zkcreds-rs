@@ -289,7 +289,7 @@ mod test {
         attrs::Attrs,
         com_forest::{gen_forest_memb_crs, test::random_tree},
         com_tree::{gen_tree_memb_crs, verify_tree_memb, ComTree},
-        pred::{gen_pred_crs, prove_pred, test::AgeProver, verify_pred},
+        pred::{gen_pred_crs, prove_pred, test::AgeChecker, verify_pred},
         test_util::{
             NameAndBirthYear, TestComScheme, TestComSchemeG, TestTreeH, TestTreeHG,
             MERKLE_CRH_PARAM,
@@ -338,7 +338,7 @@ mod test {
         // Prove a predicate
 
         // We choose that anyone born in 2001 or earlier satisfies our predicate
-        let age_checker = AgeProver {
+        let age_checker = AgeChecker {
             threshold_birth_year: Fr::from(2001u16),
         };
 

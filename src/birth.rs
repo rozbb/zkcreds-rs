@@ -162,7 +162,7 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{pred::test::AgeProver, test_util::NameAndBirthYear};
+    use crate::{pred::test::AgeChecker, test_util::NameAndBirthYear};
 
     use ark_bls12_381::{Bls12_381 as E, Fr};
 
@@ -171,7 +171,7 @@ mod test {
         let mut rng = ark_std::test_rng();
 
         // We choose that anyone born in 2001 or earlier satisfies our predicate
-        let birth_checker = AgeProver {
+        let birth_checker = AgeChecker {
             threshold_birth_year: Fr::from(2001u16),
         };
 

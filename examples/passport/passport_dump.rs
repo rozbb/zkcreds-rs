@@ -1,3 +1,5 @@
+use crate::params::HASH_LEN;
+
 use serde::{de::Error as SError, Deserialize, Deserializer};
 use sha2::{Digest, Sha256};
 
@@ -22,8 +24,8 @@ pub struct PassportDump {
 }
 
 impl PassportDump {
-    pub fn econtent_hash(&self) -> Vec<u8> {
-        Sha256::digest(&self.econtent).to_vec()
+    pub fn econtent_hash(&self) -> [u8; HASH_LEN] {
+        Sha256::digest(&self.econtent).into()
     }
 }
 
