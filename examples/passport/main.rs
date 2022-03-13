@@ -35,47 +35,14 @@ use ark_std::rand::Rng;
 const TREE_HEIGHT: u32 = 32;
 const FOREST_SIZE: usize = 10;
 
-// Parameters for passport validation. All passports must expire after TODAY, and must have
-// nationality USER_NATIONALITY
+// Sample parameters for passport validation. All passports must expire some time after TODAY, and
+// must have nationality USER_NATIONALITY
 const TODAY: u32 = 220101u32;
 const USER_NATIONALITY: [u8; STATE_ID_LEN] = *b"USA";
 
 fn load_dump() -> PassportDump {
     let file = File::open("examples/passport/full_dump.json").unwrap();
     serde_json::from_reader(file).unwrap()
-}
-
-fn check_issuance(attrs: PersonalInfo, checker: PassportHashChecker) {
-    let mut rng = ark_std::test_rng();
-
-    // Commit to the attributes. This is what the issuer sees
-    let cred = attrs.commit();
-
-    // Make the CRS. The merkle root doesn't matter for now
-    let pk = zeronym::pred::gen_pred_crs::<
-        _,
-        _,
-        Bls12_381,
-        PersonalInfo,
-        PersonalInfoVar,
-        PassportComScheme,
-        PassportComSchemeG,
-        H,
-        HG,
-    >(&mut rng, checker.clone())
-    .unwrap();
-    println!("Made issuance predicate CRS");
-    let vk = pk.prepare_verifying_key();
-    let merkle_root = <H as TwoToOneCRH>::Output::default();
-
-    // Prove that the attributes match the econtent hash of the passport, that the passport is
-    // not expired, and the passport is issued by the US
-    let proof = prove_pred(&mut rng, &pk, checker.clone(), attrs, merkle_root).unwrap();
-    println!("Proved issuance predicate");
-
-    // Verify the above
-    assert!(verify_pred(&vk, &proof, &checker, &cred, &merkle_root).unwrap());
-    println!("Verified issuance predicate");
 }
 
 fn rand_tree<R: Rng>(rng: &mut R) -> ComTree<Fr, H, PassportComScheme> {
@@ -177,11 +144,15 @@ fn user_req_issuance<R: Rng>(
 fn main() {
     let mut rng = ark_std::test_rng();
 
+    // Generate all the Groth16 and Groth-Sahai proving and verifying keys
     let (issuance_pk, issuance_vk) = gen_issuance_crs(&mut rng);
     println!("Generated CRSs");
 
+    // The user dumps their passport and makes an issuance request
     println!("Requesting issuance");
-    let (user_info, issuance_req) = user_req_issuance(&mut rng, &issuance_pk);
+    let (personal_info, issuance_req) = user_req_issuance(&mut rng, &issuance_pk);
+
+    // The issuer validates the passport and issues the credential
     issue(&issuance_vk, &issuance_req);
     println!("Issuance request granted");
 }
