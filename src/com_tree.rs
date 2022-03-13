@@ -35,6 +35,21 @@ impl<H: TwoToOneCRH> TreeConfig for ComTreeConfig<H> {
     type TwoToOneHash = H;
 }
 
+/// An auth path in a `ComTree`
+pub struct ComTreePath<ConstraintF, H, AC>
+where
+    ConstraintF: PrimeField,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<ConstraintF>,
+    AC: CommitmentScheme,
+    AC::Output: ToConstraintField<ConstraintF>,
+{
+    /// The path
+    path: SparseMerkleTreePath<ComTreeConfig<H>>,
+
+    _marker: PhantomData<(ConstraintF, AC)>,
+}
+
 /// A Merkle tree of attribute commitments
 pub struct ComTree<ConstraintF, H, AC>
 where
@@ -96,8 +111,15 @@ where
     /// Panics
     /// =====
     /// Panics when `idx >= 2^log_capacity`
-    pub fn insert(&mut self, idx: u64, com: &AC::Output) {
+    pub fn insert(&mut self, idx: u64, com: &AC::Output) -> ComTreePath<ConstraintF, H, AC> {
+        // Do the insertion
         self.tree.insert(idx, com).expect("could not insert item");
+        // Return the auth path
+        let path = self.tree.generate_proof(idx, com).unwrap();
+        ComTreePath {
+            path,
+            _marker: PhantomData,
+        }
     }
 
     /// Removes the entry at index `idx`, if one exists
@@ -108,13 +130,22 @@ where
     pub fn remove(&mut self, idx: u64) {
         self.tree.remove(idx).expect("could not remove item");
     }
+}
 
+impl<ConstraintF, H, AC> ComTreePath<ConstraintF, H, AC>
+where
+    ConstraintF: PrimeField,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<ConstraintF>,
+    AC: CommitmentScheme,
+    AC::Output: ToConstraintField<ConstraintF>,
+{
     /// Proves that the given attribute commitment is at the specified tree index
     pub fn prove_membership<R, E, A, ACG, HG>(
         &self,
         rng: &mut R,
         pk: &TreeProvingKey<E, A, AC, ACG, H, HG>,
-        idx: u64,
+        two_to_one_params: &H::Parameters,
         attrs_com: AC::Output,
     ) -> Result<TreeProof<E, A, AC, ACG, H, HG>, SynthesisError>
     where
@@ -124,20 +155,18 @@ where
         ACG: CommitmentGadget<AC, E::Fr>,
         HG: TwoToOneCRHGadget<H, E::Fr>,
     {
-        // Get the root, its commitment, and the auth path of the given idx
-        let root = self.tree.root();
-        let auth_path = self
-            .tree
-            .generate_proof(idx, &attrs_com)
-            .expect("could not construct auth path");
+        let root = self
+            .path
+            .root(two_to_one_params)
+            .expect("could not calculate auth path root");
 
         // Construct the prover with all the relevant info, and prove
         let prover: TreeMembershipProver<E::Fr, AC, ACG, H, HG> = TreeMembershipProver {
-            height: self.tree.height,
-            crh_param: self.tree.two_to_one_param.clone(),
+            height: self.path.height(),
+            crh_param: two_to_one_params.clone(),
             attrs_com,
             root,
-            auth_path: Some(auth_path),
+            auth_path: Some(self.path.clone()),
             _marker: PhantomData,
         };
 
@@ -331,11 +360,11 @@ mod test {
         let leaf_idx = 17;
         let mut tree =
             ComTree::<_, TestTreeH, TestComScheme>::empty(MERKLE_CRH_PARAM.clone(), tree_height);
-        tree.insert(leaf_idx, &person_com);
+        let auth_path = tree.insert(leaf_idx, &person_com);
 
         // The person can now prove membership in the tree
-        let proof = tree
-            .prove_membership(&mut rng, &pk, leaf_idx, person_com)
+        let proof = auth_path
+            .prove_membership(&mut rng, &pk, &*MERKLE_CRH_PARAM, person_com)
             .unwrap();
 
         let vk = pk.prepare_verifying_key();

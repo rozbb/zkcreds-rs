@@ -323,13 +323,13 @@ mod test {
         // Make a tree and "issue", i.e., put the person commitment in the tree at index 17
         let leaf_idx = 17;
         let mut tree = ComTree::empty(MERKLE_CRH_PARAM.clone(), tree_height);
-        tree.insert(leaf_idx, &person_com);
+        let auth_path = tree.insert(leaf_idx, &person_com);
 
         // The person can now prove membership in the tree. Calculate the root and prove wrt that
         // root.
         let merkle_root = tree.root();
-        let tree_proof = tree
-            .prove_membership(&mut rng, &tree_proving_key, leaf_idx, person_com)
+        let tree_proof = auth_path
+            .prove_membership(&mut rng, &tree_proving_key, &*MERKLE_CRH_PARAM, person_com)
             .unwrap();
 
         let tree_verif_key = tree_proving_key.prepare_verifying_key();

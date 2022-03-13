@@ -9,9 +9,9 @@ mod sig_verif;
 use crate::{
     issuance_checker::{IssuanceReq, PassportHashChecker},
     params::{
-        ForestProvingKey, ForestVerifyingKey, PassportComScheme, PassportComSchemeG, PredProof,
-        PredProvingKey, PredVerifyingKey, TreeProvingKey, TreeVerifyingKey, H, HG,
-        MERKLE_CRH_PARAM, SIG_HASH_LEN, STATE_ID_LEN,
+        ComForest, ComTree, ComTreePath, ForestProvingKey, ForestVerifyingKey, PassportComScheme,
+        PassportComSchemeG, PredProof, PredProvingKey, PredVerifyingKey, TreeProvingKey,
+        TreeVerifyingKey, H, HG, MERKLE_CRH_PARAM, SIG_HASH_LEN, STATE_ID_LEN,
     },
     passport_dump::PassportDump,
     passport_info::{PersonalInfo, PersonalInfoVar},
@@ -20,7 +20,6 @@ use crate::{
 
 use zeronym::{
     attrs::Attrs,
-    com_tree::ComTree,
     pred::{prove_birth, prove_pred, verify_birth, verify_pred},
     Com,
 };
@@ -45,12 +44,26 @@ fn load_dump() -> PassportDump {
     serde_json::from_reader(file).unwrap()
 }
 
-fn rand_tree<R: Rng>(rng: &mut R) -> ComTree<Fr, H, PassportComScheme> {
+fn rand_tree<R: Rng>(rng: &mut R) -> ComTree {
     let mut tree = ComTree::empty(MERKLE_CRH_PARAM.clone(), TREE_HEIGHT);
     let idx: u16 = rng.gen();
     let leaf = Com::<PassportComScheme>::rand(rng);
     tree.insert(idx as u64, &leaf);
     tree
+}
+
+fn rand_forest<R: Rng>(rng: &mut R) -> ComForest {
+    let trees = (0..FOREST_SIZE).map(|_| rand_tree(rng)).collect();
+    ComForest { trees }
+}
+
+struct IssuerState {
+    /// The forest of commitments
+    com_forest: ComForest,
+    /// The next free tree to insert a commitment
+    next_free_tree: usize,
+    /// The next free leaf in that tree to insert a commitment
+    next_free_leaf: u64,
 }
 
 fn gen_issuance_crs<R: Rng>(rng: &mut R) -> (PredProvingKey, PredVerifyingKey) {
@@ -103,8 +116,21 @@ fn gen_forest_crs<R: Rng>(rng: &mut R) -> (ForestProvingKey, ForestVerifyingKey)
     (pk.clone(), pk.prepare_verifying_key())
 }
 
+/// Makes a random new issuer state
+fn init_issuer<R: Rng>(rng: &mut R) -> IssuerState {
+    let com_forest = rand_forest(rng);
+    let next_free_tree = rng.gen_range(0..FOREST_SIZE);
+    let next_free_leaf = rng.gen_range(0..2u64.pow(TREE_HEIGHT));
+
+    IssuerState {
+        com_forest,
+        next_free_tree,
+        next_free_leaf,
+    }
+}
+
 /// An issuer takes an issuance request and validates it
-fn issue(birth_vk: &PredVerifyingKey, req: &IssuanceReq) {
+fn issue(state: &mut IssuerState, birth_vk: &PredVerifyingKey, req: &IssuanceReq) -> ComTreePath {
     // Check that the hash was computed correctly
     let checker = PassportHashChecker::from_issuance_req(req, USER_NATIONALITY, TODAY);
     assert!(verify_birth(birth_vk, &req.hash_proof, &checker, &req.attrs_com).unwrap());
@@ -112,6 +138,9 @@ fn issue(birth_vk: &PredVerifyingKey, req: &IssuanceReq) {
     // Now check that the signature of the hash is correct
     let sig_pubkey = load_usa_pubkey();
     assert!(sig_pubkey.verify(&req.sig, &req.econtent_hash));
+
+    // Insert
+    state.com_forest.trees[state.next_free_tree].insert(state.next_free_leaf, &req.attrs_com)
 }
 
 /// With their passport, a user constructs a `PersonalInfo` struct and requests issuance
@@ -148,11 +177,14 @@ fn main() {
     let (issuance_pk, issuance_vk) = gen_issuance_crs(&mut rng);
     println!("Generated CRSs");
 
+    // Generate a random initial state for the issuer
+    let mut issuer_state = init_issuer(&mut rng);
+
     // The user dumps their passport and makes an issuance request
     println!("Requesting issuance");
     let (personal_info, issuance_req) = user_req_issuance(&mut rng, &issuance_pk);
 
     // The issuer validates the passport and issues the credential
-    issue(&issuance_vk, &issuance_req);
+    let auth_path = issue(&mut issuer_state, &issuance_vk, &issuance_req);
     println!("Issuance request granted");
 }

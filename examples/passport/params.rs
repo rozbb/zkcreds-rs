@@ -85,6 +85,10 @@ pub(crate) type PassportComScheme = commitment::pedersen::Commitment<Jubjub, Win
 pub(crate) type PassportComSchemeG =
     commitment::pedersen::constraints::CommGadget<Jubjub, JubjubVar, Window8x128>;
 
+pub(crate) type ComTree = zeronym::com_tree::ComTree<Fr, H, PassportComScheme>;
+pub(crate) type ComTreePath = zeronym::com_tree::ComTreePath<Fr, H, PassportComScheme>;
+pub(crate) type ComForest = zeronym::com_forest::ComForest<Fr, H, PassportComScheme>;
+
 /// Type aliases for Groth16 stuff
 pub(crate) type PredProvingKey = ZeronymPredPk<
     Bls12_381,

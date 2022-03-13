@@ -104,6 +104,11 @@ where
             &to_bytes!(final_right_hash)?,
         )
     }
+
+    /// Returns the height of the tree that this auth path belongs to
+    pub fn height(&self) -> u32 {
+        (self.inner_hashes.len() + 2).try_into().unwrap()
+    }
 }
 
 /// Merkle sparse tree
@@ -369,7 +374,7 @@ where
             current_node = parent(current_node).unwrap();
         }
 
-        if path.inner_hashes.len() != (self.height - 2) as usize {
+        if path.height() != self.height {
             Err(SparseMerkleTreeError::IncorrectPathLength(path.inner_hashes.len()).into())
         } else {
             Ok(path)
