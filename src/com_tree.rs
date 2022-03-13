@@ -50,7 +50,20 @@ where
     _marker: PhantomData<(ConstraintF, AC)>,
 }
 
-/// An auth path in a `ComTree`
+impl<ConstraintF, H, AC> ComTreePath<ConstraintF, H, AC>
+where
+    ConstraintF: PrimeField,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<ConstraintF>,
+    AC: CommitmentScheme,
+    AC::Output: ToConstraintField<ConstraintF>,
+{
+    /// The root of the tree that this auth path belongs to
+    pub fn root(&self) -> H::Output {
+        self.path.root.clone()
+    }
+}
+
 impl<ConstraintF, H, AC> Default for ComTreePath<ConstraintF, H, AC>
 where
     ConstraintF: PrimeField,

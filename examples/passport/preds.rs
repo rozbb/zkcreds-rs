@@ -5,6 +5,7 @@ use crate::{
 
 use zeronym::pred::PredicateChecker;
 
+use ark_ff::ToConstraintField;
 use ark_r1cs_std::{alloc::AllocVar, eq::EqGadget, fields::fp::FpVar, uint8::UInt8};
 use ark_relations::{
     ns,
@@ -46,6 +47,10 @@ impl PredicateChecker<Fr, PersonalInfo, PersonalInfoVar, PassportComScheme, Pass
     /// This outputs the field elements corresponding to the public inputs of this predicate.
     /// This DOES NOT include `attrs`.
     fn public_inputs(&self) -> Vec<Fr> {
-        vec![self.threshold_birth_date]
+        [
+            vec![self.threshold_birth_date],
+            self.face_hash.to_field_elements().unwrap(),
+        ]
+        .concat()
     }
 }

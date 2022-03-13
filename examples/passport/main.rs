@@ -28,7 +28,6 @@ use zeronym::{
 use std::fs::File;
 
 use ark_bls12_381::{Bls12_381, Fr};
-use ark_crypto_primitives::crh::TwoToOneCRH;
 use ark_ff::UniformRand;
 use ark_std::rand::Rng;
 
@@ -196,12 +195,39 @@ fn user_prove_ageface<R: Rng>(
     info: &PersonalInfo,
     auth_path: &ComTreePath,
 ) -> PredProof {
-    let twenty_one_years_ago = TODAY - 210000;
+    //let twenty_one_years_ago = TODAY - 210000;
+    let twenty_one_years_ago = 980101u32;
     let ageface_checker = AgeAndFaceChecker {
         threshold_birth_date: Fr::from(twenty_one_years_ago),
         face_hash: info.biometrics_hash(),
     };
-    prove_pred(rng, &ageface_pk, ageface_checker, info.clone(), auth_path).unwrap()
+    prove_pred(rng, ageface_pk, ageface_checker, info.clone(), auth_path).unwrap()
+}
+
+// DEBUG: Verify the ageface Groth16 predicate proof. This cannot be verified by anyone but the
+// user themselves
+fn user_verify_ageface(
+    ageface_vk: &PredVerifyingKey,
+    ageface_proof: &PredProof,
+    info: &PersonalInfo,
+    auth_path: &ComTreePath,
+) {
+    // Reconstruct the AgeAndFaceChecker used by the prover
+    //let twenty_one_years_ago = TODAY - 210000;
+    let twenty_one_years_ago = 980101u32;
+    let ageface_checker = AgeAndFaceChecker {
+        threshold_birth_date: Fr::from(twenty_one_years_ago),
+        face_hash: info.biometrics_hash(),
+    };
+    // Assert that the proof verifies
+    assert!(zeronym::pred::verify_pred(
+        ageface_vk,
+        ageface_proof,
+        &ageface_checker,
+        &info.commit(),
+        &auth_path.root(),
+    )
+    .unwrap());
 }
 
 fn main() {
@@ -218,6 +244,7 @@ fn main() {
     // The user dumps their passport and makes an issuance request
     println!("Requesting issuance");
     let (personal_info, issuance_req) = user_req_issuance(&mut rng, &issuance_pk);
+    let cred = personal_info.commit();
 
     // The issuer validates the passport and issues the credential
     let auth_path = issue(&mut issuer_state, &issuance_vk, &issuance_req);
@@ -229,4 +256,6 @@ fn main() {
 
     // User wants to prove age and face. They precompute this
     let ageface_proof = user_prove_ageface(&mut rng, &ageface_pk, &personal_info, &auth_path);
+    // DEBUG
+    user_verify_ageface(&ageface_vk, &ageface_proof, &personal_info, &auth_path);
 }
