@@ -34,17 +34,18 @@ pub struct PersonalInfo {
     nonce: ComNonce<PassportComScheme>,
     pub nationality: [u8; STATE_ID_LEN],
     pub name: [u8; NAME_LEN],
-    pub dob: Fr,
+    pub dob: u32,
     pub biometrics: Vec<u8>,
 }
 
+// Necessary because [u8; NAME_LEN] doesn't impl Default
 impl Default for PersonalInfo {
     fn default() -> PersonalInfo {
         PersonalInfo {
             nonce: ComNonce::<PassportComScheme>::default(),
             nationality: [0u8; STATE_ID_LEN],
             name: [0u8; NAME_LEN],
-            dob: Fr::default(),
+            dob: 0u32,
             biometrics: Vec::new(),
         }
     }
@@ -60,10 +61,15 @@ pub(crate) struct PersonalInfoVar {
     pub(crate) biometric_hash: Bytestring<Fr>,
 }
 
-/// Converts a date string of the form YYMMDD to a u32 whose base-10 representation is precisely
-/// that string.
-fn date_to_u32(date: &[u8]) -> u32 {
+/// Converts a date string of the form YYMMDD to a u32 whose base-10 representation is YYYYMMDD.
+/// `not_after` is the soonest day in the 21st century after which the input would not make sense,
+/// e.g., a birthdate wouldn't make sense if it were after today, and a document expiry date
+/// wouldn't be 20 years in the future.
+fn date_to_u32(date: &[u8], not_after: u32) -> u32 {
     assert_eq!(date.len(), DATE_LEN);
+
+    let century = 1000000;
+    let twenty_first_century = 20 * century;
 
     // Converts ASCII numbers to the numbers they represent. E.g., int(b"9") = 9 (mod |Fr|)
     fn int(char: u8) -> u32 {
@@ -75,8 +81,18 @@ fn date_to_u32(date: &[u8]) -> u32 {
     let month = (int(date[2]) * 10) + int(date[3]);
     let day = (int(date[4]) * 10) + int(date[5]);
 
-    // Now combine the values by shifting and adding
-    (year * 10000) + (month * 100) + day
+    // Now combine the values by shifting and adding. The year is only given as YY so we don't
+    // immediately have the most significant digits of the year. Assume for now that it's the 21st
+    // century
+    let mut d = twenty_first_century + (year * 10000) + (month * 100) + day;
+
+    // If the date is not from the 21st century, then d exceeds the `not_after` limit. If that's
+    // the case remove 100 years
+    if d > not_after {
+        d -= century;
+    }
+
+    d
 }
 
 impl PersonalInfo {
@@ -94,12 +110,14 @@ impl PersonalInfo {
             nonce,
             nationality,
             name,
-            dob: Fr::from(dob),
+            dob,
             biometrics,
         }
     }
 
-    pub fn from_passport<R: Rng>(rng: &mut R, dump: &PassportDump) -> PersonalInfo {
+    /// Converts the given passport dump into a structured attribute struct. Requires `today` as an
+    /// integer whose base-10 representation is of the form YYYYMMDD.
+    pub fn from_passport<R: Rng>(rng: &mut R, dump: &PassportDump, today: u32) -> PersonalInfo {
         // Create an empty info struct that we'll fill with data
         let mut info = PersonalInfo {
             nonce: ComNonce::<PassportComScheme>::rand(rng),
@@ -112,7 +130,7 @@ impl PersonalInfo {
             .copy_from_slice(&dump.dg1[NATIONALITY_OFFSET..NATIONALITY_OFFSET + STATE_ID_LEN]);
         info.name
             .copy_from_slice(&dump.dg1[NAME_OFFSET..NAME_OFFSET + NAME_LEN]);
-        info.dob = Fr::from(date_to_u32(&dump.dg1[DOB_OFFSET..DOB_OFFSET + DATE_LEN]));
+        info.dob = date_to_u32(&dump.dg1[DOB_OFFSET..DOB_OFFSET + DATE_LEN], today);
         info.biometrics = dump.dg2.clone();
 
         info
@@ -126,8 +144,11 @@ impl PersonalInfo {
 impl Attrs<Fr, PassportComScheme> for PersonalInfo {
     /// Serializes the attrs into bytes
     fn to_bytes(&self) -> Vec<u8> {
+        // DOB bytes need to match the PersonalInfoVar version, which is an FpVar. Convert to Fr
+        // before serializing
+        let dob = Fr::from(self.dob);
         let biometric_hash = Sha256::digest(&self.biometrics).to_vec();
-        to_bytes![self.nationality, self.name, self.dob, biometric_hash].unwrap()
+        to_bytes![self.nationality, self.name, dob, biometric_hash].unwrap()
     }
 
     fn get_com_param(&self) -> &ComParam<PassportComScheme> {
@@ -190,7 +211,7 @@ impl AllocVar<PersonalInfo, Fr> for PersonalInfoVar {
         let nationality =
             Bytestring::new_variable(ns!(cs, "nationality"), || Ok(nationality.to_vec()), mode)?;
         let name = Bytestring::new_variable(ns!(cs, "name"), || Ok(name.to_vec()), mode)?;
-        let dob = FpVar::<Fr>::new_variable(ns!(cs, "birth year"), || Ok(dob), mode)?;
+        let dob = FpVar::<Fr>::new_variable(ns!(cs, "birth year"), || Ok(Fr::from(*dob)), mode)?;
         let biometric_hash =
             Bytestring::new_variable(ns!(cs, "biometric_hash"), || Ok(biometric_hash), mode)?;
 

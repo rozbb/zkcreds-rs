@@ -35,9 +35,11 @@ const TREE_HEIGHT: u32 = 32;
 const FOREST_SIZE: usize = 10;
 
 // Sample parameters for passport validation. All passports must expire some time after TODAY, and
-// must have nationality USER_NATIONALITY
-const TODAY: u32 = 220101u32;
-const USER_NATIONALITY: [u8; STATE_ID_LEN] = *b"USA";
+// be issued by ISSUING_STATE
+const TODAY: u32 = 20220101u32;
+const MAX_VALID_YEARS: u32 = 10u32;
+const TWENTY_ONE_YEARS_AGO: u32 = TODAY - 210000;
+const ISSUING_STATE: [u8; STATE_ID_LEN] = *b"USA";
 
 fn load_dump() -> PassportDump {
     let file = File::open("examples/passport/full_dump.json").unwrap();
@@ -150,8 +152,9 @@ fn init_issuer<R: Rng>(rng: &mut R) -> IssuerState {
 /// An issuer takes an issuance request and validates it
 fn issue(state: &mut IssuerState, birth_vk: &PredVerifyingKey, req: &IssuanceReq) -> ComTreePath {
     // Check that the hash was computed correctly
-    let checker = PassportHashChecker::from_issuance_req(req, USER_NATIONALITY, TODAY);
-    assert!(verify_birth(birth_vk, &req.hash_proof, &checker, &req.attrs_com).unwrap());
+    let hash_checker =
+        PassportHashChecker::from_issuance_req(req, ISSUING_STATE, TODAY, MAX_VALID_YEARS);
+    assert!(verify_birth(birth_vk, &req.hash_proof, &hash_checker, &req.attrs_com).unwrap());
 
     // Now check that the signature of the hash is correct
     let sig_pubkey = load_usa_pubkey();
@@ -168,11 +171,12 @@ fn user_req_issuance<R: Rng>(
 ) -> (PersonalInfo, IssuanceReq) {
     // Load the passport and parse it into a `PersonalInfo` struct
     let dump = load_dump();
-    let my_info = PersonalInfo::from_passport(rng, &dump);
+    let my_info = PersonalInfo::from_passport(rng, &dump, TODAY);
     let attrs_com = my_info.commit();
 
     // Make a hash checker struct using our private data
-    let hash_checker = PassportHashChecker::from_passport(&dump, USER_NATIONALITY, TODAY);
+    let hash_checker =
+        PassportHashChecker::from_passport(&dump, ISSUING_STATE, TODAY, MAX_VALID_YEARS);
 
     // Prove the passport hash is correctly computed
     let hash_proof = prove_birth(rng, issuance_pk, hash_checker, my_info.clone()).unwrap();
@@ -195,39 +199,31 @@ fn user_prove_ageface<R: Rng>(
     info: &PersonalInfo,
     auth_path: &ComTreePath,
 ) -> PredProof {
-    //let twenty_one_years_ago = TODAY - 210000;
-    let twenty_one_years_ago = 980101u32;
+    // Compute the proof wrt the public parameters
     let ageface_checker = AgeAndFaceChecker {
-        threshold_birth_date: Fr::from(twenty_one_years_ago),
+        threshold_dob: Fr::from(TWENTY_ONE_YEARS_AGO),
         face_hash: info.biometrics_hash(),
     };
-    prove_pred(rng, ageface_pk, ageface_checker, info.clone(), auth_path).unwrap()
-}
+    let proof = prove_pred(
+        rng,
+        ageface_pk,
+        ageface_checker.clone(),
+        info.clone(),
+        auth_path,
+    )
+    .unwrap();
 
-// DEBUG: Verify the ageface Groth16 predicate proof. This cannot be verified by anyone but the
-// user themselves
-fn user_verify_ageface(
-    ageface_vk: &PredVerifyingKey,
-    ageface_proof: &PredProof,
-    info: &PersonalInfo,
-    auth_path: &ComTreePath,
-) {
-    // Reconstruct the AgeAndFaceChecker used by the prover
-    //let twenty_one_years_ago = TODAY - 210000;
-    let twenty_one_years_ago = 980101u32;
-    let ageface_checker = AgeAndFaceChecker {
-        threshold_birth_date: Fr::from(twenty_one_years_ago),
-        face_hash: info.biometrics_hash(),
-    };
-    // Assert that the proof verifies
+    // DEBUG: Assert that the proof verifies
     assert!(zeronym::pred::verify_pred(
-        ageface_vk,
-        ageface_proof,
+        &ageface_pk.prepare_verifying_key(),
+        &proof,
         &ageface_checker,
         &info.commit(),
         &auth_path.root(),
     )
     .unwrap());
+
+    proof
 }
 
 fn main() {
@@ -256,6 +252,5 @@ fn main() {
 
     // User wants to prove age and face. They precompute this
     let ageface_proof = user_prove_ageface(&mut rng, &ageface_pk, &personal_info, &auth_path);
-    // DEBUG
-    user_verify_ageface(&ageface_vk, &ageface_proof, &personal_info, &auth_path);
+    println!("Computed age and face proof");
 }

@@ -15,7 +15,7 @@ use ark_relations::{
 #[derive(Clone, Default)]
 pub(crate) struct AgeAndFaceChecker {
     // Verifier-chosen values
-    pub(crate) threshold_birth_date: Fr,
+    pub(crate) threshold_dob: Fr,
 
     // Public inputs
     pub(crate) face_hash: [u8; HASH_LEN],
@@ -31,14 +31,14 @@ impl PredicateChecker<Fr, PersonalInfo, PersonalInfoVar, PassportComScheme, Pass
         attrs: &PersonalInfoVar,
     ) -> Result<(), SynthesisError> {
         // Witness the threshold year and face hash as public inputs
-        let threshold_birth_year =
-            FpVar::<Fr>::new_input(ns!(cs, "threshold year"), || Ok(self.threshold_birth_date))?;
+        let threshold_dob =
+            FpVar::<Fr>::new_input(ns!(cs, "threshold year"), || Ok(self.threshold_dob))?;
         let face_hash = UInt8::new_input_vec(ns!(cs, "face hash"), &self.face_hash)?;
 
-        // Assert that attrs.birth_year ≤ threshold_birth_year
+        // Assert that attrs.dob ≤ threshold_dob
         attrs
             .dob
-            .enforce_cmp(&threshold_birth_year, core::cmp::Ordering::Less, true)?;
+            .enforce_cmp(&threshold_dob, core::cmp::Ordering::Less, true)?;
 
         // Assert that the given face hash is the same as the attr's biometric hash
         face_hash.enforce_equal(&attrs.biometric_hash.0)
@@ -48,7 +48,7 @@ impl PredicateChecker<Fr, PersonalInfo, PersonalInfoVar, PassportComScheme, Pass
     /// This DOES NOT include `attrs`.
     fn public_inputs(&self) -> Vec<Fr> {
         [
-            vec![self.threshold_birth_date],
+            vec![self.threshold_dob],
             self.face_hash.to_field_elements().unwrap(),
         ]
         .concat()
