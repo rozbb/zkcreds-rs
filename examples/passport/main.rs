@@ -15,6 +15,7 @@ use crate::{
     },
     passport_dump::PassportDump,
     passport_info::{PersonalInfo, PersonalInfoVar},
+    preds::AgeAndFaceChecker,
     sig_verif::{load_usa_pubkey, IssuerPubkey},
 };
 
@@ -79,6 +80,24 @@ fn gen_issuance_crs<R: Rng>(rng: &mut R) -> (PredProvingKey, PredVerifyingKey) {
         H,
         HG,
     >(rng, PassportHashChecker::default())
+    .unwrap();
+
+    (pk.clone(), pk.prepare_verifying_key())
+}
+
+fn gen_ageface_crs<R: Rng>(rng: &mut R) -> (PredProvingKey, PredVerifyingKey) {
+    // Generate the hash checker circuit's CRS
+    let pk = zeronym::pred::gen_pred_crs::<
+        _,
+        _,
+        Bls12_381,
+        PersonalInfo,
+        PersonalInfoVar,
+        PassportComScheme,
+        PassportComSchemeG,
+        H,
+        HG,
+    >(rng, AgeAndFaceChecker::default())
     .unwrap();
 
     (pk.clone(), pk.prepare_verifying_key())
@@ -170,11 +189,27 @@ fn user_req_issuance<R: Rng>(
     (my_info, req)
 }
 
+/// User constructs a predicate proof for their age and face
+fn user_prove_ageface<R: Rng>(
+    rng: &mut R,
+    ageface_pk: &PredProvingKey,
+    info: &PersonalInfo,
+    auth_path: &ComTreePath,
+) -> PredProof {
+    let twenty_one_years_ago = TODAY - 210000;
+    let ageface_checker = AgeAndFaceChecker {
+        threshold_birth_date: Fr::from(twenty_one_years_ago),
+        face_hash: info.biometrics_hash(),
+    };
+    prove_pred(rng, &ageface_pk, ageface_checker, info.clone(), auth_path).unwrap()
+}
+
 fn main() {
     let mut rng = ark_std::test_rng();
 
     // Generate all the Groth16 and Groth-Sahai proving and verifying keys
     let (issuance_pk, issuance_vk) = gen_issuance_crs(&mut rng);
+    let (ageface_pk, ageface_vk) = gen_ageface_crs(&mut rng);
     println!("Generated CRSs");
 
     // Generate a random initial state for the issuer
@@ -187,4 +222,11 @@ fn main() {
     // The issuer validates the passport and issues the credential
     let auth_path = issue(&mut issuer_state, &issuance_vk, &issuance_req);
     println!("Issuance request granted");
+
+    //
+    // A user walks into a bar...
+    //
+
+    // User wants to prove age and face. They precompute this
+    let ageface_proof = user_prove_ageface(&mut rng, &ageface_pk, &personal_info, &auth_path);
 }

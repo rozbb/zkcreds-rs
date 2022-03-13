@@ -1,5 +1,6 @@
 use crate::{
     attrs::{Attrs, AttrsVar},
+    com_tree::ComTreePath,
     proof_data_structures::{PredProof, PredProvingKey, PredPublicInput, PredVerifyingKey},
 };
 
@@ -72,7 +73,7 @@ pub fn prove_pred<R, P, E, A, AV, AC, ACG, H, HG>(
     pk: &PredProvingKey<E, A, AV, AC, ACG, H, HG>,
     checker: P,
     attrs: A,
-    merkle_root: H::Output,
+    auth_path: &ComTreePath<E::Fr, H, AC>,
 ) -> Result<PredProof<E, A, AV, AC, ACG, H, HG>, SynthesisError>
 where
     R: Rng,
@@ -87,6 +88,7 @@ where
     H::Output: ToConstraintField<E::Fr>,
     HG: TwoToOneCRHGadget<H, E::Fr>,
 {
+    let merkle_root = auth_path.path.root.clone();
     let prover: PredicateProver<_, _, _, _, _, _, _, HG> = PredicateProver {
         checker,
         attrs,
@@ -100,8 +102,8 @@ where
     })
 }
 
-/// Proves the given birth predicate over the given attribute. Same as prove_pred except we don't
-/// care about the merkle root
+/// Proves the given birth predicate over the given attribute. Same as `prove_pred` except we don't
+/// care about the auth path
 pub fn prove_birth<R, P, E, A, AV, AC, ACG, H, HG>(
     rng: &mut R,
     pk: &PredProvingKey<E, A, AV, AC, ACG, H, HG>,
@@ -121,11 +123,14 @@ where
     H::Output: ToConstraintField<E::Fr>,
     HG: TwoToOneCRHGadget<H, E::Fr>,
 {
-    let merkle_root = H::Output::default();
-    prove_pred(rng, pk, checker, attrs, merkle_root)
+    // It sufficient to make a default com tree path without specifying length, since only the
+    // placeholder root value is used
+    let auth_path = ComTreePath::default();
+    prove_pred(rng, pk, checker, attrs, &auth_path)
 }
 
-/// Verifies a predicate proof
+/// Verifies a predicate proof. For testing purposes only
+#[doc(hidden)]
 pub fn verify_pred<P, E, A, AV, AC, ACG, H, HG>(
     vk: &PredVerifyingKey<E, A, AV, AC, ACG, H, HG>,
     proof: &PredProof<E, A, AV, AC, ACG, H, HG>,
@@ -152,8 +157,8 @@ where
     ark_groth16::verify_proof(&vk.pvk, &proof.proof, &all_inputs)
 }
 
-/// Verifies a birth predicate proof. Same as a predicate proof but we don't care about the merkle
-/// root
+// Same as a predicate proof but we don't care about the merkle root
+/// Verifies a birth predicate proof
 pub fn verify_birth<P, E, A, AV, AC, ACG, H, HG>(
     vk: &PredVerifyingKey<E, A, AV, AC, ACG, H, HG>,
     proof: &PredProof<E, A, AV, AC, ACG, H, HG>,
@@ -317,13 +322,13 @@ pub(crate) mod test {
 
         // First name is UTF-8 encoded, padded at the end with null bytes
         let person = NameAndBirthYear::new(&mut rng, b"Andrew", 1992);
-        // Make a placeholder Merkle root. This value is only relevant when we start linking
+        // Make a placeholder auth path. This value is only relevant when we start linking
         // proofs. Together. Ignore for this test.
-        let merkle_root = <TestTreeH as TwoToOneCRH>::Output::default();
+        let auth_path = ComTreePath::default();
+        let merkle_root = auth_path.path.root;
 
         // Prove the predicate
-        let proof =
-            prove_pred(&mut rng, &pk, checker.clone(), person.clone(), merkle_root).unwrap();
+        let proof = prove_pred(&mut rng, &pk, checker.clone(), person.clone(), &auth_path).unwrap();
 
         // Ordinarily we wouldn't be able to verify a predicate proof, since it requires knowledge
         // of the attribute commitment. But this is testing mode and we know this value, so let's

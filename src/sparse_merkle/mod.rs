@@ -30,6 +30,7 @@ pub(crate) type TwoToOneDigest<P> = <<P as TreeConfig>::TwoToOneHash as TwoToOne
 pub struct SparseMerkleTreePath<P: TreeConfig> {
     pub(crate) leaf_hashes: (LeafDigest<P>, LeafDigest<P>),
     pub(crate) inner_hashes: Vec<(TwoToOneDigest<P>, TwoToOneDigest<P>)>,
+    pub(crate) root: TwoToOneDigest<P>,
 }
 
 impl<P: TreeConfig> Clone for SparseMerkleTreePath<P> {
@@ -37,6 +38,7 @@ impl<P: TreeConfig> Clone for SparseMerkleTreePath<P> {
         SparseMerkleTreePath {
             leaf_hashes: self.leaf_hashes.clone(),
             inner_hashes: self.inner_hashes.clone(),
+            root: self.root.clone(),
         }
     }
 }
@@ -48,7 +50,8 @@ where
     fn default() -> SparseMerkleTreePath<P> {
         SparseMerkleTreePath {
             leaf_hashes: (LeafDigest::<P>::default(), LeafDigest::<P>::default()),
-            inner_hashes: vec![],
+            inner_hashes: Vec::default(),
+            root: TwoToOneDigest::<P>::default(),
         }
     }
 }
@@ -93,16 +96,6 @@ where
         }
 
         Ok(root_hash == &previous_hash)
-    }
-
-    /// Returns the root hash corresponding to this path
-    pub fn root(&self, two_to_one_param: &TwoToOneParam<P>) -> Result<TwoToOneDigest<P>, Error> {
-        let (final_left_hash, final_right_hash) = &self.inner_hashes.last().unwrap();
-        P::TwoToOneHash::evaluate(
-            &two_to_one_param,
-            &to_bytes!(final_left_hash)?,
-            &to_bytes!(final_right_hash)?,
-        )
     }
 
     /// Returns the height of the tree that this auth path belongs to
@@ -373,6 +366,14 @@ where
             }
             current_node = parent(current_node).unwrap();
         }
+
+        // Calculate the root
+        let (final_left_hash, final_right_hash) = &path.inner_hashes.last().unwrap();
+        path.root = P::TwoToOneHash::evaluate(
+            &self.two_to_one_param,
+            &to_bytes!(final_left_hash)?,
+            &to_bytes!(final_right_hash)?,
+        )?;
 
         if path.height() != self.height {
             Err(SparseMerkleTreeError::IncorrectPathLength(path.inner_hashes.len()).into())

@@ -45,9 +45,27 @@ where
     AC::Output: ToConstraintField<ConstraintF>,
 {
     /// The path
-    path: SparseMerkleTreePath<ComTreeConfig<H>>,
+    pub(crate) path: SparseMerkleTreePath<ComTreeConfig<H>>,
 
     _marker: PhantomData<(ConstraintF, AC)>,
+}
+
+/// An auth path in a `ComTree`
+impl<ConstraintF, H, AC> Default for ComTreePath<ConstraintF, H, AC>
+where
+    ConstraintF: PrimeField,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<ConstraintF>,
+    AC: CommitmentScheme,
+    AC::Output: ToConstraintField<ConstraintF>,
+{
+    fn default() -> Self {
+        let path = SparseMerkleTreePath::<ComTreeConfig<H>>::default();
+        ComTreePath {
+            path,
+            _marker: PhantomData,
+        }
+    }
 }
 
 /// A Merkle tree of attribute commitments
@@ -155,10 +173,7 @@ where
         ACG: CommitmentGadget<AC, E::Fr>,
         HG: TwoToOneCRHGadget<H, E::Fr>,
     {
-        let root = self
-            .path
-            .root(two_to_one_params)
-            .expect("could not calculate auth path root");
+        let root = self.path.root.clone();
 
         // Construct the prover with all the relevant info, and prove
         let prover: TreeMembershipProver<E::Fr, AC, ACG, H, HG> = TreeMembershipProver {
@@ -305,6 +320,7 @@ where
                             .expect("tree height cannot be < 2")
                             as usize
                     ],
+                    root: H::Output::default(),
                 }
             }
         };

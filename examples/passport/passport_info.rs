@@ -1,9 +1,9 @@
 use crate::{
     params::{
-        Fr, PassportComScheme, PassportComSchemeG, DATE_LEN, DOB_OFFSET, NAME_LEN, NAME_OFFSET,
-        NATIONALITY_OFFSET, PASSPORT_COM_PARAM, STATE_ID_LEN,
+        Fr, PassportComScheme, PassportComSchemeG, DATE_LEN, DOB_OFFSET, HASH_LEN, NAME_LEN,
+        NAME_OFFSET, NATIONALITY_OFFSET, PASSPORT_COM_PARAM, STATE_ID_LEN,
     },
-    passport_dump::{print_dump_info, PassportDump},
+    passport_dump::PassportDump,
 };
 
 use core::borrow::Borrow;
@@ -118,8 +118,8 @@ impl PersonalInfo {
         info
     }
 
-    pub fn biometrics_hash(&self) -> Vec<u8> {
-        Sha256::digest(&self.biometrics).to_vec()
+    pub fn biometrics_hash(&self) -> [u8; HASH_LEN] {
+        Sha256::digest(&self.biometrics).into()
     }
 }
 

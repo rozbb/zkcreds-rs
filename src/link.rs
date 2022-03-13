@@ -351,7 +351,7 @@ mod test {
 
         // Prove the predicate
         let pred_proof =
-            prove_pred(&mut rng, &pred_pk, age_checker.clone(), person, merkle_root).unwrap();
+            prove_pred(&mut rng, &pred_pk, age_checker.clone(), person, &auth_path).unwrap();
 
         // Ordinarily we wouldn't be able to verify a predicate proof, since it requires knowledge
         // of the attribute commitment. But this is testing mode and we know this value, so let's

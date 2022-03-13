@@ -1,5 +1,5 @@
 use crate::{
-    params::{Fr, PassportComScheme, PassportComSchemeG},
+    params::{Fr, PassportComScheme, PassportComSchemeG, HASH_LEN},
     passport_info::{PersonalInfo, PersonalInfoVar},
 };
 
@@ -11,10 +11,13 @@ use ark_relations::{
     r1cs::{ConstraintSystemRef, SynthesisError},
 };
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub(crate) struct AgeAndFaceChecker {
-    pub(crate) threshold_birth_year: Fr,
-    pub(crate) face_hash: Vec<u8>,
+    // Verifier-chosen values
+    pub(crate) threshold_birth_date: Fr,
+
+    // Public inputs
+    pub(crate) face_hash: [u8; HASH_LEN],
 }
 
 impl PredicateChecker<Fr, PersonalInfo, PersonalInfoVar, PassportComScheme, PassportComSchemeG>
@@ -28,7 +31,7 @@ impl PredicateChecker<Fr, PersonalInfo, PersonalInfoVar, PassportComScheme, Pass
     ) -> Result<(), SynthesisError> {
         // Witness the threshold year and face hash as public inputs
         let threshold_birth_year =
-            FpVar::<Fr>::new_input(ns!(cs, "threshold year"), || Ok(self.threshold_birth_year))?;
+            FpVar::<Fr>::new_input(ns!(cs, "threshold year"), || Ok(self.threshold_birth_date))?;
         let face_hash = UInt8::new_input_vec(ns!(cs, "face hash"), &self.face_hash)?;
 
         // Assert that attrs.birth_year ≤ threshold_birth_year
@@ -43,6 +46,6 @@ impl PredicateChecker<Fr, PersonalInfo, PersonalInfoVar, PassportComScheme, Pass
     /// This outputs the field elements corresponding to the public inputs of this predicate.
     /// This DOES NOT include `attrs`.
     fn public_inputs(&self) -> Vec<Fr> {
-        vec![self.threshold_birth_year]
+        vec![self.threshold_birth_date]
     }
 }
