@@ -21,6 +21,7 @@ use crate::{
 
 use zeronym::{
     attrs::Attrs,
+    link::{link_proofs, verif_link_proof, GsCrs, LinkProofCtx, LinkVerifyingKey},
     pred::{prove_birth, prove_pred, verify_birth, verify_pred},
     Com,
 };
@@ -140,7 +141,7 @@ fn gen_forest_crs<R: Rng>(rng: &mut R) -> (ForestProvingKey, ForestVerifyingKey)
 fn init_issuer<R: Rng>(rng: &mut R) -> IssuerState {
     let com_forest = rand_forest(rng);
     let next_free_tree = rng.gen_range(0..FOREST_SIZE);
-    let next_free_leaf = rng.gen_range(0..2u64.pow(TREE_HEIGHT));
+    let next_free_leaf = rng.gen_range(0..2u64.pow(TREE_HEIGHT - 1));
 
     IssuerState {
         com_forest,
@@ -192,18 +193,24 @@ fn user_req_issuance<R: Rng>(
     (my_info, req)
 }
 
+/// Returns an instance of an `AgeFaceChecker`. Public parameters are date and the authenticating
+/// user's biometric hash
+fn get_ageface_checker(info: &PersonalInfo) -> AgeAndFaceChecker {
+    AgeAndFaceChecker {
+        threshold_dob: Fr::from(TWENTY_ONE_YEARS_AGO),
+        face_hash: info.biometrics_hash(),
+    }
+}
+
 /// User constructs a predicate proof for their age and face
 fn user_prove_ageface<R: Rng>(
     rng: &mut R,
     ageface_pk: &PredProvingKey,
+    ageface_checker: &AgeAndFaceChecker,
     info: &PersonalInfo,
     auth_path: &ComTreePath,
 ) -> PredProof {
     // Compute the proof wrt the public parameters
-    let ageface_checker = AgeAndFaceChecker {
-        threshold_dob: Fr::from(TWENTY_ONE_YEARS_AGO),
-        face_hash: info.biometrics_hash(),
-    };
     let proof = prove_pred(
         rng,
         ageface_pk,
@@ -217,7 +224,7 @@ fn user_prove_ageface<R: Rng>(
     assert!(zeronym::pred::verify_pred(
         &ageface_pk.prepare_verifying_key(),
         &proof,
-        &ageface_checker,
+        ageface_checker,
         &info.commit(),
         &auth_path.root(),
     )
@@ -232,25 +239,90 @@ fn main() {
     // Generate all the Groth16 and Groth-Sahai proving and verifying keys
     let (issuance_pk, issuance_vk) = gen_issuance_crs(&mut rng);
     let (ageface_pk, ageface_vk) = gen_ageface_crs(&mut rng);
-    println!("Generated CRSs");
+    let (tree_pk, tree_vk) = gen_tree_crs(&mut rng);
+    let (forest_pk, forest_vk) = gen_forest_crs(&mut rng);
+    let gs_crs = GsCrs::rand(&mut rng);
+    println!("GLOBAL: Generated CRSs");
 
     // Generate a random initial state for the issuer
     let mut issuer_state = init_issuer(&mut rng);
 
     // The user dumps their passport and makes an issuance request
-    println!("Requesting issuance");
     let (personal_info, issuance_req) = user_req_issuance(&mut rng, &issuance_pk);
     let cred = personal_info.commit();
+    println!("USER: Requested issuance");
 
     // The issuer validates the passport and issues the credential
     let auth_path = issue(&mut issuer_state, &issuance_vk, &issuance_req);
-    println!("Issuance request granted");
+    println!("ISSUER: Issuance request granted");
 
     //
     // A user walks into a bar...
     //
+    println!("USER");
 
-    // User wants to prove age and face. They precompute this
-    let ageface_proof = user_prove_ageface(&mut rng, &ageface_pk, &personal_info, &auth_path);
-    println!("Computed age and face proof");
+    // User wants to prove age and face. They precompute this proof
+    let ageface_checker = get_ageface_checker(&personal_info);
+    let ageface_proof = user_prove_ageface(
+        &mut rng,
+        &ageface_pk,
+        &ageface_checker,
+        &personal_info,
+        &auth_path,
+    );
+    println!("\tComputed age+face proof");
+    // User gets all the roots from the issuer
+    let roots = issuer_state.com_forest.roots();
+    // Now user proves tree and forest membership
+    let tree_proof = auth_path
+        .prove_membership(&mut rng, &tree_pk, &*MERKLE_CRH_PARAM, cred)
+        .unwrap();
+    let forest_proof = roots
+        .prove_membership(&mut rng, &forest_pk, auth_path.root(), cred)
+        .unwrap();
+    println!("\tComputed tree and forest memebership proofs");
+    // Now the user links everything
+    let link_vk = LinkVerifyingKey {
+        gs_crs,
+        pred_checker: ageface_checker.clone(),
+        com_forest_roots: roots,
+        forest_verif_key: forest_vk,
+        tree_verif_key: tree_vk,
+        pred_verif_key: ageface_vk,
+    };
+    let link_ctx = LinkProofCtx {
+        attrs_com: cred,
+        merkle_root: auth_path.root(),
+        forest_proof,
+        tree_proof,
+        pred_proof: ageface_proof,
+        vk: link_vk.clone(),
+    };
+    let link_proof = link_proofs(&mut rng, &link_ctx);
+    println!("\tLinked proofs");
+
+    //
+    // The bouncer takes a look
+    //
+    println!("BOUNCER");
+
+    // First the bouncer needs to get all the public parameters for their verifying key. Part is
+    // fixed and part is given by the user. Specifically, biometrics_hash is supplied by the user,
+    // and everything else is fixed. (we just use the vk from above)
+    let link_vk = link_vk;
+    let biometrics = personal_info.biometrics;
+    let ageface_checker = AgeAndFaceChecker {
+        threshold_dob: Fr::from(TWENTY_ONE_YEARS_AGO),
+        face_hash: biometrics.hash(),
+    };
+    println!("\tDownloaded user's biometrics");
+    // Use the previous link_vk. It's all predetermined values except for the ageface_checker
+    // contents
+    let mut link_vk = link_vk;
+    link_vk.pred_checker = ageface_checker;
+    println!("\tCreated verification key");
+    // Bouncer checks the proof
+    assert!(verif_link_proof(&link_proof, &link_vk));
+
+    println!("The bouncer unlatches the velvet rope. The user walks through.");
 }

@@ -64,8 +64,8 @@ where
     where
         E: PairingEngine<Fr = ConstraintF>,
         A: Attrs<E::Fr, AC>,
-        ACG: CommitmentGadget<AC, E::Fr>,
         AC: CommitmentScheme,
+        ACG: CommitmentGadget<AC, E::Fr>,
         AC::Output: ToConstraintField<ConstraintF>,
         HG: TwoToOneCRHGadget<H, E::Fr>,
     {
@@ -82,6 +82,37 @@ where
             .iter()
             .flat_map(|t| t.to_field_elements().unwrap())
             .collect()
+    }
+
+    /// Proves that the given attribute commitment is at the specified tree index
+    pub fn prove_membership<R, E, A, AC, ACG, HG>(
+        &self,
+        rng: &mut R,
+        pk: &ForestProvingKey<E, A, AC, ACG, H, HG>,
+        member_root: H::Output,
+        attrs_com: AC::Output,
+    ) -> Result<ForestProof<E, A, AC, ACG, H, HG>, SynthesisError>
+    where
+        R: Rng,
+        E: PairingEngine<Fr = ConstraintF>,
+        A: Attrs<E::Fr, AC>,
+        AC: CommitmentScheme,
+        ACG: CommitmentGadget<AC, E::Fr>,
+        AC::Output: ToConstraintField<ConstraintF>,
+        HG: TwoToOneCRHGadget<H, E::Fr>,
+    {
+        let prover = ForestMembershipProver::<E::Fr, AC, ACG, H, HG> {
+            roots: self.roots.clone(),
+            attrs_com,
+            member_root,
+            _marker: PhantomData,
+        };
+
+        let proof = ark_groth16::create_random_proof(prover, &pk.pk, rng)?;
+        Ok(ForestProof {
+            proof,
+            _marker: PhantomData,
+        })
     }
 }
 
@@ -105,36 +136,6 @@ where
     AC: CommitmentScheme,
     AC::Output: ToConstraintField<ConstraintF>,
 {
-    /// Proves that the given attribute commitment is at the specified tree index
-    pub fn prove_membership<R, E, A, ACG, HG>(
-        &self,
-        rng: &mut R,
-        pk: &ForestProvingKey<E, A, AC, ACG, H, HG>,
-        member_root: H::Output,
-        attrs_com: AC::Output,
-    ) -> Result<ForestProof<E, A, AC, ACG, H, HG>, SynthesisError>
-    where
-        R: Rng,
-        E: PairingEngine<Fr = ConstraintF>,
-        A: Attrs<E::Fr, AC>,
-        ACG: CommitmentGadget<AC, E::Fr>,
-        HG: TwoToOneCRHGadget<H, E::Fr>,
-    {
-        let roots: Vec<H::Output> = self.trees.iter().map(ComTree::root).collect();
-        let prover = ForestMembershipProver::<E::Fr, AC, ACG, H, HG> {
-            roots,
-            attrs_com,
-            member_root,
-            _marker: PhantomData,
-        };
-
-        let proof = ark_groth16::create_random_proof(prover, &pk.pk, rng)?;
-        Ok(ForestProof {
-            proof,
-            _marker: PhantomData,
-        })
-    }
-
     pub fn roots(&self) -> ComForestRoots<ConstraintF, H> {
         let roots = self.trees.iter().map(ComTree::root).collect();
         ComForestRoots {
@@ -284,14 +285,16 @@ pub(crate) mod test {
             let idx = rng.gen_range(0..num_trees);
             forest.trees[idx].root()
         };
+        // Collect the roots. We don't need the whole forest in order to compute a proof
+        let roots = forest.roots();
+
         // Prove that the chosen root appears in the forest
-        let proof = forest
+        let proof = roots
             .prove_membership(&mut rng, &pk, member_root, attrs_com)
             .unwrap();
 
         // Verify
 
-        let roots = forest.roots();
         let vk = pk.prepare_verifying_key();
         assert!(roots
             .verify_memb(&vk, &proof, &attrs_com, &member_root)

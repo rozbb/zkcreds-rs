@@ -32,6 +32,12 @@ pub struct LinkProof<E: PairingEngine> {
 /// A CRS of a Groth-Sahai
 pub struct GsCrs<E: PairingEngine>(CRS<E>);
 
+impl<E: PairingEngine> GsCrs<E> {
+    pub fn rand<R: Rng + CryptoRng>(rng: &mut R) -> GsCrs<E> {
+        GsCrs(CRS::generate_crs(rng))
+    }
+}
+
 impl<E: PairingEngine> Clone for GsCrs<E> {
     fn clone(&self) -> GsCrs<E> {
         GsCrs(CRS {
@@ -86,39 +92,6 @@ where
             forest_verif_key: self.forest_verif_key.clone(),
             tree_verif_key: self.tree_verif_key.clone(),
             pred_verif_key: self.pred_verif_key.clone(),
-        }
-    }
-}
-
-impl<E, P, A, AV, AC, ACG, H, HG> LinkVerifyingKey<E, P, A, AV, AC, ACG, H, HG>
-where
-    E: PairingEngine,
-    P: PredicateChecker<E::Fr, A, AV, AC, ACG>,
-    A: Attrs<E::Fr, AC>,
-    AV: AttrsVar<E::Fr, A, AC, ACG>,
-    AC: CommitmentScheme,
-    AC::Output: ToConstraintField<E::Fr>,
-    ACG: CommitmentGadget<AC, E::Fr>,
-    H: TwoToOneCRH,
-    H::Output: ToConstraintField<E::Fr>,
-    HG: TwoToOneCRHGadget<H, E::Fr>,
-{
-    pub fn new<R: Rng + CryptoRng>(
-        rng: &mut R,
-        pred_checker: P,
-        com_forest_roots: ComForestRoots<E::Fr, H>,
-        forest_verif_key: ForestVerifyingKey<E, A, AC, ACG, H, HG>,
-        tree_verif_key: TreeVerifyingKey<E, A, AC, ACG, H, HG>,
-        pred_verif_key: PredVerifyingKey<E, A, AV, AC, ACG, H, HG>,
-    ) -> LinkVerifyingKey<E, P, A, AV, AC, ACG, H, HG> {
-        let gs_crs = GsCrs(CRS::generate_crs(rng));
-        LinkVerifyingKey {
-            gs_crs,
-            pred_checker,
-            com_forest_roots,
-            forest_verif_key,
-            tree_verif_key,
-            pred_verif_key,
         }
     }
 }
@@ -378,6 +351,7 @@ mod test {
         let rand_idx = rng.gen_range(0..num_trees);
         let root = tree.root();
         forest.trees.insert(rand_idx, tree);
+        let roots = forest.roots();
 
         // Generate the forest circuit's CRS
         let forest_pk = gen_forest_memb_crs::<
@@ -390,24 +364,24 @@ mod test {
             TestTreeHG,
         >(&mut rng, num_trees)
         .unwrap();
-        let forest_proof = forest
+        let forest_proof = roots
             .prove_membership(&mut rng, &forest_pk, merkle_root, person_com)
             .unwrap();
         let forest_verif_key = forest_pk.prepare_verifying_key();
-        assert!(forest
-            .roots()
+        assert!(roots
             .verify_memb(&forest_verif_key, &forest_proof, &person_com, &merkle_root)
             .unwrap());
 
         // Now link everything together
-        let link_vk = LinkVerifyingKey::new(
-            &mut rng,
-            age_checker,
-            forest.roots(),
+        let gs_crs = GsCrs::rand(&mut rng);
+        let link_vk = LinkVerifyingKey {
+            gs_crs,
+            pred_checker: age_checker,
+            com_forest_roots: forest.roots(),
             forest_verif_key,
             tree_verif_key,
             pred_verif_key,
-        );
+        };
         let link_ctx = LinkProofCtx {
             attrs_com: person_com,
             merkle_root: root,

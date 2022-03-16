@@ -28,14 +28,24 @@ use ark_relations::{
 };
 use ark_std::rand::Rng;
 
+/// Simple blob containing user's biometrics
+#[derive(Clone, Default)]
+pub(crate) struct Biometrics(Vec<u8>);
+
+impl Biometrics {
+    pub fn hash(&self) -> [u8; HASH_LEN] {
+        Sha256::digest(&self.0).into()
+    }
+}
+
 /// Stores a subset of the info found in data groups 1 and 2 of a passport
 #[derive(Clone)]
-pub struct PersonalInfo {
+pub(crate) struct PersonalInfo {
     nonce: ComNonce<PassportComScheme>,
-    pub nationality: [u8; STATE_ID_LEN],
-    pub name: [u8; NAME_LEN],
-    pub dob: u32,
-    pub biometrics: Vec<u8>,
+    pub(crate) nationality: [u8; STATE_ID_LEN],
+    pub(crate) name: [u8; NAME_LEN],
+    pub(crate) dob: u32,
+    pub(crate) biometrics: Biometrics,
 }
 
 // Necessary because [u8; NAME_LEN] doesn't impl Default
@@ -46,7 +56,7 @@ impl Default for PersonalInfo {
             nationality: [0u8; STATE_ID_LEN],
             name: [0u8; NAME_LEN],
             dob: 0u32,
-            biometrics: Vec::new(),
+            biometrics: Biometrics::default(),
         }
     }
 }
@@ -102,7 +112,7 @@ impl PersonalInfo {
         nationality: [u8; STATE_ID_LEN],
         name: [u8; NAME_LEN],
         dob: u32,
-        biometrics: Vec<u8>,
+        biometrics: Biometrics,
     ) -> PersonalInfo {
         let nonce = ComNonce::<PassportComScheme>::rand(rng);
 
@@ -131,13 +141,13 @@ impl PersonalInfo {
         info.name
             .copy_from_slice(&dump.dg1[NAME_OFFSET..NAME_OFFSET + NAME_LEN]);
         info.dob = date_to_u32(&dump.dg1[DOB_OFFSET..DOB_OFFSET + DATE_LEN], today);
-        info.biometrics = dump.dg2.clone();
+        info.biometrics.0 = dump.dg2.clone();
 
         info
     }
 
     pub fn biometrics_hash(&self) -> [u8; HASH_LEN] {
-        Sha256::digest(&self.biometrics).into()
+        self.biometrics.hash()
     }
 }
 
@@ -147,7 +157,7 @@ impl Attrs<Fr, PassportComScheme> for PersonalInfo {
         // DOB bytes need to match the PersonalInfoVar version, which is an FpVar. Convert to Fr
         // before serializing
         let dob = Fr::from(self.dob);
-        let biometric_hash = Sha256::digest(&self.biometrics).to_vec();
+        let biometric_hash = self.biometrics.hash();
         to_bytes![self.nationality, self.name, dob, biometric_hash].unwrap()
     }
 
@@ -198,7 +208,7 @@ impl AllocVar<PersonalInfo, Fr> for PersonalInfoVar {
             .map(Borrow::borrow)
             .unwrap_or(&default_info);
 
-        let biometric_hash = Sha256::digest(biometrics).to_vec();
+        let biometric_hash = biometrics.hash().to_vec();
 
         // Witness the nonce
         let nonce = ComNonceVar::<PassportComScheme, PassportComSchemeG, Fr>::new_variable(
