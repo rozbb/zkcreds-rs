@@ -1,5 +1,5 @@
 use ark_crypto_primitives::commitment::{constraints::CommitmentGadget, CommitmentScheme};
-use ark_ff::{PrimeField, ToConstraintField};
+use ark_ff::{PrimeField, ToBytes, ToConstraintField};
 use ark_r1cs_std::{alloc::AllocVar, bits::ToBytesGadget};
 use ark_relations::r1cs::SynthesisError;
 
@@ -46,4 +46,35 @@ where
         let nonce = self.get_com_nonce()?;
         ACG::commit(&com_param, &self.to_bytes()?, &nonce)
     }
+}
+
+/// An `Attrs` trait that has something that identifies the user as well as  a random seed we can
+/// use for rate limiting
+pub trait AccountableAttrs<ConstraintF, AC>: Attrs<ConstraintF, AC>
+where
+    ConstraintF: PrimeField,
+    AC: CommitmentScheme,
+    AC::Output: ToConstraintField<ConstraintF>,
+{
+    type Id: ToBytes;
+    type Seed: ToBytes;
+
+    fn get_id(&self) -> Self::Id;
+    fn get_seed(&self) -> Self::Seed;
+}
+
+/// The gadget version of `AccountableAttrs`
+pub trait AccountableAttrsVar<ConstraintF, A, AC, ACG>: AttrsVar<ConstraintF, A, AC, ACG>
+where
+    ConstraintF: PrimeField,
+    A: AccountableAttrs<ConstraintF, AC>,
+    AC: CommitmentScheme,
+    AC::Output: ToConstraintField<ConstraintF>,
+    ACG: CommitmentGadget<AC, ConstraintF>,
+{
+    type Id: ToBytesGadget<ConstraintF>;
+    type Seed: ToBytesGadget<ConstraintF>;
+
+    fn get_id(&self) -> Result<Self::Id, SynthesisError>;
+    fn get_seed(&self) -> Result<Self::Seed, SynthesisError>;
 }

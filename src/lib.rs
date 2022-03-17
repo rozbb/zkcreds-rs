@@ -10,7 +10,7 @@ mod merkle_forest;
 mod multishow;
 pub mod pred;
 pub mod proof_data_structures;
-mod revealing_multishow;
+pub mod revealing_multishow;
 mod sparse_merkle;
 mod test_util;
 

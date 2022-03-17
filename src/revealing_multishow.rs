@@ -1,5 +1,5 @@
 use crate::{
-    attrs::{Attrs, AttrsVar},
+    attrs::{AccountableAttrs, AccountableAttrsVar},
     pred::PredicateChecker,
 };
 
@@ -10,7 +10,7 @@ use ark_crypto_primitives::{
     crh::{CRHGadget, CRH as CRHTrait},
     Error as ArkError,
 };
-use ark_ff::{to_bytes, PrimeField, ToBytes, ToConstraintField};
+use ark_ff::{to_bytes, PrimeField, ToConstraintField};
 use ark_r1cs_std::{
     alloc::AllocVar, bits::ToBytesGadget, eq::EqGadget, fields::fp::FpVar, uint8::UInt8,
 };
@@ -28,20 +28,30 @@ const PRF1_DOMAIN_SEP: u8 = 123;
 const PRF2_DOMAIN_SEP: u8 = 124;
 const HASH_DOMAIN_SEP: u8 = 125;
 
-/// An `Attrs` trait that has something that identifies the user as well as  a random seed we can
-/// use for rate limiting
-pub trait AccountableAttrs<ConstraintF, AC>: Attrs<ConstraintF, AC>
+/// Implements `compute_presentation_token` for all AccountableAttrs
+pub trait MultishowableAttrs<ConstraintF, AC>
 where
     ConstraintF: PrimeField,
     AC: CommitmentScheme,
     AC::Output: ToConstraintField<ConstraintF>,
 {
-    type Id: ToBytes;
-    type Seed: ToBytes;
+    /// Computes the presentation token from the given accountable attribute
+    fn compute_presentation_token<P: PoseidonRounds>(
+        &self,
+        params: &PoseidonParameters<ConstraintF>,
+        ctr: u16,
+        nonce: ConstraintF,
+    ) -> Result<PresentationToken<ConstraintF>, ArkError>;
+}
 
-    fn get_id(&self) -> Self::Id;
-    fn get_seed(&self) -> Self::Seed;
-
+/// Implements `compute_presentation_token` for all AccountableAttrs
+impl<ConstraintF, A, AC> MultishowableAttrs<ConstraintF, AC> for A
+where
+    ConstraintF: PrimeField,
+    A: AccountableAttrs<ConstraintF, AC>,
+    AC: CommitmentScheme,
+    AC::Output: ToConstraintField<ConstraintF>,
+{
     /// Computes the presentation token from the given accountable attribute
     fn compute_presentation_token<P: PoseidonRounds>(
         &self,
@@ -90,8 +100,8 @@ where
     }
 }
 
-/// The gadget version of `AccountableAttrs`
-pub trait AccountableAttrsVar<ConstraintF, A, AC, ACG>: AttrsVar<ConstraintF, A, AC, ACG>
+/// Implements `compute_presentation_token` for all AccountableAttrsVar
+pub trait MultishowableAttrsVar<ConstraintF, A, AC, ACG>
 where
     ConstraintF: PrimeField,
     A: AccountableAttrs<ConstraintF, AC>,
@@ -99,12 +109,25 @@ where
     AC::Output: ToConstraintField<ConstraintF>,
     ACG: CommitmentGadget<AC, ConstraintF>,
 {
-    type Id: ToBytesGadget<ConstraintF>;
-    type Seed: ToBytesGadget<ConstraintF>;
+    /// Computes the presentation token from the given accountable attribute
+    fn compute_presentation_token<P: PoseidonRounds>(
+        &self,
+        params: &PoseidonParametersVar<ConstraintF>,
+        ctr: &FpVar<ConstraintF>,
+        nonce: &FpVar<ConstraintF>,
+    ) -> Result<PresentationTokenVar<ConstraintF>, SynthesisError>;
+}
 
-    fn get_id(&self) -> Result<Self::Id, SynthesisError>;
-    fn get_seed(&self) -> Result<Self::Seed, SynthesisError>;
-
+/// Implements `compute_presentation_token` for all AccountableAttrsVar
+impl<ConstraintF, A, AV, AC, ACG> MultishowableAttrsVar<ConstraintF, A, AC, ACG> for AV
+where
+    ConstraintF: PrimeField,
+    A: AccountableAttrs<ConstraintF, AC>,
+    AV: AccountableAttrsVar<ConstraintF, A, AC, ACG>,
+    AC: CommitmentScheme,
+    AC::Output: ToConstraintField<ConstraintF>,
+    ACG: CommitmentGadget<AC, ConstraintF>,
+{
     /// Computes the presentation token from the given accountable attribute
     fn compute_presentation_token<P: PoseidonRounds>(
         &self,
@@ -165,15 +188,15 @@ where
 }
 
 /// A pseudorandom pair of field elements. If there are ever two tokens with the same `hidden_ctr`,
-/// they can be combined to derive the user's ID.
-#[derive(Clone)]
+/// they can be combined to derive the (hash of the) user's ID.
+#[derive(Clone, Default)]
 pub struct PresentationToken<ConstraintF: PrimeField> {
     /// This is `PRFₛ(ctr)` where s is the seed
     hidden_ctr: ConstraintF,
 
-    /// This is `ID + H(n)·PRFₛ'(ctr)` where `ID` is the user ID, s is the seed, and n is the
-    /// presentation nonce. Notice that if `ctr` repeats then we have two elements on the line `ID
-    /// + x·PRFₛ'(ctr)`. An observer can solve for the y-intercept and recover `ID`.
+    /// This is `H(ID) + H(n)·PRFₛ'(ctr)` where `ID` is the user ID, s is the seed, and n is the
+    /// presentation nonce. Notice that if `ctr` repeats then we have two elements on the line
+    /// `H(ID) + x·PRFₛ'(ctr)`. An observer can solve for the y-intercept and recover `H(ID)`.
     hidden_line_point: ConstraintF,
 }
 
@@ -186,33 +209,33 @@ pub struct PresentationTokenVar<ConstraintF: PrimeField> {
 
 /// Proves that `token` is the result of a PRF computation using the verifier-provided nonce and
 /// the attribute's ID and random seed
-#[derive(Clone)]
-pub struct MultishowChecker<ConstraintF, P>
+#[derive(Clone, Default)]
+pub struct RevealingMultishowChecker<ConstraintF, P>
 where
     ConstraintF: PrimeField,
     P: PoseidonRounds,
 {
     // Public inputs //
     /// The psuedorandom values associated with this presentation
-    token: PresentationToken<ConstraintF>,
+    pub token: PresentationToken<ConstraintF>,
     // The nonce provided by the server
-    nonce: ConstraintF,
+    pub nonce: ConstraintF,
     /// Number of times this attrribute string can be shown
-    max_num_presentations: u16,
+    pub max_num_presentations: u16,
 
     // Private inputs //
     /// The counter representing the number of times this attribute string has been shown so far
     /// (begins at 0)
-    ctr: u16,
+    pub ctr: u16,
 
     // Constants //
     /// Poseidon parameters
-    params: PoseidonParameters<ConstraintF>,
-    _rounds: PhantomData<P>,
+    pub params: PoseidonParameters<ConstraintF>,
+    pub _rounds: PhantomData<P>,
 }
 
 impl<ConstraintF, A, AV, AC, ACG, P> PredicateChecker<ConstraintF, A, AV, AC, ACG>
-    for MultishowChecker<ConstraintF, P>
+    for RevealingMultishowChecker<ConstraintF, P>
 where
     ConstraintF: PrimeField,
     A: AccountableAttrs<ConstraintF, AC>,
@@ -272,45 +295,71 @@ where
     }
 }
 
-/*
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::{
+        attrs::Attrs,
+        pred::{gen_pred_crs, prove_birth, verify_birth},
+        test_util::{NameAndBirthYear, NameAndBirthYearVar, TestTreeH, TestTreeHG},
+    };
 
-    use ark_bls12_381::Fr;
-    use ark_relations::r1cs::ConstraintSystem;
+    use ark_bls12_381::{Bls12_381 as E, Fr};
+    use ark_ff::UniformRand;
+    use ark_std::rand::Rng;
     use arkworks_gadgets::setup::common::{
-        setup_params_x5_5 as setup_params, Curve, PoseidonRounds_x5_3 as PoseidonRounds,
+        setup_params_x5_3 as setup_params, Curve, PoseidonRounds_x5_3 as PoseidonRounds,
     };
 
     #[test]
-    fn test_show_attrs() {
+    fn test_revealing_multishow() {
         let mut rng = ark_std::test_rng();
 
+        // BUG: the utils::to_field_elements() function in arkworks-gadgets-0.3.14 errors on a
+        // large proportion of inputs. To avoid this, we put the RNG in a state where it doesn't
+        // produce a seed or nonce that trips this bug. This is a terrible terrible hack.
+        for _ in 0..2 {
+            rng.gen::<Fr>();
+        }
+
+        // Set up the public parameters
         let params = setup_params::<Fr>(Curve::Bls381);
-        let attrs = AttrString::gen(&mut rng);
-        let counter = 1u16;
-        let max_num_presentations = 128u16;
+        let max_num_presentations: u16 = 128;
+        let placeholder_checker = RevealingMultishowChecker::<_, PoseidonRounds> {
+            params: params.clone(),
+            ..Default::default()
+        };
+        let pk = gen_pred_crs::<_, _, E, _, NameAndBirthYearVar, _, _, TestTreeH, TestTreeHG>(
+            &mut rng,
+            placeholder_checker,
+        )
+        .unwrap();
 
-        let presentation_nonce =
-            compute_presentation_nonce::<_, PoseidonRounds>(&params, &attrs, counter).unwrap();
+        let person = NameAndBirthYear::new(&mut rng, b"Andrew", 1992);
 
-        let cs = ConstraintSystem::<Fr>::new_ref();
-        let circuit = MultishowCircuit::<_, PoseidonRounds>::new(
-            presentation_nonce,
-            attrs,
-            counter,
+        // User computes a multishow token
+        let nonce = Fr::rand(&mut rng);
+        let ctr: u16 = 1;
+        let token = person
+            .compute_presentation_token::<PoseidonRounds>(&params, ctr, nonce)
+            .unwrap();
+
+        // User constructs a checker for their predicate
+        let checker = RevealingMultishowChecker::<_, PoseidonRounds> {
+            token,
+            nonce,
             max_num_presentations,
+            ctr,
             params,
-        );
-        circuit.generate_constraints(cs.clone()).unwrap();
+            _rounds: PhantomData,
+        };
 
-        println!("multishow circuit is {} constraints", cs.num_constraints());
-        println!(
-            "multishow circuit nonce is {} bytes",
-            ark_ff::to_bytes![presentation_nonce].unwrap().len()
-        );
-        assert!(cs.is_satisfied().unwrap());
+        // Prove the predicate
+        let proof = prove_birth(&mut rng, &pk, checker.clone(), person.clone()).unwrap();
+
+        // Now verify the predicate
+        let person_com = person.commit();
+        let vk = pk.prepare_verifying_key();
+        assert!(verify_birth(&vk, &proof, &checker, &person_com).unwrap());
     }
 }
-*/

@@ -1,8 +1,8 @@
 use core::borrow::Borrow;
 
 use crate::{
-    attrs::{Attrs, AttrsVar},
-    Com, ComNonce, ComNonceVar, ComParam, ComParamVar,
+    attrs::{AccountableAttrs, AccountableAttrsVar, Attrs, AttrsVar},
+    Bytestring, Com, ComNonce, ComNonceVar, ComParam, ComParamVar,
 };
 
 use ark_bls12_381::Bls12_381;
@@ -119,6 +119,7 @@ const NAME_MAXLEN: usize = 16;
 #[derive(Clone, Default)]
 pub(crate) struct NameAndBirthYear {
     nonce: ComNonce<TestComScheme>,
+    seed: Fr,
     first_name: [u8; NAME_MAXLEN],
     birth_year: Fr,
 }
@@ -126,6 +127,7 @@ pub(crate) struct NameAndBirthYear {
 #[derive(Clone)]
 pub(crate) struct NameAndBirthYearVar {
     nonce: ComNonceVar<TestComScheme, TestComSchemeG, Fr>,
+    seed: FpVar<Fr>,
     first_name: Vec<UInt8<Fr>>,
     pub(crate) birth_year: FpVar<Fr>,
 }
@@ -134,12 +136,15 @@ impl NameAndBirthYear {
     /// Constructs a new `NameAndBirthYear`, sampling a random nonce for commitment
     pub(crate) fn new<R: Rng>(rng: &mut R, first_name: &[u8], birth_year: u16) -> NameAndBirthYear {
         assert!(first_name.len() <= NAME_MAXLEN);
-        let nonce = <TestComScheme as CommitmentScheme>::Randomness::rand(rng);
         let mut name_buf = [0u8; 16];
         name_buf[..first_name.len()].copy_from_slice(first_name);
 
+        let nonce = <TestComScheme as CommitmentScheme>::Randomness::rand(rng);
+        let seed = Fr::rand(rng);
+
         NameAndBirthYear {
             nonce,
+            seed,
             first_name: name_buf,
             birth_year: Fr::from(birth_year),
         }
@@ -163,6 +168,19 @@ impl Attrs<Fr, TestComScheme> for NameAndBirthYear {
     }
 }
 
+impl AccountableAttrs<Fr, TestComScheme> for NameAndBirthYear {
+    type Id = [u8; NAME_MAXLEN];
+    type Seed = Fr;
+
+    fn get_id(&self) -> [u8; NAME_MAXLEN] {
+        self.first_name
+    }
+
+    fn get_seed(&self) -> Fr {
+        self.seed
+    }
+}
+
 impl ToBytesGadget<Fr> for NameAndBirthYearVar {
     fn to_bytes(&self) -> Result<Vec<UInt8<Fr>>, SynthesisError> {
         Ok([self.first_name.to_bytes()?, self.birth_year.to_bytes()?].concat())
@@ -180,13 +198,23 @@ impl AllocVar<NameAndBirthYear, Fr> for NameAndBirthYearVar {
         let cs = cs.into().cs();
         let native_attr = f();
 
-        // Witness the nonce, first name, and birth year
+        // Witness the nonce, seed, first name, and birth year
         let nonce = ComNonceVar::<TestComScheme, TestComSchemeG, Fr>::new_variable(
             ns!(cs, "nonce"),
             || {
                 native_attr
                     .as_ref()
                     .map(|a| &a.borrow().nonce)
+                    .map_err(|e| *e)
+            },
+            mode,
+        )?;
+        let seed = FpVar::new_variable(
+            ns!(cs, "seed"),
+            || {
+                native_attr
+                    .as_ref()
+                    .map(|a| &a.borrow().seed)
                     .map_err(|e| *e)
             },
             mode,
@@ -219,6 +247,7 @@ impl AllocVar<NameAndBirthYear, Fr> for NameAndBirthYearVar {
         // Return the witnessed values
         Ok(NameAndBirthYearVar {
             nonce,
+            seed,
             first_name,
             birth_year,
         })
@@ -237,5 +266,20 @@ impl AttrsVar<Fr, NameAndBirthYear, TestComScheme, TestComSchemeG> for NameAndBi
         &self,
     ) -> Result<ComNonceVar<TestComScheme, TestComSchemeG, Fr>, SynthesisError> {
         Ok(self.nonce.clone())
+    }
+}
+
+impl AccountableAttrsVar<Fr, NameAndBirthYear, TestComScheme, TestComSchemeG>
+    for NameAndBirthYearVar
+{
+    type Id = Bytestring<Fr>;
+    type Seed = FpVar<Fr>;
+
+    fn get_id(&self) -> Result<Bytestring<Fr>, SynthesisError> {
+        Ok(Bytestring(self.first_name.clone()))
+    }
+
+    fn get_seed(&self) -> Result<FpVar<Fr>, SynthesisError> {
+        Ok(self.seed.clone())
     }
 }
