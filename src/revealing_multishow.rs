@@ -10,7 +10,7 @@ use ark_crypto_primitives::{
     crh::{CRHGadget, CRH as CRHTrait},
     Error as ArkError,
 };
-use ark_ff::{to_bytes, PrimeField, ToConstraintField};
+use ark_ff::{to_bytes, PrimeField, ToBytes, ToConstraintField};
 use ark_r1cs_std::{
     alloc::AllocVar, bits::ToBytesGadget, eq::EqGadget, fields::fp::FpVar, uint8::UInt8,
 };
@@ -36,8 +36,11 @@ where
     AC: CommitmentScheme,
     AC::Output: ToConstraintField<ConstraintF>,
 {
-    fn get_id(&self) -> ConstraintF;
-    fn get_seed(&self) -> ConstraintF;
+    type Id: ToBytes;
+    type Seed: ToBytes;
+
+    fn get_id(&self) -> Self::Id;
+    fn get_seed(&self) -> Self::Seed;
 
     /// Computes the presentation token from the given accountable attribute
     fn compute_presentation_token<P: PoseidonRounds>(
@@ -56,11 +59,17 @@ where
             PoseidonCRH::<_, P>::evaluate(params, &hash_input)?
         };
 
-        // hidden_line_point = ID + H(nonce)·PRFₛ'(ctr)
+        // hidden_line_point = H(ID) + H(nonce)·PRFₛ'(ctr)
         let hidden_line_point = {
             // First hash the nonce
             let nonce_hash = {
                 let hash_input = to_bytes![HASH_DOMAIN_SEP, nonce]?;
+                PoseidonCRH::<_, P>::evaluate(params, &hash_input)?
+            };
+
+            // Then hash the ID
+            let id_hash = {
+                let hash_input = to_bytes![HASH_DOMAIN_SEP, id]?;
                 PoseidonCRH::<_, P>::evaluate(params, &hash_input)?
             };
 
@@ -71,7 +80,7 @@ where
             };
 
             // Now put it together
-            id + nonce_hash * prf_value
+            id_hash + nonce_hash * prf_value
         };
 
         Ok(PresentationToken {
@@ -85,13 +94,16 @@ where
 pub trait AccountableAttrsVar<ConstraintF, A, AC, ACG>: AttrsVar<ConstraintF, A, AC, ACG>
 where
     ConstraintF: PrimeField,
-    A: Attrs<ConstraintF, AC>,
+    A: AccountableAttrs<ConstraintF, AC>,
     AC: CommitmentScheme,
     AC::Output: ToConstraintField<ConstraintF>,
     ACG: CommitmentGadget<AC, ConstraintF>,
 {
-    fn get_id(&self) -> Result<FpVar<ConstraintF>, SynthesisError>;
-    fn get_seed(&self) -> Result<FpVar<ConstraintF>, SynthesisError>;
+    type Id: ToBytesGadget<ConstraintF>;
+    type Seed: ToBytesGadget<ConstraintF>;
+
+    fn get_id(&self) -> Result<Self::Id, SynthesisError>;
+    fn get_seed(&self) -> Result<Self::Seed, SynthesisError>;
 
     /// Computes the presentation token from the given accountable attribute
     fn compute_presentation_token<P: PoseidonRounds>(
@@ -115,12 +127,18 @@ where
             PoseidonGadget::<ConstraintF, P>::evaluate(params, &hash_input)?
         };
 
-        // hidden_line_point = ID + H(nonce)·PRFₛ'(ctr)
+        // hidden_line_point = H(ID) + H(nonce)·PRFₛ'(ctr)
         let hidden_line_point = {
             // First hash the nonce
             let nonce_hash = {
                 let hash_input =
                     [vec![UInt8::constant(HASH_DOMAIN_SEP)], nonce.to_bytes()?].concat();
+                PoseidonGadget::<ConstraintF, P>::evaluate(params, &hash_input)?
+            };
+
+            // Then hash the ID
+            let id_hash = {
+                let hash_input = [vec![UInt8::constant(HASH_DOMAIN_SEP)], id.to_bytes()?].concat();
                 PoseidonGadget::<ConstraintF, P>::evaluate(params, &hash_input)?
             };
 
@@ -136,7 +154,7 @@ where
             };
 
             // Now put it together
-            id + nonce_hash * prf_value
+            id_hash + nonce_hash * prf_value
         };
 
         Ok(PresentationTokenVar {
