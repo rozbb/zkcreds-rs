@@ -16,7 +16,9 @@ ark-relations = "0.3"
 ark-r1cs-std = "0.3"
 ark-std = "0.3"
 ark-serialize = "0.3"
-arkworks-gadgets = "0.3"
+arkworks-native-gadgets = "0.5"
+arkworks-r1cs-gadgets = "0.5"
+arkworks-utils = { version = "0.5" }
 base64 = "0.13"
 byteorder = "1.4"
 lazy_static = "1.4"
@@ -54,9 +56,9 @@ std = [
 
 [dev-dependencies]
 ark-bls12-381 = { version = "0.3" }
+arkworks-utils = { version = "0.5", features = [ "poseidon_bls381_x3_5" ] }
 base64 = "0.13"
 criterion = { version = "0.3", features = [ "html_reports" ] }
-#openssl = "0.10"
 rsa = { version = "0.5", features = [ "alloc" ] }
 serde = { version = "1", features = [ "derive" ] }
 serde_json = "1"

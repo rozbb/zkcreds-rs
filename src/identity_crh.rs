@@ -9,9 +9,10 @@ use ark_r1cs_std::{
     alloc::{AllocVar, AllocationMode},
     boolean::Boolean,
     eq::EqGadget,
+    fields::fp::FpVar,
     select::CondSelectGadget,
     uint8::UInt8,
-    R1CSVar, ToBytesGadget,
+    R1CSVar, ToBytesGadget, ToConstraintFieldGadget,
 };
 use ark_relations::r1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use ark_std::rand::Rng;
@@ -83,6 +84,12 @@ impl<ConstraintF: PrimeField> EqGadget<ConstraintF> for Bytestring<ConstraintF> 
 impl<ConstraintF: PrimeField> ToBytesGadget<ConstraintF> for Bytestring<ConstraintF> {
     fn to_bytes(&self) -> Result<Vec<UInt8<ConstraintF>>, SynthesisError> {
         Ok(self.0.clone())
+    }
+}
+
+impl<ConstraintF: PrimeField> ToConstraintFieldGadget<ConstraintF> for Bytestring<ConstraintF> {
+    fn to_constraint_field(&self) -> Result<Vec<FpVar<ConstraintF>>, SynthesisError> {
+        self.0.to_constraint_field()
     }
 }
 

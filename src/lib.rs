@@ -7,7 +7,7 @@ mod common;
 mod identity_crh;
 pub mod link;
 mod merkle_forest;
-mod multishow;
+//mod multishow;
 pub mod pred;
 pub mod proof_data_structures;
 pub mod revealing_multishow;

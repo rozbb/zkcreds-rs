@@ -169,11 +169,11 @@ impl Attrs<Fr, TestComScheme> for NameAndBirthYear {
 }
 
 impl AccountableAttrs<Fr, TestComScheme> for NameAndBirthYear {
-    type Id = [u8; NAME_MAXLEN];
+    type Id = Vec<u8>;
     type Seed = Fr;
 
-    fn get_id(&self) -> [u8; NAME_MAXLEN] {
-        self.first_name
+    fn get_id(&self) -> Vec<u8> {
+        self.first_name.to_vec()
     }
 
     fn get_seed(&self) -> Fr {

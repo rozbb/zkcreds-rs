@@ -1,6 +1,6 @@
 use ark_crypto_primitives::commitment::{constraints::CommitmentGadget, CommitmentScheme};
-use ark_ff::{PrimeField, ToBytes, ToConstraintField};
-use ark_r1cs_std::{alloc::AllocVar, bits::ToBytesGadget};
+use ark_ff::{PrimeField, ToConstraintField};
+use ark_r1cs_std::{alloc::AllocVar, bits::ToBytesGadget, ToConstraintFieldGadget};
 use ark_relations::r1cs::SynthesisError;
 
 /// This describes any object which holds attributes. The requirement is that it holds a commitment
@@ -56,8 +56,8 @@ where
     AC: CommitmentScheme,
     AC::Output: ToConstraintField<ConstraintF>,
 {
-    type Id: ToBytes;
-    type Seed: ToBytes;
+    type Id: ToConstraintField<ConstraintF>;
+    type Seed: ToConstraintField<ConstraintF>;
 
     fn get_id(&self) -> Self::Id;
     fn get_seed(&self) -> Self::Seed;
@@ -72,8 +72,8 @@ where
     AC::Output: ToConstraintField<ConstraintF>,
     ACG: CommitmentGadget<AC, ConstraintF>,
 {
-    type Id: ToBytesGadget<ConstraintF>;
-    type Seed: ToBytesGadget<ConstraintF>;
+    type Id: ToConstraintFieldGadget<ConstraintF>;
+    type Seed: ToConstraintFieldGadget<ConstraintF>;
 
     fn get_id(&self) -> Result<Self::Id, SynthesisError>;
     fn get_seed(&self) -> Result<Self::Seed, SynthesisError>;
