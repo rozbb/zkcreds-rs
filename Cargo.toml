@@ -21,6 +21,7 @@ arkworks-r1cs-gadgets = "0.5"
 arkworks-utils = { version = "0.5" }
 base64 = "0.13"
 byteorder = "1.4"
+derivative = { version = "2.0", features = ["use_core"] }
 lazy_static = "1.4"
 rand = "0.8"
 rand_core = "0.6"
