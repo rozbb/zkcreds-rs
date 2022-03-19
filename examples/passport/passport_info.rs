@@ -1,7 +1,7 @@
 use crate::{
     params::{
-        Fr, PassportComScheme, PassportComSchemeG, DATE_LEN, DOB_OFFSET, HASH_LEN, NAME_LEN,
-        NAME_OFFSET, NATIONALITY_OFFSET, PASSPORT_COM_PARAM, STATE_ID_LEN,
+        Fr, PassportComScheme, PassportComSchemeG, DATE_LEN, DOB_OFFSET, EXPIRY_OFFSET, HASH_LEN,
+        NAME_LEN, NAME_OFFSET, NATIONALITY_OFFSET, PASSPORT_COM_PARAM, STATE_ID_LEN,
     },
     passport_dump::PassportDump,
 };
@@ -45,10 +45,10 @@ pub(crate) struct PersonalInfo {
     pub(crate) nationality: [u8; STATE_ID_LEN],
     pub(crate) name: [u8; NAME_LEN],
     pub(crate) dob: u32,
+    pub(crate) passport_expiry: u32,
     pub(crate) biometrics: Biometrics,
 }
 
-// Necessary because [u8; NAME_LEN] doesn't impl Default
 impl Default for PersonalInfo {
     fn default() -> PersonalInfo {
         PersonalInfo {
@@ -56,6 +56,7 @@ impl Default for PersonalInfo {
             nationality: [0u8; STATE_ID_LEN],
             name: [0u8; NAME_LEN],
             dob: 0u32,
+            passport_expiry: 0u32,
             biometrics: Biometrics::default(),
         }
     }
@@ -68,6 +69,7 @@ pub(crate) struct PersonalInfoVar {
     pub(crate) nationality: Bytestring<Fr>,
     pub(crate) name: Bytestring<Fr>,
     pub(crate) dob: FpVar<Fr>,
+    pub(crate) passport_expiry: FpVar<Fr>,
     pub(crate) biometric_hash: Bytestring<Fr>,
 }
 
@@ -112,6 +114,7 @@ impl PersonalInfo {
         nationality: [u8; STATE_ID_LEN],
         name: [u8; NAME_LEN],
         dob: u32,
+        passport_expiry: u32,
         biometrics: Biometrics,
     ) -> PersonalInfo {
         let nonce = ComNonce::<PassportComScheme>::rand(rng);
@@ -121,18 +124,29 @@ impl PersonalInfo {
             nationality,
             name,
             dob,
+            passport_expiry,
             biometrics,
         }
     }
 
     /// Converts the given passport dump into a structured attribute struct. Requires `today` as an
-    /// integer whose base-10 representation is of the form YYYYMMDD.
-    pub fn from_passport<R: Rng>(rng: &mut R, dump: &PassportDump, today: u32) -> PersonalInfo {
+    /// integer whose base-10 representation is of the form YYYYMMDD. `max_valid_years` is the
+    /// longest that a passport can be valid, in years.
+    pub fn from_passport<R: Rng>(
+        rng: &mut R,
+        dump: &PassportDump,
+        today: u32,
+        max_valid_years: u32,
+    ) -> PersonalInfo {
         // Create an empty info struct that we'll fill with data
         let mut info = PersonalInfo {
             nonce: ComNonce::<PassportComScheme>::rand(rng),
             ..Default::default()
         };
+
+        // The earliest time after which expiry doesn't make sense. This is used to parse the
+        // underdefined date format in the passport
+        let expiry_not_after = today + max_valid_years * 10000u32;
 
         // Extract the nationality, name, and DOB from the DG1 blob. The biometrics are set equal
         // to the entire DG2 blob
@@ -141,6 +155,10 @@ impl PersonalInfo {
         info.name
             .copy_from_slice(&dump.dg1[NAME_OFFSET..NAME_OFFSET + NAME_LEN]);
         info.dob = date_to_u32(&dump.dg1[DOB_OFFSET..DOB_OFFSET + DATE_LEN], today);
+        info.passport_expiry = date_to_u32(
+            &dump.dg1[EXPIRY_OFFSET..EXPIRY_OFFSET + DATE_LEN],
+            expiry_not_after,
+        );
         info.biometrics.0 = dump.dg2.clone();
 
         info
@@ -157,8 +175,16 @@ impl Attrs<Fr, PassportComScheme> for PersonalInfo {
         // DOB bytes need to match the PersonalInfoVar version, which is an FpVar. Convert to Fr
         // before serializing
         let dob = Fr::from(self.dob);
+        let passport_expiry = Fr::from(self.passport_expiry);
         let biometric_hash = self.biometrics.hash();
-        to_bytes![self.nationality, self.name, dob, biometric_hash].unwrap()
+        to_bytes![
+            self.nationality,
+            self.name,
+            dob,
+            passport_expiry,
+            biometric_hash
+        ]
+        .unwrap()
     }
 
     fn get_com_param(&self) -> &ComParam<PassportComScheme> {
@@ -176,6 +202,7 @@ impl ToBytesGadget<Fr> for PersonalInfoVar {
             self.nationality.0.to_bytes()?,
             self.name.0.to_bytes()?,
             self.dob.to_bytes()?,
+            self.passport_expiry.to_bytes()?,
             self.biometric_hash.0.to_bytes()?,
         ]
         .concat())
@@ -202,6 +229,7 @@ impl AllocVar<PersonalInfo, Fr> for PersonalInfoVar {
             ref nationality,
             ref name,
             ref dob,
+            ref passport_expiry,
             ref biometrics,
         } = native_attrs
             .as_ref()
@@ -221,7 +249,12 @@ impl AllocVar<PersonalInfo, Fr> for PersonalInfoVar {
         let nationality =
             Bytestring::new_variable(ns!(cs, "nationality"), || Ok(nationality.to_vec()), mode)?;
         let name = Bytestring::new_variable(ns!(cs, "name"), || Ok(name.to_vec()), mode)?;
-        let dob = FpVar::<Fr>::new_variable(ns!(cs, "birth year"), || Ok(Fr::from(*dob)), mode)?;
+        let dob = FpVar::<Fr>::new_variable(ns!(cs, "dob"), || Ok(Fr::from(*dob)), mode)?;
+        let passport_expiry = FpVar::<Fr>::new_variable(
+            ns!(cs, "passport expiry"),
+            || Ok(Fr::from(*passport_expiry)),
+            mode,
+        )?;
         let biometric_hash =
             Bytestring::new_variable(ns!(cs, "biometric_hash"), || Ok(biometric_hash), mode)?;
 
@@ -231,6 +264,7 @@ impl AllocVar<PersonalInfo, Fr> for PersonalInfoVar {
             nationality,
             name,
             dob,
+            passport_expiry,
             biometric_hash,
         })
     }

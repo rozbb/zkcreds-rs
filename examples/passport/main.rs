@@ -15,7 +15,7 @@ use crate::{
     },
     passport_dump::PassportDump,
     passport_info::{PersonalInfo, PersonalInfoVar},
-    preds::AgeAndFaceChecker,
+    preds::AgeFaceExpiryChecker,
     sig_verif::{load_usa_pubkey, IssuerPubkey},
 };
 
@@ -101,7 +101,7 @@ fn gen_ageface_crs<R: Rng>(rng: &mut R) -> (PredProvingKey, PredVerifyingKey) {
         PassportComSchemeG,
         H,
         HG,
-    >(rng, AgeAndFaceChecker::default())
+    >(rng, AgeFaceExpiryChecker::default())
     .unwrap();
 
     (pk.clone(), pk.prepare_verifying_key())
@@ -174,7 +174,7 @@ fn user_req_issuance<R: Rng>(
 ) -> (PersonalInfo, IssuanceReq) {
     // Load the passport and parse it into a `PersonalInfo` struct
     let dump = load_dump();
-    let my_info = PersonalInfo::from_passport(rng, &dump, TODAY);
+    let my_info = PersonalInfo::from_passport(rng, &dump, TODAY, MAX_VALID_YEARS);
     let attrs_com = my_info.commit();
 
     // Make a hash checker struct using our private data
@@ -197,9 +197,10 @@ fn user_req_issuance<R: Rng>(
 
 /// Returns an instance of an `AgeFaceChecker`. Public parameters are date and the authenticating
 /// user's biometric hash
-fn get_ageface_checker(info: &PersonalInfo) -> AgeAndFaceChecker {
-    AgeAndFaceChecker {
+fn get_ageface_checker(info: &PersonalInfo) -> AgeFaceExpiryChecker {
+    AgeFaceExpiryChecker {
         threshold_dob: Fr::from(TWENTY_ONE_YEARS_AGO),
+        threshold_expiry: Fr::from(TODAY),
         face_hash: info.biometrics_hash(),
     }
 }
@@ -208,7 +209,7 @@ fn get_ageface_checker(info: &PersonalInfo) -> AgeAndFaceChecker {
 fn user_prove_ageface<R: Rng>(
     rng: &mut R,
     ageface_pk: &PredProvingKey,
-    ageface_checker: &AgeAndFaceChecker,
+    ageface_checker: &AgeFaceExpiryChecker,
     info: &PersonalInfo,
     auth_path: &ComTreePath,
 ) -> PredProof {
@@ -317,8 +318,9 @@ fn main() {
     // and everything else is fixed. (we just use the vk from above)
     let link_vk = link_vk;
     let biometrics = personal_info.biometrics;
-    let ageface_checker = AgeAndFaceChecker {
+    let ageface_checker = AgeFaceExpiryChecker {
         threshold_dob: Fr::from(TWENTY_ONE_YEARS_AGO),
+        threshold_expiry: Fr::from(TODAY),
         face_hash: biometrics.hash(),
     };
     println!("\tDownloaded user's biometrics");

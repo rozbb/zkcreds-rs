@@ -55,10 +55,10 @@ pub(crate) const DG2_HASH_OFFSET: usize = 70;
 pub(crate) const PRE_ECONTENT_HASH_OFFSET: usize = 72;
 
 #[derive(Clone)]
-pub(crate) struct Window8x128;
-impl pedersen::Window for Window8x128 {
+pub(crate) struct Window9x128;
+impl pedersen::Window for Window9x128 {
     const WINDOW_SIZE: usize = 128;
-    const NUM_WINDOWS: usize = 8;
+    const NUM_WINDOWS: usize = 9;
 }
 
 #[derive(Clone)]
@@ -78,9 +78,9 @@ pub(crate) type HG = bowe_hopwood::constraints::CRHGadget<EdwardsParameters, FqV
 
 // Pick a commitment scheme
 pub(crate) type PassportComScheme =
-    zeronym::compressed_pedersen::Commitment<EdwardsParameters, Window8x128>;
+    zeronym::compressed_pedersen::Commitment<EdwardsParameters, Window9x128>;
 pub(crate) type PassportComSchemeG =
-    zeronym::compressed_pedersen::constraints::CommGadget<EdwardsParameters, FqVar, Window8x128>;
+    zeronym::compressed_pedersen::constraints::CommGadget<EdwardsParameters, FqVar, Window9x128>;
 
 pub(crate) type ComTree = zeronym::com_tree::ComTree<Fr, H, PassportComScheme>;
 pub(crate) type ComForest = zeronym::com_forest::ComForest<Fr, H, PassportComScheme>;
