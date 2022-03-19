@@ -12,7 +12,8 @@ use ark_crypto_primitives::{
 };
 use ark_ec::PairingEngine;
 use ark_ed_on_bls12_381::{
-    constraints::EdwardsVar as JubjubVar, EdwardsParameters, EdwardsProjective as Jubjub,
+    constraints::{EdwardsVar as JubjubVar, FqVar},
+    EdwardsParameters, EdwardsProjective as Jubjub,
 };
 use ark_ff::UniformRand;
 use ark_r1cs_std::{
@@ -77,21 +78,26 @@ pub(crate) type PedersenCom<W> = commitment::pedersen::Commitment<Jubjub, W>;
 pub(crate) type PedersenComG<W> =
     commitment::pedersen::constraints::CommGadget<Jubjub, JubjubVar, W>;
 
+pub(crate) type CompressedPedersenCom<W> =
+    crate::compressed_pedersen::Commitment<EdwardsParameters, W>;
+pub(crate) type CompressedPedersenComG<W> =
+    crate::compressed_pedersen::constraints::CommGadget<EdwardsParameters, FqVar, W>;
+
 // Example types //
 
 // Pick a pairing engine and a curve defined over E::Fr
 pub(crate) type E = Bls12_381;
 pub(crate) type Fr = <E as PairingEngine>::Fr;
-type FqV = ark_ed_on_bls12_381::constraints::FqVar;
-type P = ark_ed_on_bls12_381::EdwardsParameters;
 
 // Pick a two-to-one CRH
-pub(crate) type TestTreeH = bowe_hopwood::CRH<EdwardsParameters, Window17x63>;
-pub(crate) type TestTreeHG = bowe_hopwood::constraints::CRHGadget<P, FqV>;
+pub(crate) type TestTreeH = bowe_hopwood::CRH<EdwardsParameters, Window9x63>;
+pub(crate) type TestTreeHG = bowe_hopwood::constraints::CRHGadget<EdwardsParameters, FqVar>;
 
 // Pick a commitment scheme
-pub(crate) type TestComScheme = PedersenCom<Window8x128>;
-pub(crate) type TestComSchemeG = PedersenComG<Window8x128>;
+pub(crate) type TestComScheme = CompressedPedersenCom<Window8x128>;
+pub(crate) type TestComSchemeG = CompressedPedersenComG<Window8x128>;
+//pub(crate) type TestComScheme = PedersenCom<Window8x128>;
+//pub(crate) type TestComSchemeG = PedersenComG<Window8x128>;
 
 lazy_static! {
     static ref BIG_COM_PARAM: <TestComScheme as CommitmentScheme>::Parameters = {
