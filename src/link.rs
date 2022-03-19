@@ -50,10 +50,50 @@ impl<E: PairingEngine> Clone for GsCrs<E> {
     }
 }
 
-pub struct LinkVerifyingKey<E, P, A, AV, AC, ACG, H, HG>
+#[derive(Clone)]
+pub struct PredPublicInputs<E: PairingEngine>(Vec<E::G1Projective>);
+
+impl<E: PairingEngine> Default for PredPublicInputs<E> {
+    fn default() -> PredPublicInputs<E> {
+        PredPublicInputs(Vec::default())
+    }
+}
+
+impl<E: PairingEngine> PredPublicInputs<E> {
+    pub fn prepare_pred_checker<P, A, AV, AC, ACG, H, HG>(
+        &mut self,
+        pred_verif_key: &PredVerifyingKey<E, A, AV, AC, ACG, H, HG>,
+        checker: &P,
+    ) where
+        P: PredicateChecker<E::Fr, A, AV, AC, ACG>,
+        A: Attrs<E::Fr, AC>,
+        AV: AttrsVar<E::Fr, A, AC, ACG>,
+        AC: CommitmentScheme,
+        AC::Output: ToConstraintField<E::Fr>,
+        ACG: CommitmentGadget<AC, E::Fr>,
+        H: TwoToOneCRH,
+        H::Output: ToConstraintField<E::Fr>,
+        HG: TwoToOneCRHGadget<H, E::Fr>,
+    {
+        // First set the common inputs to zero. This is filled in by the GS linking proof
+        let attr_com_len = Com::<AC>::default().to_field_elements().unwrap().len();
+        let root_len = H::Output::default().to_field_elements().unwrap().len();
+        let common_inputs = vec![E::Fr::zero(); attr_com_len + root_len];
+
+        // Now add the public inputs of this predicate
+        let mut pred_public_input = common_inputs;
+        pred_public_input.extend(checker.public_inputs());
+
+        // Prepare the inputs and add them to the list of predicate inputs
+        let prepared =
+            ark_groth16::prepare_inputs(&pred_verif_key.pvk, &pred_public_input).unwrap();
+        self.0.push(prepared);
+    }
+}
+
+pub struct LinkVerifyingKey<E, A, AV, AC, ACG, H, HG>
 where
     E: PairingEngine,
-    P: PredicateChecker<E::Fr, A, AV, AC, ACG>,
     A: Attrs<E::Fr, AC>,
     AV: AttrsVar<E::Fr, A, AC, ACG>,
     AC: CommitmentScheme,
@@ -64,17 +104,16 @@ where
     HG: TwoToOneCRHGadget<H, E::Fr>,
 {
     pub gs_crs: GsCrs<E>,
-    pub pred_checker: P,
+    pub pred_inputs: PredPublicInputs<E>,
     pub com_forest_roots: ComForestRoots<E::Fr, H>,
     pub forest_verif_key: ForestVerifyingKey<E, A, AC, ACG, H, HG>,
     pub tree_verif_key: TreeVerifyingKey<E, A, AC, ACG, H, HG>,
-    pub pred_verif_key: PredVerifyingKey<E, A, AV, AC, ACG, H, HG>,
+    pub pred_verif_keys: Vec<PredVerifyingKey<E, A, AV, AC, ACG, H, HG>>,
 }
 
-impl<E, P, A, AV, AC, ACG, H, HG> Clone for LinkVerifyingKey<E, P, A, AV, AC, ACG, H, HG>
+impl<E, A, AV, AC, ACG, H, HG> Clone for LinkVerifyingKey<E, A, AV, AC, ACG, H, HG>
 where
     E: PairingEngine,
-    P: PredicateChecker<E::Fr, A, AV, AC, ACG>,
     A: Attrs<E::Fr, AC>,
     AV: AttrsVar<E::Fr, A, AC, ACG>,
     AC: CommitmentScheme,
@@ -87,19 +126,18 @@ where
     fn clone(&self) -> Self {
         Self {
             gs_crs: self.gs_crs.clone(),
-            pred_checker: self.pred_checker.clone(),
+            pred_inputs: self.pred_inputs.clone(),
             com_forest_roots: self.com_forest_roots.clone(),
             forest_verif_key: self.forest_verif_key.clone(),
             tree_verif_key: self.tree_verif_key.clone(),
-            pred_verif_key: self.pred_verif_key.clone(),
+            pred_verif_keys: self.pred_verif_keys.clone(),
         }
     }
 }
 
-pub struct LinkProofCtx<E, P, A, AV, AC, ACG, H, HG>
+pub struct LinkProofCtx<E, A, AV, AC, ACG, H, HG>
 where
     E: PairingEngine,
-    P: PredicateChecker<E::Fr, A, AV, AC, ACG>,
     A: Attrs<E::Fr, AC>,
     AV: AttrsVar<E::Fr, A, AC, ACG>,
     AC: CommitmentScheme,
@@ -113,18 +151,17 @@ where
     pub merkle_root: H::Output,
     pub forest_proof: ForestProof<E, A, AC, ACG, H, HG>,
     pub tree_proof: TreeProof<E, A, AC, ACG, H, HG>,
-    pub pred_proof: PredProof<E, A, AV, AC, ACG, H, HG>,
-    pub vk: LinkVerifyingKey<E, P, A, AV, AC, ACG, H, HG>,
+    pub pred_proofs: Vec<PredProof<E, A, AV, AC, ACG, H, HG>>,
+    pub vk: LinkVerifyingKey<E, A, AV, AC, ACG, H, HG>,
 }
 
-pub fn link_proofs<R, E, P, A, AV, AC, ACG, H, HG>(
+pub fn link_proofs<R, E, A, AV, AC, ACG, H, HG>(
     rng: &mut R,
-    ctx: &LinkProofCtx<E, P, A, AV, AC, ACG, H, HG>,
+    ctx: &LinkProofCtx<E, A, AV, AC, ACG, H, HG>,
 ) -> LinkProof<E>
 where
     R: Rng + CryptoRng,
     E: PairingEngine,
-    P: PredicateChecker<E::Fr, A, AV, AC, ACG>,
     A: Attrs<E::Fr, AC>,
     AV: AttrsVar<E::Fr, A, AC, ACG>,
     AC: CommitmentScheme,
@@ -144,13 +181,6 @@ where
     let num_common_inputs = common_inputs.len();
     let zeroed_common_inputs = vec![E::Fr::zero(); num_common_inputs];
 
-    // Besides the attrs com and root, a predicate takes public input
-    // pred_checker.public_inputs()
-    let pred_public_input = [
-        zeroed_common_inputs.as_slice(),
-        &ctx.vk.pred_checker.public_inputs(),
-    ]
-    .concat();
     // The tree proof's public inputs are just the attrs com and root
     let tree_public_input = zeroed_common_inputs.clone();
     // The forest's public inputs are the attrs com and root, plus all the roots of the forest
@@ -161,35 +191,39 @@ where
     .concat();
 
     // Prepare the inputs
-    let pred_prepared_inputs =
-        ark_groth16::prepare_inputs(&ctx.vk.pred_verif_key.pvk, &pred_public_input).unwrap();
     let tree_prepared_inputs =
         ark_groth16::prepare_inputs(&ctx.vk.tree_verif_key.pvk, &tree_public_input).unwrap();
     let forest_prepared_inputs =
         ark_groth16::prepare_inputs(&ctx.vk.forest_verif_key.pvk, &forest_public_input).unwrap();
 
-    let (x_com, y_com, gs_proofs) = prove_linked_g16_equations(
-        &[
-            (
-                &ctx.pred_proof.proof,
-                &ctx.vk.pred_verif_key.pvk.vk,
-                &pred_prepared_inputs,
-            ),
-            (
-                &ctx.tree_proof.proof,
-                &ctx.vk.tree_verif_key.pvk.vk,
-                &tree_prepared_inputs,
-            ),
-            (
-                &ctx.forest_proof.proof,
-                &ctx.vk.forest_verif_key.pvk.vk,
-                &forest_prepared_inputs,
-            ),
-        ],
-        common_inputs,
-        &ctx.vk.gs_crs.0,
-        rng,
-    );
+    // Collect (proof, vk, prepared_inputs) for all our predicates
+    let pred_triples = ctx
+        .pred_proofs
+        .iter()
+        .zip(ctx.vk.pred_verif_keys.iter())
+        .zip(ctx.vk.pred_inputs.0.iter())
+        .map(|((proof, vk), input)| (&proof.proof, &vk.pvk.vk, input))
+        .collect();
+
+    // Collect (proof, vk, prepared_inputs) for the tree and forest
+    let mut all_triples: Vec<(
+        &ark_groth16::Proof<E>,
+        &ark_groth16::VerifyingKey<E>,
+        &E::G1Projective,
+    )> = pred_triples;
+    all_triples.push((
+        &ctx.tree_proof.proof,
+        &ctx.vk.tree_verif_key.pvk.vk,
+        &tree_prepared_inputs,
+    ));
+    all_triples.push((
+        &ctx.forest_proof.proof,
+        &ctx.vk.forest_verif_key.pvk.vk,
+        &forest_prepared_inputs,
+    ));
+
+    let (x_com, y_com, gs_proofs) =
+        prove_linked_g16_equations(&all_triples, common_inputs, &ctx.vk.gs_crs.0, rng);
 
     LinkProof {
         x_com,
@@ -199,13 +233,12 @@ where
 }
 
 #[must_use]
-pub fn verif_link_proof<E, P, A, AV, AC, ACG, H, HG>(
+pub fn verif_link_proof<E, A, AV, AC, ACG, H, HG>(
     proof: &LinkProof<E>,
-    vk: &LinkVerifyingKey<E, P, A, AV, AC, ACG, H, HG>,
+    vk: &LinkVerifyingKey<E, A, AV, AC, ACG, H, HG>,
 ) -> bool
 where
     E: PairingEngine,
-    P: PredicateChecker<E::Fr, A, AV, AC, ACG>,
     A: Attrs<E::Fr, AC>,
     AV: AttrsVar<E::Fr, A, AC, ACG>,
     AC: CommitmentScheme,
@@ -224,32 +257,32 @@ where
     };
     let zeroed_common_inputs = vec![E::Fr::zero(); num_common_inputs];
 
-    // Prepare the public input for the predicate proof. Besides the attrs com and root, a
-    // predicate takes public input pred_checker.public_inputs()
-    let pred_public_input = [
-        zeroed_common_inputs.as_slice(),
-        &vk.pred_checker.public_inputs(),
-    ]
-    .concat();
     // The tree proof's public inputs are just the attrs com and root
     let tree_public_input = zeroed_common_inputs.clone();
     // The forest's public inputs are the attrs com and root, plus all the roots of the forest
     let forest_public_input = [zeroed_common_inputs, vk.com_forest_roots.public_inputs()].concat();
 
     // Prepare the inputs
-    let pred_prepared_inputs =
-        ark_groth16::prepare_inputs(&vk.pred_verif_key.pvk, &pred_public_input).unwrap();
     let tree_prepared_inputs =
         ark_groth16::prepare_inputs(&vk.tree_verif_key.pvk, &tree_public_input).unwrap();
     let forest_prepared_inputs =
         ark_groth16::prepare_inputs(&vk.forest_verif_key.pvk, &forest_public_input).unwrap();
 
+    // Collect (vk, prepared_inputs) for all our predicates
+    let pred_tuples = vk
+        .pred_verif_keys
+        .iter()
+        .zip(vk.pred_inputs.0.iter())
+        .map(|(vk, input)| (&vk.pvk.vk, input))
+        .collect();
+
+    // Collect (vk, prepared_inputs) for the tree and forest
+    let mut all_tuples: Vec<(&ark_groth16::VerifyingKey<E>, &E::G1Projective)> = pred_tuples;
+    all_tuples.push((&vk.tree_verif_key.pvk.vk, &tree_prepared_inputs));
+    all_tuples.push((&vk.forest_verif_key.pvk.vk, &forest_prepared_inputs));
+
     verify_linked_g16_equations(
-        &[
-            (&vk.pred_verif_key.pvk.vk, &pred_prepared_inputs),
-            (&vk.tree_verif_key.pvk.vk, &tree_prepared_inputs),
-            (&vk.forest_verif_key.pvk.vk, &forest_prepared_inputs),
-        ],
+        &all_tuples,
         (&proof.x_com, &proof.y_com, &proof.gs_proofs),
         &vk.gs_crs.0,
     )
@@ -260,7 +293,7 @@ mod test {
     use super::*;
     use crate::{
         attrs::Attrs,
-        com_forest::{gen_forest_memb_crs, test::random_tree},
+        com_forest::{gen_forest_memb_crs, test::random_tree, ComForest},
         com_tree::{gen_tree_memb_crs, verify_tree_memb, ComTree},
         pred::{gen_pred_crs, prove_pred, test::AgeChecker, verify_pred},
         test_util::{
@@ -353,6 +386,10 @@ mod test {
         forest.trees.insert(rand_idx, tree);
         let roots = forest.roots();
 
+        // Collect the predicate public inputs
+        let mut pred_inputs = PredPublicInputs::default();
+        pred_inputs.prepare_pred_checker(&pred_verif_key, &age_checker);
+
         // Generate the forest circuit's CRS
         let forest_pk = gen_forest_memb_crs::<
             _,
@@ -376,18 +413,18 @@ mod test {
         let gs_crs = GsCrs::rand(&mut rng);
         let link_vk = LinkVerifyingKey {
             gs_crs,
-            pred_checker: age_checker,
+            pred_inputs: pred_inputs.clone(),
             com_forest_roots: forest.roots(),
             forest_verif_key,
             tree_verif_key,
-            pred_verif_key,
+            pred_verif_keys: vec![pred_verif_key],
         };
         let link_ctx = LinkProofCtx {
             attrs_com: person_com,
             merkle_root: root,
             forest_proof,
             tree_proof,
-            pred_proof,
+            pred_proofs: vec![pred_proof],
             vk: link_vk.clone(),
         };
         let link_proof = link_proofs(&mut rng, &link_ctx);

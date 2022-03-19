@@ -21,7 +21,9 @@ use crate::{
 
 use zeronym::{
     attrs::Attrs,
-    link::{link_proofs, verif_link_proof, GsCrs, LinkProofCtx, LinkVerifyingKey},
+    link::{
+        link_proofs, verif_link_proof, GsCrs, LinkProofCtx, LinkVerifyingKey, PredPublicInputs,
+    },
     pred::{prove_birth, prove_pred, verify_birth, verify_pred},
     Com,
 };
@@ -281,21 +283,25 @@ fn main() {
         .prove_membership(&mut rng, &forest_pk, auth_path.root(), cred)
         .unwrap();
     println!("\tComputed tree and forest memebership proofs");
+    // User prepares the predicate public inputs
+    let mut pred_inputs = PredPublicInputs::default();
+    pred_inputs.prepare_pred_checker(&ageface_vk, &ageface_checker);
+
     // Now the user links everything
     let link_vk = LinkVerifyingKey {
         gs_crs,
-        pred_checker: ageface_checker.clone(),
+        pred_inputs,
         com_forest_roots: roots,
         forest_verif_key: forest_vk,
         tree_verif_key: tree_vk,
-        pred_verif_key: ageface_vk,
+        pred_verif_keys: vec![ageface_vk.clone()],
     };
     let link_ctx = LinkProofCtx {
         attrs_com: cred,
         merkle_root: auth_path.root(),
         forest_proof,
         tree_proof,
-        pred_proof: ageface_proof,
+        pred_proofs: vec![ageface_proof],
         vk: link_vk.clone(),
     };
     let link_proof = link_proofs(&mut rng, &link_ctx);
@@ -319,7 +325,12 @@ fn main() {
     // Use the previous link_vk. It's all predetermined values except for the ageface_checker
     // contents
     let mut link_vk = link_vk;
-    link_vk.pred_checker = ageface_checker;
+    // User prepares the predicate public inputs
+    link_vk.pred_inputs = {
+        let mut pred_inputs = PredPublicInputs::default();
+        pred_inputs.prepare_pred_checker(&ageface_vk, &ageface_checker);
+        pred_inputs
+    };
     println!("\tCreated verification key");
     // Bouncer checks the proof
     assert!(verif_link_proof(&link_proof, &link_vk));
