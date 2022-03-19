@@ -9,13 +9,11 @@ use zeronym::proof_data_structures::{
 
 use ark_bls12_381::Bls12_381;
 use ark_crypto_primitives::{
-    commitment::{self, CommitmentScheme},
+    commitment::CommitmentScheme,
     crh::{bowe_hopwood, pedersen, TwoToOneCRH},
 };
 use ark_ec::PairingEngine;
-use ark_ed_on_bls12_381::{
-    constraints::EdwardsVar as JubjubVar, EdwardsParameters, EdwardsProjective as Jubjub,
-};
+use ark_ed_on_bls12_381::{constraints::FqVar, EdwardsParameters};
 use ark_std::{
     io::Write,
     rand::{rngs::StdRng, SeedableRng},
@@ -64,26 +62,25 @@ impl pedersen::Window for Window8x128 {
 }
 
 #[derive(Clone)]
-pub(crate) struct Window17x63;
-impl pedersen::Window for Window17x63 {
+pub(crate) struct Window9x63;
+impl pedersen::Window for Window9x63 {
     const WINDOW_SIZE: usize = 63;
-    const NUM_WINDOWS: usize = 17;
+    const NUM_WINDOWS: usize = 9;
 }
 
 // Pick a pairing engine and a curve defined over E::Fr
 pub(crate) type E = Bls12_381;
 pub(crate) type Fr = <E as PairingEngine>::Fr;
-type FqV = ark_ed_on_bls12_381::constraints::FqVar;
-type P = ark_ed_on_bls12_381::EdwardsParameters;
 
 // Pick a two-to-one CRH
-pub(crate) type H = bowe_hopwood::CRH<EdwardsParameters, Window17x63>;
-pub(crate) type HG = bowe_hopwood::constraints::CRHGadget<P, FqV>;
+pub(crate) type H = bowe_hopwood::CRH<EdwardsParameters, Window9x63>;
+pub(crate) type HG = bowe_hopwood::constraints::CRHGadget<EdwardsParameters, FqVar>;
 
 // Pick a commitment scheme
-pub(crate) type PassportComScheme = commitment::pedersen::Commitment<Jubjub, Window8x128>;
+pub(crate) type PassportComScheme =
+    zeronym::compressed_pedersen::Commitment<EdwardsParameters, Window8x128>;
 pub(crate) type PassportComSchemeG =
-    commitment::pedersen::constraints::CommGadget<Jubjub, JubjubVar, Window8x128>;
+    zeronym::compressed_pedersen::constraints::CommGadget<EdwardsParameters, FqVar, Window8x128>;
 
 pub(crate) type ComTree = zeronym::com_tree::ComTree<Fr, H, PassportComScheme>;
 pub(crate) type ComForest = zeronym::com_forest::ComForest<Fr, H, PassportComScheme>;

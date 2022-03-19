@@ -8,7 +8,7 @@ mod identity_crh;
 pub mod link;
 mod merkle_forest;
 //mod multishow;
-mod compressed_pedersen;
+pub mod compressed_pedersen;
 pub mod pred;
 pub mod proof_data_structures;
 pub mod revealing_multishow;
