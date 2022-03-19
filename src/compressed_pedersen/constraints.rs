@@ -5,9 +5,7 @@ use core::{borrow::Borrow, iter, marker::PhantomData};
 use ark_crypto_primitives::{
     commitment::CommitmentGadget as CommitmentGadgetTrait, crh::pedersen::Window,
 };
-use ark_ec::{
-    twisted_edwards_extended::GroupProjective as TEProjective, ModelParameters, TEModelParameters,
-};
+use ark_ec::{ModelParameters, TEModelParameters};
 use ark_ff::{
     fields::{Field, PrimeField},
     to_bytes, Zero,
@@ -129,10 +127,9 @@ where
     }
 }
 
-/*
 #[cfg(test)]
 mod test {
-    use ark_ed_on_bls12_381::{constraints::EdwardsVar, EdwardsProjective as JubJub, Fq, Fr};
+    use ark_ed_on_bls12_381::{constraints::FqVar, EdwardsParameters, Fq, Fr};
     use ark_std::{test_rng, UniformRand};
 
     use crate::compressed_pedersen::{constraints::CommGadget, Commitment, Randomness};
@@ -157,14 +154,15 @@ mod test {
 
         let rng = &mut test_rng();
 
-        type TestCOMM = Commitment<JubJub, Window>;
-        type TestCOMMGadget = CommGadget<JubJub, EdwardsVar, Window>;
+        type TestCOMM = Commitment<EdwardsParameters, Window>;
+        type TestCOMMGadget = CommGadget<EdwardsParameters, FqVar, Window>;
 
         let randomness = Randomness(Fr::rand(rng));
 
-        let parameters = Commitment::<JubJub, Window>::setup(rng).unwrap();
+        let parameters = Commitment::<EdwardsParameters, Window>::setup(rng).unwrap();
         let primitive_result =
-            Commitment::<JubJub, Window>::commit(&parameters, &input, &randomness).unwrap();
+            Commitment::<EdwardsParameters, Window>::commit(&parameters, &input, &randomness)
+                .unwrap();
 
         let mut input_var = vec![];
         for input_byte in input.iter() {
@@ -191,4 +189,3 @@ mod test {
         assert!(cs.is_satisfied().unwrap());
     }
 }
-*/
