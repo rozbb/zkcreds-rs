@@ -19,42 +19,26 @@ use derivative::Derivative;
 type ConstraintF<P> = <<P as ModelParameters>::BaseField as Field>::BasePrimeField;
 
 #[derive(Derivative)]
-#[derivative(Clone(bound = "P: TEModelParameters, GG: CurveVar<TEProjective<P>, ConstraintF<P>>"))]
-pub struct ParametersVar<P: TEModelParameters, GG: CurveVar<TEProjective<P>, ConstraintF<P>>>
-where
-    for<'a> &'a GG: GroupOpsBounds<'a, TEProjective<P>, GG>,
-{
+#[derivative(Clone(bound = "P: TEModelParameters"))]
+pub struct ParametersVar<P: TEModelParameters> {
     params: Parameters<P>,
-    #[doc(hidden)]
-    _group_var: PhantomData<GG>,
 }
 
 #[derive(Clone, Debug)]
 pub struct RandomnessVar<F: Field>(Vec<UInt8<F>>);
 
-pub struct CommGadget<
-    P: TEModelParameters,
-    F: FieldVar<P::BaseField, ConstraintF<P>>,
-    GG: CurveVar<TEProjective<P>, ConstraintF<P>>,
-    W: Window,
-> where
-    for<'a> &'a GG: GroupOpsBounds<'a, TEProjective<P>, GG>,
-{
+pub struct CommGadget<P: TEModelParameters, F: FieldVar<P::BaseField, ConstraintF<P>>, W: Window> {
     #[doc(hidden)]
     _curve: PhantomData<*const P>,
-    #[doc(hidden)]
-    _group_var: PhantomData<*const GG>,
     #[doc(hidden)]
     _field_var: PhantomData<*const F>,
     #[doc(hidden)]
     _window: PhantomData<*const W>,
 }
 
-impl<P, F, GG, W> CommitmentGadgetTrait<Commitment<P, W>, ConstraintF<P>>
-    for CommGadget<P, F, GG, W>
+impl<P, F, W> CommitmentGadgetTrait<Commitment<P, W>, ConstraintF<P>> for CommGadget<P, F, W>
 where
     P: TEModelParameters,
-    GG: CurveVar<TEProjective<P>, ConstraintF<P>>,
     F: FieldVar<P::BaseField, <P::BaseField as Field>::BasePrimeField>
         + TwoBitLookupGadget<<P::BaseField as Field>::BasePrimeField, TableConstant = P::BaseField>
         + ThreeBitCondNegLookupGadget<
@@ -62,12 +46,11 @@ where
             TableConstant = P::BaseField,
         >,
     W: Window,
-    for<'a> &'a GG: GroupOpsBounds<'a, TEProjective<P>, GG>,
     for<'a> &'a F: FieldOpsBounds<'a, P::BaseField, F>,
     ConstraintF<P>: PrimeField,
 {
     type OutputVar = F;
-    type ParametersVar = ParametersVar<P, GG>;
+    type ParametersVar = ParametersVar<P>;
     type RandomnessVar = RandomnessVar<ConstraintF<P>>;
 
     fn commit(
@@ -113,11 +96,9 @@ where
     }
 }
 
-impl<P, GG> AllocVar<Parameters<P>, ConstraintF<P>> for ParametersVar<P, GG>
+impl<P> AllocVar<Parameters<P>, ConstraintF<P>> for ParametersVar<P>
 where
     P: TEModelParameters,
-    GG: CurveVar<TEProjective<P>, ConstraintF<P>>,
-    for<'a> &'a GG: GroupOpsBounds<'a, TEProjective<P>, GG>,
 {
     fn new_variable<T: Borrow<Parameters<P>>>(
         _cs: impl Into<Namespace<ConstraintF<P>>>,
@@ -125,10 +106,7 @@ where
         _mode: AllocationMode,
     ) -> Result<Self, SynthesisError> {
         let params = f()?.borrow().clone();
-        Ok(ParametersVar {
-            params,
-            _group_var: PhantomData,
-        })
+        Ok(ParametersVar { params })
     }
 }
 
@@ -150,20 +128,15 @@ where
         }
     }
 }
-/*
 
+/*
 #[cfg(test)]
 mod test {
     use ark_ed_on_bls12_381::{constraints::EdwardsVar, EdwardsProjective as JubJub, Fq, Fr};
     use ark_std::{test_rng, UniformRand};
 
-    use crate::{
-        commitment::{
-            pedersen::{constraints::CommGadget, Commitment, Randomness},
-            CommitmentGadget, CommitmentScheme,
-        },
-        crh::pedersen,
-    };
+    use crate::compressed_pedersen::{constraints::CommGadget, Commitment, Randomness};
+    use ark_crypto_primitives::{crh::pedersen, CommitmentGadget, CommitmentScheme};
     use ark_r1cs_std::prelude::*;
     use ark_relations::r1cs::ConstraintSystem;
 
