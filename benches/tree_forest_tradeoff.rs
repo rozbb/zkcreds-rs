@@ -19,7 +19,7 @@ pub fn bench_tree_forest(c: &mut Criterion) {
     let person = NameAndBirthYear::new(&mut rng, b"Andrew", 1992);
     let person_com = person.commit();
 
-    for log2_num_leaves in [32, 48, 64].into_iter().rev() {
+    for log2_num_leaves in [32, 48, 64] {
         //for log2_num_trees in 0..log2_num_leaves {
         for log2_num_trees in 0..16 {
             let tree_height = log2_num_leaves - log2_num_trees;
@@ -63,7 +63,10 @@ pub fn bench_tree_forest(c: &mut Criterion) {
 
             // Benchmark the tree and forest proofs in serial
             c.bench_function(
-                &format!("Proving tree+forest [th={},nt={}]", tree_height, num_trees,),
+                &format!(
+                    "Proving tree+forest [lnl={},th={}]",
+                    log2_num_leaves, tree_height
+                ),
                 |b| {
                     b.iter(|| {
                         auth_path
