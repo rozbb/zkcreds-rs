@@ -50,6 +50,22 @@ where
     _marker: PhantomData<(ConstraintF, AC)>,
 }
 
+impl<ConstraintF, H, AC> Clone for ComTreePath<ConstraintF, H, AC>
+where
+    ConstraintF: PrimeField,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<ConstraintF>,
+    AC: CommitmentScheme,
+    AC::Output: ToConstraintField<ConstraintF>,
+{
+    fn clone(&self) -> ComTreePath<ConstraintF, H, AC> {
+        ComTreePath {
+            path: self.path.clone(),
+            _marker: PhantomData,
+        }
+    }
+}
+
 impl<ConstraintF, H, AC> ComTreePath<ConstraintF, H, AC>
 where
     ConstraintF: PrimeField,

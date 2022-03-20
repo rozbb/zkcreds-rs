@@ -33,6 +33,20 @@ where
     _marker: PhantomData<ConstraintF>,
 }
 
+impl<ConstraintF, H> ComForestRoots<ConstraintF, H>
+where
+    ConstraintF: PrimeField,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<ConstraintF>,
+{
+    pub fn new(num_trees: usize) -> ComForestRoots<ConstraintF, H> {
+        ComForestRoots {
+            roots: vec![H::Output::default(); num_trees],
+            _marker: PhantomData,
+        }
+    }
+}
+
 impl<ConstraintF, H> Clone for ComForestRoots<ConstraintF, H>
 where
     ConstraintF: PrimeField,

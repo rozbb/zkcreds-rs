@@ -13,7 +13,7 @@ pub mod pred;
 pub mod proof_data_structures;
 pub mod revealing_multishow;
 mod sparse_merkle;
-mod test_util;
+pub mod test_util;
 
 pub type Error = Box<dyn ark_std::error::Error>;
 pub use identity_crh::Bytestring;

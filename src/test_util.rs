@@ -90,12 +90,12 @@ pub(crate) type E = Bls12_381;
 pub(crate) type Fr = <E as PairingEngine>::Fr;
 
 // Pick a two-to-one CRH
-pub(crate) type TestTreeH = bowe_hopwood::CRH<EdwardsParameters, Window9x63>;
-pub(crate) type TestTreeHG = bowe_hopwood::constraints::CRHGadget<EdwardsParameters, FqVar>;
+pub type TestTreeH = bowe_hopwood::CRH<EdwardsParameters, Window9x63>;
+pub type TestTreeHG = bowe_hopwood::constraints::CRHGadget<EdwardsParameters, FqVar>;
 
 // Pick a commitment scheme
-pub(crate) type TestComScheme = CompressedPedersenCom<Window8x128>;
-pub(crate) type TestComSchemeG = CompressedPedersenComG<Window8x128>;
+pub type TestComScheme = CompressedPedersenCom<Window8x128>;
+pub type TestComSchemeG = CompressedPedersenComG<Window8x128>;
 //pub(crate) type TestComScheme = PedersenCom<Window8x128>;
 //pub(crate) type TestComSchemeG = PedersenComG<Window8x128>;
 
@@ -109,7 +109,7 @@ lazy_static! {
         };
         TestComScheme::setup(&mut rng).unwrap()
     };
-    pub(crate) static ref MERKLE_CRH_PARAM: <TestTreeH as TwoToOneCRH>::Parameters = {
+    pub static ref MERKLE_CRH_PARAM: <TestTreeH as TwoToOneCRH>::Parameters = {
         let mut rng = {
             let mut seed = [0u8; 32];
             let mut writer = &mut seed[..];
@@ -123,7 +123,7 @@ lazy_static! {
 const NAME_MAXLEN: usize = 16;
 
 #[derive(Clone, Default)]
-pub(crate) struct NameAndBirthYear {
+pub struct NameAndBirthYear {
     nonce: ComNonce<TestComScheme>,
     seed: Fr,
     first_name: [u8; NAME_MAXLEN],
@@ -140,7 +140,7 @@ pub(crate) struct NameAndBirthYearVar {
 
 impl NameAndBirthYear {
     /// Constructs a new `NameAndBirthYear`, sampling a random nonce for commitment
-    pub(crate) fn new<R: Rng>(rng: &mut R, first_name: &[u8], birth_year: u16) -> NameAndBirthYear {
+    pub fn new<R: Rng>(rng: &mut R, first_name: &[u8], birth_year: u16) -> NameAndBirthYear {
         assert!(first_name.len() <= NAME_MAXLEN);
         let mut name_buf = [0u8; 16];
         name_buf[..first_name.len()].copy_from_slice(first_name);
