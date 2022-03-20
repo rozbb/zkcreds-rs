@@ -57,6 +57,7 @@ where
     fn compute_presentation_token(
         &self,
         params: PoseidonParameters<ConstraintF>,
+        epoch: u64,
         ctr: u16,
         nonce: ConstraintF,
     ) -> Result<PresentationToken<ConstraintF>, ArkError>;
@@ -74,6 +75,7 @@ where
     fn compute_presentation_token(
         &self,
         params: PoseidonParameters<ConstraintF>,
+        epoch: u64,
         ctr: u16,
         nonce: ConstraintF,
     ) -> Result<PresentationToken<ConstraintF>, ArkError> {
@@ -81,19 +83,19 @@ where
         let id = self.get_id();
         let seed = self.get_seed();
 
-        // hidden_ctr = PRFₛ(ctr)
+        // hidden_ctr = PRFₛ(epoch || ctr)
         let hidden_ctr: ConstraintF = {
             let hash_input = &[
                 vec![ConstraintF::from(PRF1_DOMAIN_SEP)],
                 seed.to_field_elements().unwrap(),
-                vec![ConstraintF::from(ctr)],
+                vec![ConstraintF::from(epoch), ConstraintF::from(ctr)],
             ]
             .concat();
 
             h.hash(hash_input).unwrap()
         };
 
-        // hidden_line_point = H(ID) + H(nonce)·PRFₛ'(ctr)
+        // hidden_line_point = H(ID) + H(nonce)·PRFₛ'(epoch || ctr)
         let hidden_line_point = {
             // First hash the nonce
             let nonce_hash = {
@@ -117,12 +119,12 @@ where
                 h.hash(&hash_input).unwrap()
             };
 
-            // Now compute PRFₛ'(ctr)
+            // Now compute PRFₛ'(epoch || ctr)
             let prf_value = {
                 let hash_input = [
                     vec![ConstraintF::from(PRF2_DOMAIN_SEP)],
                     seed.to_field_elements().unwrap(),
-                    vec![ConstraintF::from(ctr)],
+                    vec![ConstraintF::from(epoch), ConstraintF::from(ctr)],
                 ]
                 .concat();
 
@@ -153,6 +155,7 @@ where
     fn compute_presentation_token(
         &self,
         params: PoseidonParametersVar<ConstraintF>,
+        epoch: &FpVar<ConstraintF>,
         ctr: &FpVar<ConstraintF>,
         nonce: &FpVar<ConstraintF>,
     ) -> Result<PresentationTokenVar<ConstraintF>, SynthesisError>;
@@ -172,6 +175,7 @@ where
     fn compute_presentation_token(
         &self,
         params: PoseidonParametersVar<ConstraintF>,
+        epoch: &FpVar<ConstraintF>,
         ctr: &FpVar<ConstraintF>,
         nonce: &FpVar<ConstraintF>,
     ) -> Result<PresentationTokenVar<ConstraintF>, SynthesisError> {
@@ -179,11 +183,12 @@ where
         let id = self.get_id()?;
         let seed = self.get_seed()?;
 
-        // hidden_ctr = PRFₛ(ctr)
+        // hidden_ctr = PRFₛ(epoch || ctr)
         let hidden_ctr = {
             let hash_input = [
                 vec![FpVar::Constant(ConstraintF::from(PRF1_DOMAIN_SEP))],
                 seed.to_constraint_field()?,
+                epoch.to_constraint_field()?,
                 ctr.to_constraint_field()?,
             ]
             .concat();
@@ -191,7 +196,7 @@ where
             h.hash(&hash_input)?
         };
 
-        // hidden_line_point = H(ID) + H(nonce)·PRFₛ'(ctr)
+        // hidden_line_point = H(ID) + H(nonce)·PRFₛ'(epoch || ctr)
         let hidden_line_point = {
             // First hash the nonce
             let nonce_hash = {
@@ -215,11 +220,12 @@ where
                 h.hash(&hash_input)?
             };
 
-            // Now compute PRFₛ'(ctr)
+            // Now compute PRFₛ'(epoch || ctr)
             let prf_value = {
                 let hash_input = [
                     vec![FpVar::Constant(ConstraintF::from(PRF2_DOMAIN_SEP))],
                     seed.to_constraint_field()?,
+                    epoch.to_constraint_field()?,
                     ctr.to_constraint_field()?,
                 ]
                 .concat();
@@ -248,6 +254,8 @@ where
     // Public inputs //
     /// The psuedorandom values associated with this presentation
     pub token: PresentationToken<ConstraintF>,
+    // The current show epoch
+    pub epoch: u64,
     // The nonce provided by the server
     pub nonce: ConstraintF,
     /// Number of times this attrribute string can be shown
@@ -278,7 +286,10 @@ where
         // Witness the Poseidon params
         let params = PoseidonParametersVar::new_constant(ns!(cs, "prf param"), &self.params)?;
 
-        // Witness public inputs: nonce, token, and max counter size
+        // Witness public inputs: epoch, nonce, token, and max counter size
+        let epoch = FpVar::<ConstraintF>::new_input(ns!(cs, "epoch"), || {
+            Ok(ConstraintF::from(self.epoch))
+        })?;
         let nonce = FpVar::<ConstraintF>::new_input(ns!(cs, "nonce"), || Ok(self.nonce))?;
         let hidden_ctr =
             FpVar::<ConstraintF>::new_input(ns!(cs, "hidden ctr"), || Ok(self.token.hidden_ctr))?;
@@ -299,7 +310,7 @@ where
         ctr.enforce_cmp(&max_num_presentations, Ordering::Less, false)?;
 
         // Compute the presentation token
-        let computed_token = attrs.compute_presentation_token(params, &ctr, &nonce)?;
+        let computed_token = attrs.compute_presentation_token(params, &epoch, &ctr, &nonce)?;
 
         // Assert the equality of the computed values
         computed_token.hidden_ctr.enforce_equal(&hidden_ctr)?;
@@ -315,6 +326,7 @@ where
     /// This DOES NOT include `attrs`.
     fn public_inputs(&self) -> Vec<ConstraintF> {
         vec![
+            self.epoch.into(),
             self.nonce,
             self.token.hidden_ctr,
             self.token.hidden_line_point,
@@ -365,6 +377,7 @@ mod test {
 
         // Set up the public parameters
         let params = setup_poseidon_params(Curve::Bls381, 3, POSEIDON_WIDTH);
+        let epoch = 5;
         let max_num_presentations: u16 = 128;
         let placeholder_checker = RevealingMultishowChecker {
             params: params.clone(),
@@ -382,12 +395,13 @@ mod test {
         let nonce = Fr::rand(&mut rng);
         let ctr: u16 = 1;
         let token = person
-            .compute_presentation_token(params.clone(), ctr, nonce)
+            .compute_presentation_token(params.clone(), epoch, ctr, nonce)
             .unwrap();
 
         // User constructs a checker for their predicate
         let users_checker = RevealingMultishowChecker {
             token: token.clone(),
+            epoch,
             nonce,
             max_num_presentations,
             ctr,
@@ -401,6 +415,7 @@ mod test {
         // Make the checker with only the public data
         let verifiers_checker = RevealingMultishowChecker {
             token,
+            epoch,
             nonce,
             max_num_presentations,
             params,
