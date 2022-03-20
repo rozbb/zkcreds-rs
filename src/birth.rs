@@ -162,7 +162,7 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{pred::test::AgeChecker, test_util::NameAndBirthYear};
+    use crate::test_util::{AgeChecker, NameAndBirthYear};
 
     use ark_bls12_381::{Bls12_381 as E, Fr};
 

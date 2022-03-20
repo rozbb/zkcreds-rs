@@ -263,47 +263,9 @@ where
 #[cfg(test)]
 pub(crate) mod test {
     use super::*;
-    use crate::test_util::{
-        NameAndBirthYear, NameAndBirthYearVar, TestComScheme, TestComSchemeG, TestTreeH, TestTreeHG,
-    };
+    use crate::test_util::{AgeChecker, NameAndBirthYear, TestTreeH, TestTreeHG};
 
     use ark_bls12_381::{Bls12_381 as E, Fr};
-    use ark_r1cs_std::fields::fp::FpVar;
-
-    // Define a predicate that will tell whether the given `NameAndBirthYear` is at least X years
-    // old. The predicate is: attrs.birth_year ≤ self.threshold_birth_year
-    #[derive(Clone)]
-    pub(crate) struct AgeChecker {
-        pub(crate) threshold_birth_year: Fr,
-    }
-
-    impl PredicateChecker<Fr, NameAndBirthYear, NameAndBirthYearVar, TestComScheme, TestComSchemeG>
-        for AgeChecker
-    {
-        /// Returns whether or not the predicate was satisfied
-        fn pred(
-            self,
-            cs: ConstraintSystemRef<Fr>,
-            attrs: &NameAndBirthYearVar,
-        ) -> Result<(), SynthesisError> {
-            // Witness the threshold year as a public input
-            let threshold_birth_year =
-                FpVar::<Fr>::new_input(
-                    ns!(cs, "threshold year"),
-                    || Ok(self.threshold_birth_year),
-                )?;
-            // Assert that attrs.birth_year ≤ threshold_birth_year
-            attrs
-                .birth_year
-                .enforce_cmp(&threshold_birth_year, core::cmp::Ordering::Less, true)
-        }
-
-        /// This outputs the field elements corresponding to the public inputs of this predicate.
-        /// This DOES NOT include `attrs`.
-        fn public_inputs(&self) -> Vec<Fr> {
-            vec![self.threshold_birth_year]
-        }
-    }
 
     /// Tests a predicate that returns true iff the given `NameAndBirthYear` is at least 21
     #[test]

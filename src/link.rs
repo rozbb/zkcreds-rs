@@ -1,6 +1,6 @@
 use crate::{
     attrs::{Attrs, AttrsVar},
-    com_forest::{ComForest, ComForestRoots},
+    com_forest::ComForestRoots,
     pred::PredicateChecker,
     proof_data_structures::{
         ForestProof, ForestVerifyingKey, PredProof, PredVerifyingKey, TreeProof, TreeVerifyingKey,
@@ -295,9 +295,9 @@ mod test {
         attrs::Attrs,
         com_forest::{gen_forest_memb_crs, test::random_tree, ComForest},
         com_tree::{gen_tree_memb_crs, verify_tree_memb, ComTree},
-        pred::{gen_pred_crs, prove_pred, test::AgeChecker, verify_pred},
+        pred::{gen_pred_crs, prove_pred, verify_pred},
         test_util::{
-            NameAndBirthYear, TestComScheme, TestComSchemeG, TestTreeH, TestTreeHG,
+            AgeChecker, NameAndBirthYear, TestComScheme, TestComSchemeG, TestTreeH, TestTreeHG,
             MERKLE_CRH_PARAM,
         },
     };

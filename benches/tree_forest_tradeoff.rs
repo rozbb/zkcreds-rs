@@ -21,7 +21,7 @@ pub fn bench_tree_forest(c: &mut Criterion) {
 
     for log2_num_leaves in [32, 48, 64].into_iter().rev() {
         //for log2_num_trees in 0..log2_num_leaves {
-        for log2_num_trees in 0..14 {
+        for log2_num_trees in 0..16 {
             let tree_height = log2_num_leaves - log2_num_trees;
             let num_trees = 2usize.pow(log2_num_trees);
 

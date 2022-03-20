@@ -2,6 +2,7 @@ use core::borrow::Borrow;
 
 use crate::{
     attrs::{AccountableAttrs, AccountableAttrsVar, Attrs, AttrsVar},
+    pred::PredicateChecker,
     Bytestring, Com, ComNonce, ComNonceVar, ComParam, ComParamVar,
 };
 
@@ -25,7 +26,7 @@ use ark_r1cs_std::{
 };
 use ark_relations::{
     ns,
-    r1cs::{Namespace, SynthesisError},
+    r1cs::{ConstraintSystemRef, Namespace, SynthesisError},
 };
 use ark_serialize::CanonicalSerialize;
 use ark_std::{
@@ -131,7 +132,7 @@ pub struct NameAndBirthYear {
 }
 
 #[derive(Clone)]
-pub(crate) struct NameAndBirthYearVar {
+pub struct NameAndBirthYearVar {
     nonce: ComNonceVar<TestComScheme, TestComSchemeG, Fr>,
     seed: FpVar<Fr>,
     first_name: Vec<UInt8<Fr>>,
@@ -287,5 +288,37 @@ impl AccountableAttrsVar<Fr, NameAndBirthYear, TestComScheme, TestComSchemeG>
 
     fn get_seed(&self) -> Result<FpVar<Fr>, SynthesisError> {
         Ok(self.seed.clone())
+    }
+}
+
+// Define a predicate that will tell whether the given `NameAndBirthYear` is at least X years
+// old. The predicate is: attrs.birth_year ≤ self.threshold_birth_year
+#[derive(Clone)]
+pub struct AgeChecker {
+    pub threshold_birth_year: Fr,
+}
+
+impl PredicateChecker<Fr, NameAndBirthYear, NameAndBirthYearVar, TestComScheme, TestComSchemeG>
+    for AgeChecker
+{
+    /// Returns whether or not the predicate was satisfied
+    fn pred(
+        self,
+        cs: ConstraintSystemRef<Fr>,
+        attrs: &NameAndBirthYearVar,
+    ) -> Result<(), SynthesisError> {
+        // Witness the threshold year as a public input
+        let threshold_birth_year =
+            FpVar::<Fr>::new_input(ns!(cs, "threshold year"), || Ok(self.threshold_birth_year))?;
+        // Assert that attrs.birth_year ≤ threshold_birth_year
+        attrs
+            .birth_year
+            .enforce_cmp(&threshold_birth_year, core::cmp::Ordering::Less, true)
+    }
+
+    /// This outputs the field elements corresponding to the public inputs of this predicate.
+    /// This DOES NOT include `attrs`.
+    fn public_inputs(&self) -> Vec<Fr> {
+        vec![self.threshold_birth_year]
     }
 }
