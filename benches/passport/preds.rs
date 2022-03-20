@@ -1,4 +1,4 @@
-use crate::{
+use crate::passport::{
     params::{Fr, PassportComScheme, PassportComSchemeG, HASH_LEN},
     passport_info::{PersonalInfo, PersonalInfoVar},
 };

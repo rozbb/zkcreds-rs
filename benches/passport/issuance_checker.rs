@@ -1,4 +1,4 @@
-use crate::{
+use crate::passport::{
     ark_sha256::Sha256Gadget,
     params::{
         Fr, PassportComScheme, PassportComSchemeG, PredProof, DATE_LEN, DG1_HASH_OFFSET, DG1_LEN,

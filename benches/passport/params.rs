@@ -1,4 +1,4 @@
-use crate::passport_info::{PersonalInfo, PersonalInfoVar};
+use crate::passport::passport_info::{PersonalInfo, PersonalInfoVar};
 
 use zeronym::proof_data_structures::{
     ForestProvingKey as ZeronymForestPk, ForestVerifyingKey as ZeronymForestVk,

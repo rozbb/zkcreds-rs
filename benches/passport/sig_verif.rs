@@ -1,4 +1,4 @@
-use crate::passport_dump::PassportDump;
+use crate::passport::passport_dump::PassportDump;
 use rsa::{padding::PaddingScheme, pkcs8::FromPublicKey, Hash, PublicKey, RsaPublicKey};
 use x509_parser::parse_x509_certificate;
 

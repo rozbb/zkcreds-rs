@@ -146,6 +146,26 @@ where
     pub(crate) _marker: PhantomData<(A, AV, AC, ACG, H, HG)>,
 }
 
+impl<E, A, AV, AC, ACG, H, HG> Clone for PredProof<E, A, AV, AC, ACG, H, HG>
+where
+    E: PairingEngine,
+    A: Attrs<E::Fr, AC>,
+    AV: AttrsVar<E::Fr, A, AC, ACG>,
+    AC: CommitmentScheme,
+    AC::Output: ToConstraintField<E::Fr>,
+    ACG: CommitmentGadget<AC, E::Fr>,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<E::Fr>,
+    HG: TwoToOneCRHGadget<H, E::Fr>,
+{
+    fn clone(&self) -> Self {
+        PredProof {
+            proof: self.proof.clone(),
+            _marker: PhantomData,
+        }
+    }
+}
+
 //
 // Birth predicate data structures
 //
@@ -350,6 +370,25 @@ where
     pub(crate) _marker: PhantomData<(A, AC, ACG, H, HG)>,
 }
 
+impl<E, A, AC, ACG, H, HG> Clone for TreeProof<E, A, AC, ACG, H, HG>
+where
+    E: PairingEngine,
+    A: Attrs<E::Fr, AC>,
+    AC: CommitmentScheme,
+    AC::Output: ToConstraintField<E::Fr>,
+    ACG: CommitmentGadget<AC, E::Fr>,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<E::Fr>,
+    HG: TwoToOneCRHGadget<H, E::Fr>,
+{
+    fn clone(&self) -> Self {
+        TreeProof {
+            proof: self.proof.clone(),
+            _marker: PhantomData,
+        }
+    }
+}
+
 //
 // Merkle forest membership data structures
 //
@@ -458,4 +497,23 @@ where
 {
     pub(crate) proof: Groth16Proof<E>,
     pub(crate) _marker: PhantomData<(A, AC, ACG, H, HG)>,
+}
+
+impl<E, A, AC, ACG, H, HG> Clone for ForestProof<E, A, AC, ACG, H, HG>
+where
+    E: PairingEngine,
+    A: Attrs<E::Fr, AC>,
+    AC: CommitmentScheme,
+    AC::Output: ToConstraintField<E::Fr>,
+    ACG: CommitmentGadget<AC, E::Fr>,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<E::Fr>,
+    HG: TwoToOneCRHGadget<H, E::Fr>,
+{
+    fn clone(&self) -> Self {
+        ForestProof {
+            proof: self.proof.clone(),
+            _marker: PhantomData,
+        }
+    }
 }

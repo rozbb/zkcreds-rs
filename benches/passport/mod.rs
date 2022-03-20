@@ -6,17 +6,17 @@ mod passport_info;
 mod preds;
 mod sig_verif;
 
-use crate::{
+use crate::passport::{
     issuance_checker::{IssuanceReq, PassportHashChecker},
     params::{
         ComForest, ComTree, ComTreePath, ForestProvingKey, ForestVerifyingKey, PassportComScheme,
         PassportComSchemeG, PredProof, PredProvingKey, PredVerifyingKey, TreeProvingKey,
-        TreeVerifyingKey, H, HG, MERKLE_CRH_PARAM, SIG_HASH_LEN, STATE_ID_LEN,
+        TreeVerifyingKey, H, HG, MERKLE_CRH_PARAM, STATE_ID_LEN,
     },
     passport_dump::PassportDump,
     passport_info::{PersonalInfo, PersonalInfoVar},
     preds::AgeFaceExpiryChecker,
-    sig_verif::{load_usa_pubkey, IssuerPubkey},
+    sig_verif::load_usa_pubkey,
 };
 
 use zeronym::{
@@ -24,7 +24,7 @@ use zeronym::{
     link::{
         link_proofs, verif_link_proof, GsCrs, LinkProofCtx, LinkVerifyingKey, PredPublicInputs,
     },
-    pred::{prove_birth, prove_pred, verify_birth, verify_pred},
+    pred::{prove_birth, prove_pred, verify_birth},
     Com,
 };
 
@@ -33,6 +33,7 @@ use std::fs::File;
 use ark_bls12_381::{Bls12_381, Fr};
 use ark_ff::UniformRand;
 use ark_std::rand::Rng;
+use criterion::Criterion;
 
 const TREE_HEIGHT: u32 = 32;
 const FOREST_SIZE: usize = 10;
@@ -45,7 +46,7 @@ const TWENTY_ONE_YEARS_AGO: u32 = TODAY - 210000;
 const ISSUING_STATE: [u8; STATE_ID_LEN] = *b"USA";
 
 fn load_dump() -> PassportDump {
-    let file = File::open("examples/passport/full_dump.json").unwrap();
+    let file = File::open("benches/passport/full_dump.json").unwrap();
     serde_json::from_reader(file).unwrap()
 }
 
@@ -153,15 +154,24 @@ fn init_issuer<R: Rng>(rng: &mut R) -> IssuerState {
 }
 
 /// An issuer takes an issuance request and validates it
-fn issue(state: &mut IssuerState, birth_vk: &PredVerifyingKey, req: &IssuanceReq) -> ComTreePath {
-    // Check that the hash was computed correctly
+fn issue(
+    c: &mut Criterion,
+    state: &mut IssuerState,
+    birth_vk: &PredVerifyingKey,
+    req: &IssuanceReq,
+) -> ComTreePath {
+    // Check that the hash was computed correctly and the hash's signature is correct
     let hash_checker =
         PassportHashChecker::from_issuance_req(req, ISSUING_STATE, TODAY, MAX_VALID_YEARS);
-    assert!(verify_birth(birth_vk, &req.hash_proof, &hash_checker, &req.attrs_com).unwrap());
-
-    // Now check that the signature of the hash is correct
     let sig_pubkey = load_usa_pubkey();
-    assert!(sig_pubkey.verify(&req.sig, &req.econtent_hash));
+    c.bench_function("Passport: verifying birth+sig", |b| {
+        b.iter(|| {
+            assert!(
+                verify_birth(birth_vk, &req.hash_proof, &hash_checker, &req.attrs_com).unwrap()
+            );
+            assert!(sig_pubkey.verify(&req.sig, &req.econtent_hash));
+        })
+    });
 
     // Insert
     state.com_forest.trees[state.next_free_tree].insert(state.next_free_leaf, &req.attrs_com)
@@ -170,6 +180,7 @@ fn issue(state: &mut IssuerState, birth_vk: &PredVerifyingKey, req: &IssuanceReq
 /// With their passport, a user constructs a `PersonalInfo` struct and requests issuance
 fn user_req_issuance<R: Rng>(
     rng: &mut R,
+    c: &mut Criterion,
     issuance_pk: &PredProvingKey,
 ) -> (PersonalInfo, IssuanceReq) {
     // Load the passport and parse it into a `PersonalInfo` struct
@@ -182,6 +193,9 @@ fn user_req_issuance<R: Rng>(
         PassportHashChecker::from_passport(&dump, ISSUING_STATE, TODAY, MAX_VALID_YEARS);
 
     // Prove the passport hash is correctly computed
+    c.bench_function("Passport: proving birth", |b| {
+        b.iter(|| prove_birth(rng, issuance_pk, hash_checker.clone(), my_info.clone()).unwrap())
+    });
     let hash_proof = prove_birth(rng, issuance_pk, hash_checker, my_info.clone()).unwrap();
 
     // Now put together the issuance request
@@ -208,12 +222,25 @@ fn get_ageface_checker(info: &PersonalInfo) -> AgeFaceExpiryChecker {
 /// User constructs a predicate proof for their age and face
 fn user_prove_ageface<R: Rng>(
     rng: &mut R,
+    c: &mut Criterion,
     ageface_pk: &PredProvingKey,
     ageface_checker: &AgeFaceExpiryChecker,
     info: &PersonalInfo,
     auth_path: &ComTreePath,
 ) -> PredProof {
     // Compute the proof wrt the public parameters
+    c.bench_function("Passport: proving age+face", |b| {
+        b.iter(|| {
+            prove_pred(
+                rng,
+                ageface_pk,
+                ageface_checker.clone(),
+                info.clone(),
+                auth_path,
+            )
+            .unwrap();
+        })
+    });
     let proof = prove_pred(
         rng,
         ageface_pk,
@@ -236,7 +263,7 @@ fn user_prove_ageface<R: Rng>(
     proof
 }
 
-fn main() {
+pub fn bench_passport(c: &mut Criterion) {
     let mut rng = ark_std::test_rng();
 
     // Generate all the Groth16 and Groth-Sahai proving and verifying keys
@@ -251,12 +278,12 @@ fn main() {
     let mut issuer_state = init_issuer(&mut rng);
 
     // The user dumps their passport and makes an issuance request
-    let (personal_info, issuance_req) = user_req_issuance(&mut rng, &issuance_pk);
+    let (personal_info, issuance_req) = user_req_issuance(&mut rng, c, &issuance_pk);
     let cred = personal_info.commit();
     println!("USER: Requested issuance");
 
     // The issuer validates the passport and issues the credential
-    let auth_path = issue(&mut issuer_state, &issuance_vk, &issuance_req);
+    let auth_path = issue(c, &mut issuer_state, &issuance_vk, &issuance_req);
     println!("ISSUER: Issuance request granted");
 
     //
@@ -268,6 +295,7 @@ fn main() {
     let ageface_checker = get_ageface_checker(&personal_info);
     let ageface_proof = user_prove_ageface(
         &mut rng,
+        c,
         &ageface_pk,
         &ageface_checker,
         &personal_info,
@@ -277,12 +305,29 @@ fn main() {
     // User gets all the roots from the issuer
     let roots = issuer_state.com_forest.roots();
     // Now user proves tree and forest membership
+
+    c.bench_function("Passport: proving tree", |b| {
+        b.iter(|| {
+            auth_path
+                .prove_membership(&mut rng, &tree_pk, &*MERKLE_CRH_PARAM, cred)
+                .unwrap()
+        })
+    });
     let tree_proof = auth_path
         .prove_membership(&mut rng, &tree_pk, &*MERKLE_CRH_PARAM, cred)
         .unwrap();
+
+    c.bench_function("Passport: proving forest", |b| {
+        b.iter(|| {
+            roots
+                .prove_membership(&mut rng, &forest_pk, auth_path.root(), cred)
+                .unwrap()
+        })
+    });
     let forest_proof = roots
         .prove_membership(&mut rng, &forest_pk, auth_path.root(), cred)
         .unwrap();
+
     println!("\tComputed tree and forest memebership proofs");
     // User prepares the predicate public inputs
     let mut pred_inputs = PredPublicInputs::default();
@@ -305,6 +350,9 @@ fn main() {
         pred_proofs: vec![ageface_proof],
         vk: link_vk.clone(),
     };
+    c.bench_function("Passport: proving linkage", |b| {
+        b.iter(|| link_proofs(&mut rng, &link_ctx))
+    });
     let link_proof = link_proofs(&mut rng, &link_ctx);
     println!("\tLinked proofs");
 
@@ -335,7 +383,11 @@ fn main() {
     };
     println!("\tCreated verification key");
     // Bouncer checks the proof
-    assert!(verif_link_proof(&link_proof, &link_vk));
+    c.bench_function("Passport: verifying linkage", |b| {
+        b.iter(|| assert!(verif_link_proof(&link_proof, &link_vk)))
+    });
 
     println!("The bouncer unlatches the velvet rope. The user walks through.");
+
+    c.final_summary();
 }

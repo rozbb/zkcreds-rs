@@ -1,4 +1,4 @@
-use crate::params::HASH_LEN;
+use crate::passport::params::HASH_LEN;
 
 use serde::{de::Error as SError, Deserialize, Deserializer};
 use sha2::{Digest, Sha256};
@@ -42,7 +42,7 @@ where
 /// the biometrics
 impl std::fmt::Debug for PassportDump {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        use crate::params::*;
+        use crate::passport::params::*;
 
         f.debug_struct("PassportDump")
             .field(
