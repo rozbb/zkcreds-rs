@@ -35,8 +35,10 @@ use ark_ff::UniformRand;
 use ark_std::rand::Rng;
 use criterion::Criterion;
 
-const TREE_HEIGHT: u32 = 32;
-const FOREST_SIZE: usize = 10;
+const LOG2_NUM_LEAVES: u32 = 32;
+const LOG2_NUM_TREES: u32 = 10;
+const TREE_HEIGHT: u32 = LOG2_NUM_LEAVES - LOG2_NUM_TREES;
+const NUM_TREES: usize = 2usize.pow(LOG2_NUM_TREES);
 
 // Sample parameters for passport validation. All passports must expire some time after TODAY, and
 // be issued by ISSUING_STATE
@@ -59,7 +61,7 @@ fn rand_tree<R: Rng>(rng: &mut R) -> ComTree {
 }
 
 fn rand_forest<R: Rng>(rng: &mut R) -> ComForest {
-    let trees = (0..FOREST_SIZE).map(|_| rand_tree(rng)).collect();
+    let trees = (0..NUM_TREES).map(|_| rand_tree(rng)).collect();
     ComForest { trees }
 }
 
@@ -134,7 +136,7 @@ fn gen_forest_crs<R: Rng>(rng: &mut R) -> (ForestProvingKey, ForestVerifyingKey)
         PassportComSchemeG,
         H,
         HG,
-    >(rng, FOREST_SIZE)
+    >(rng, NUM_TREES)
     .unwrap();
 
     (pk.clone(), pk.prepare_verifying_key())
@@ -143,7 +145,7 @@ fn gen_forest_crs<R: Rng>(rng: &mut R) -> (ForestProvingKey, ForestVerifyingKey)
 /// Makes a random new issuer state
 fn init_issuer<R: Rng>(rng: &mut R) -> IssuerState {
     let com_forest = rand_forest(rng);
-    let next_free_tree = rng.gen_range(0..FOREST_SIZE);
+    let next_free_tree = rng.gen_range(0..NUM_TREES);
     let next_free_leaf = rng.gen_range(0..2u64.pow(TREE_HEIGHT - 1));
 
     IssuerState {

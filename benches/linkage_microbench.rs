@@ -6,19 +6,15 @@ use zeronym::{
         link_proofs, verif_link_proof, GsCrs, LinkProofCtx, LinkVerifyingKey, PredPublicInputs,
     },
     pred::{gen_pred_crs, prove_pred},
-    revealing_multishow::{setup_poseidon_params, MultishowableAttrs, RevealingMultishowChecker},
     test_util::{
-        AgeChecker, NameAndBirthYear, NameAndBirthYearVar, TestComScheme, TestComSchemeG,
-        TestTreeH, TestTreeHG, MERKLE_CRH_PARAM,
+        AgeChecker, NameAndBirthYear, TestComScheme, TestComSchemeG, TestTreeH, TestTreeHG,
+        MERKLE_CRH_PARAM,
     },
 };
 
 use ark_bls12_381::{Bls12_381 as E, Fr};
-use ark_ff::UniformRand;
-use arkworks_utils::Curve;
 use criterion::Criterion;
 
-const POSEIDON_WIDTH: u8 = 5;
 const EIGHTEEN_YEARS_AGO: u16 = 2004;
 const LOG2_NUM_LEAVES: u32 = 32;
 const LOG2_NUM_TREES: u32 = 10;
