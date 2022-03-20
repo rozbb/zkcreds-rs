@@ -12,6 +12,9 @@ use tree_forest_tradeoff::bench_tree_forest;
 
 criterion_group!(
     benches,
-    bench_linkage /*bench_tree_forest, bench_multishow_age, bench_passport*/
+    bench_linkage,
+    bench_tree_forest,
+    bench_multishow_age,
+    bench_passport
 );
 criterion_main!(benches);
