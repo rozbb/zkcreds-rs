@@ -1,14 +1,10 @@
-//pub mod api;
 pub mod attrs;
 pub mod birth;
 pub mod com_forest;
 pub mod com_tree;
-mod common;
+pub mod compressed_pedersen;
 mod identity_crh;
 pub mod link;
-mod merkle_forest;
-//mod multishow;
-pub mod compressed_pedersen;
 pub mod pred;
 pub mod proof_data_structures;
 pub mod revealing_multishow;
