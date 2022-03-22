@@ -11,7 +11,7 @@ use ark_ff::{
     to_bytes, Zero,
 };
 use ark_r1cs_std::{groups::curves::twisted_edwards::AffineVar, prelude::*};
-use ark_relations::r1cs::{Namespace, SynthesisError};
+use ark_relations::r1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use derivative::Derivative;
 
 type ConstraintF<P> = <<P as ModelParameters>::BaseField as Field>::BasePrimeField;
@@ -124,6 +124,20 @@ where
             AllocationMode::Input => UInt8::new_input_vec(cs, &r).map(Self),
             AllocationMode::Witness => UInt8::new_witness_vec(cs, &r).map(Self),
         }
+    }
+}
+
+impl<F: PrimeField> R1CSVar<F> for RandomnessVar<F> {
+    type Value = F;
+
+    fn cs(&self) -> ConstraintSystemRef<F> {
+        self.0.cs()
+    }
+
+    fn value(&self) -> Result<Self::Value, SynthesisError> {
+        // We don't have the type info to convert our bytes back into a P::ScalarField. P isn't in
+        // scope here!
+        unimplemented!()
     }
 }
 
