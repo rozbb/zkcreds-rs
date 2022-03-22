@@ -56,7 +56,7 @@ const TWENTY_ONE_YEARS_AGO: u32 = TODAY - 210000;
 const ISSUING_STATE: [u8; STATE_ID_LEN] = *b"USA";
 
 fn load_dump() -> PassportDump {
-    let file = File::open("benches/passport/full_dump.json").unwrap();
+    let file = File::open("benches/passport/michaels_passport.json").unwrap();
     serde_json::from_reader(file).unwrap()
 }
 
