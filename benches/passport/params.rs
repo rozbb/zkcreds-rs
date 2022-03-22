@@ -1,9 +1,10 @@
 use crate::passport::passport_info::{PersonalInfo, PersonalInfoVar};
 
 use zeronym::proof_data_structures::{
-    ForestProvingKey as ZeronymForestPk, ForestVerifyingKey as ZeronymForestVk,
-    PredProof as ZeronymPredProof, PredProvingKey as ZeronymPredPk,
-    PredVerifyingKey as ZeronymPredVk, TreeProvingKey as ZeronymTreePk,
+    ForestProof as ZeronymForestProof, ForestProvingKey as ZeronymForestPk,
+    ForestVerifyingKey as ZeronymForestVk, PredProof as ZeronymPredProof,
+    PredProvingKey as ZeronymPredPk, PredVerifyingKey as ZeronymPredVk,
+    TreeProof as ZeronymTreeProof, TreeProvingKey as ZeronymTreePk,
     TreeVerifyingKey as ZeronymTreeVk,
 };
 
@@ -123,6 +124,10 @@ pub(crate) type PredProof = ZeronymPredProof<
     H,
     HG,
 >;
+pub(crate) type TreeProof =
+    ZeronymTreeProof<Bls12_381, PersonalInfo, PassportComScheme, PassportComSchemeG, H, HG>;
+pub(crate) type ForestProof =
+    ZeronymForestProof<Bls12_381, PersonalInfo, PassportComScheme, PassportComSchemeG, H, HG>;
 
 // Set params
 lazy_static! {
