@@ -58,7 +58,7 @@ pub(crate) const PRE_ECONTENT_HASH_OFFSET: usize = 72;
 pub(crate) struct Window9x128;
 impl pedersen::Window for Window9x128 {
     const WINDOW_SIZE: usize = 128;
-    const NUM_WINDOWS: usize = 9;
+    const NUM_WINDOWS: usize = 11;
 }
 
 #[derive(Clone)]

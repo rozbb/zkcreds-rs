@@ -10,7 +10,7 @@ use core::borrow::Borrow;
 
 use sha2::{Digest, Sha256};
 use zeronym::{
-    attrs::{Attrs, AttrsVar},
+    attrs::{AccountableAttrs, AccountableAttrsVar, Attrs, AttrsVar},
     Bytestring, ComNonce, ComNonceVar, ComParam, ComParamVar,
 };
 
@@ -42,6 +42,7 @@ impl Biometrics {
 #[derive(Clone)]
 pub(crate) struct PersonalInfo {
     nonce: ComNonce<PassportComScheme>,
+    pub(crate) seed: Fr,
     pub(crate) nationality: [u8; STATE_ID_LEN],
     pub(crate) name: [u8; NAME_LEN],
     pub(crate) dob: u32,
@@ -53,6 +54,7 @@ impl Default for PersonalInfo {
     fn default() -> PersonalInfo {
         PersonalInfo {
             nonce: ComNonce::<PassportComScheme>::default(),
+            seed: Fr::default(),
             nationality: [0u8; STATE_ID_LEN],
             name: [0u8; NAME_LEN],
             dob: 0u32,
@@ -66,6 +68,7 @@ impl Default for PersonalInfo {
 #[derive(Clone)]
 pub(crate) struct PersonalInfoVar {
     nonce: ComNonceVar<PassportComScheme, PassportComSchemeG, Fr>,
+    pub(crate) seed: FpVar<Fr>,
     pub(crate) nationality: Bytestring<Fr>,
     pub(crate) name: Bytestring<Fr>,
     pub(crate) dob: FpVar<Fr>,
@@ -118,9 +121,11 @@ impl PersonalInfo {
         biometrics: Biometrics,
     ) -> PersonalInfo {
         let nonce = ComNonce::<PassportComScheme>::rand(rng);
+        let seed = Fr::rand(rng);
 
         PersonalInfo {
             nonce,
+            seed,
             nationality,
             name,
             dob,
@@ -141,6 +146,7 @@ impl PersonalInfo {
         // Create an empty info struct that we'll fill with data
         let mut info = PersonalInfo {
             nonce: ComNonce::<PassportComScheme>::rand(rng),
+            seed: Fr::rand(rng),
             ..Default::default()
         };
 
@@ -178,6 +184,7 @@ impl Attrs<Fr, PassportComScheme> for PersonalInfo {
         let passport_expiry = Fr::from(self.passport_expiry);
         let biometric_hash = self.biometrics.hash();
         to_bytes![
+            self.seed,
             self.nationality,
             self.name,
             dob,
@@ -196,9 +203,23 @@ impl Attrs<Fr, PassportComScheme> for PersonalInfo {
     }
 }
 
+impl AccountableAttrs<Fr, PassportComScheme> for PersonalInfo {
+    type Id = Vec<u8>;
+    type Seed = Fr;
+
+    fn get_id(&self) -> Vec<u8> {
+        self.name.to_vec()
+    }
+
+    fn get_seed(&self) -> Fr {
+        self.seed
+    }
+}
+
 impl ToBytesGadget<Fr> for PersonalInfoVar {
     fn to_bytes(&self) -> Result<Vec<UInt8<Fr>>, SynthesisError> {
         Ok([
+            self.seed.to_bytes()?,
             self.nationality.0.to_bytes()?,
             self.name.0.to_bytes()?,
             self.dob.to_bytes()?,
@@ -226,6 +247,7 @@ impl AllocVar<PersonalInfo, Fr> for PersonalInfoVar {
         // Unpack the given attributes
         let PersonalInfo {
             ref nonce,
+            ref seed,
             ref nationality,
             ref name,
             ref dob,
@@ -246,6 +268,7 @@ impl AllocVar<PersonalInfo, Fr> for PersonalInfoVar {
         )?;
 
         // Witness all the other variables
+        let seed = FpVar::<Fr>::new_variable(ns!(cs, "seed"), || Ok(seed), mode)?;
         let nationality =
             Bytestring::new_variable(ns!(cs, "nationality"), || Ok(nationality.to_vec()), mode)?;
         let name = Bytestring::new_variable(ns!(cs, "name"), || Ok(name.to_vec()), mode)?;
@@ -261,6 +284,7 @@ impl AllocVar<PersonalInfo, Fr> for PersonalInfoVar {
         // Return the witnessed values
         Ok(PersonalInfoVar {
             nonce,
+            seed,
             nationality,
             name,
             dob,
@@ -287,5 +311,20 @@ impl AttrsVar<Fr, PersonalInfo, PassportComScheme, PassportComSchemeG> for Perso
         &self,
     ) -> Result<ComNonceVar<PassportComScheme, PassportComSchemeG, Fr>, SynthesisError> {
         Ok(self.nonce.clone())
+    }
+}
+
+impl AccountableAttrsVar<Fr, PersonalInfo, PassportComScheme, PassportComSchemeG>
+    for PersonalInfoVar
+{
+    type Id = Bytestring<Fr>;
+    type Seed = FpVar<Fr>;
+
+    fn get_id(&self) -> Result<Bytestring<Fr>, SynthesisError> {
+        Ok(self.name.clone())
+    }
+
+    fn get_seed(&self) -> Result<FpVar<Fr>, SynthesisError> {
+        Ok(self.seed.clone())
     }
 }

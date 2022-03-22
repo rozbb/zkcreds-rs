@@ -15,7 +15,7 @@ use crate::passport::{
     },
     passport_dump::PassportDump,
     passport_info::{PersonalInfo, PersonalInfoVar},
-    preds::AgeFaceExpiryChecker,
+    preds::{AgeAndExpiryChecker, AgeFaceExpiryChecker},
     sig_verif::load_usa_pubkey,
 };
 
@@ -25,6 +25,7 @@ use zeronym::{
         link_proofs, verif_link_proof, GsCrs, LinkProofCtx, LinkVerifyingKey, PredPublicInputs,
     },
     pred::{prove_birth, prove_pred, verify_birth},
+    revealing_multishow::{setup_poseidon_params, MultishowableAttrs, RevealingMultishowChecker},
     Com,
 };
 
@@ -33,6 +34,7 @@ use std::fs::File;
 use ark_bls12_381::{Bls12_381, Fr};
 use ark_ff::UniformRand;
 use ark_std::rand::Rng;
+use arkworks_utils::Curve;
 use criterion::Criterion;
 
 const LOG2_NUM_LEAVES: u32 = 32;
@@ -40,10 +42,13 @@ const LOG2_NUM_TREES: u32 = 10;
 const TREE_HEIGHT: u32 = LOG2_NUM_LEAVES - LOG2_NUM_TREES;
 const NUM_TREES: usize = 2usize.pow(LOG2_NUM_TREES);
 
+const POSEIDON_WIDTH: u8 = 5;
+
 // Sample parameters for passport validation. All passports must expire some time after TODAY, and
 // be issued by ISSUING_STATE
 const TODAY: u32 = 20220101u32;
 const MAX_VALID_YEARS: u32 = 10u32;
+const EIGHTEEN_YEARS_AGO: u32 = TODAY - 180000;
 const TWENTY_ONE_YEARS_AGO: u32 = TODAY - 210000;
 const ISSUING_STATE: [u8; STATE_ID_LEN] = *b"USA";
 
@@ -105,6 +110,44 @@ fn gen_ageface_crs<R: Rng>(rng: &mut R) -> (PredProvingKey, PredVerifyingKey) {
         H,
         HG,
     >(rng, AgeFaceExpiryChecker::default())
+    .unwrap();
+
+    (pk.clone(), pk.prepare_verifying_key())
+}
+
+fn gen_age_crs<R: Rng>(rng: &mut R) -> (PredProvingKey, PredVerifyingKey) {
+    // Generate the hash checker circuit's CRS
+    let pk = zeronym::pred::gen_pred_crs::<
+        _,
+        _,
+        Bls12_381,
+        PersonalInfo,
+        PersonalInfoVar,
+        PassportComScheme,
+        PassportComSchemeG,
+        H,
+        HG,
+    >(rng, AgeAndExpiryChecker::default())
+    .unwrap();
+
+    (pk.clone(), pk.prepare_verifying_key())
+}
+
+fn gen_multishow_crs<R: Rng>(rng: &mut R) -> (PredProvingKey, PredVerifyingKey) {
+    let checker = get_multishow_checker(&PersonalInfo::default());
+
+    // Generate the hash checker circuit's CRS
+    let pk = zeronym::pred::gen_pred_crs::<
+        _,
+        _,
+        Bls12_381,
+        PersonalInfo,
+        PersonalInfoVar,
+        PassportComScheme,
+        PassportComSchemeG,
+        H,
+        HG,
+    >(rng, checker)
     .unwrap();
 
     (pk.clone(), pk.prepare_verifying_key())
@@ -211,13 +254,42 @@ fn user_req_issuance<R: Rng>(
     (my_info, req)
 }
 
-/// Returns an instance of an `AgeFaceChecker`. Public parameters are date and the authenticating
-/// user's biometric hash
+/// Returns an instance of an `AgeFaceExpiryChecker`. Public parameters are DOB threshold, expiry
+/// threshold, and the authenticating user's biometric hash
 fn get_ageface_checker(info: &PersonalInfo) -> AgeFaceExpiryChecker {
     AgeFaceExpiryChecker {
         threshold_dob: Fr::from(TWENTY_ONE_YEARS_AGO),
         threshold_expiry: Fr::from(TODAY),
         face_hash: info.biometrics_hash(),
+    }
+}
+
+/// Returns an instance of an `AgeAndExpiryChecker`. Public parameters are the DOB and expiry dates
+fn get_age_checker() -> AgeAndExpiryChecker {
+    AgeAndExpiryChecker {
+        threshold_dob: Fr::from(EIGHTEEN_YEARS_AGO),
+        threshold_expiry: Fr::from(TODAY),
+    }
+}
+
+/// Returns an instance of an `AgeAndExpiryChecker`. Public parameters are the DOB and expiry dates
+fn get_multishow_checker(info: &PersonalInfo) -> RevealingMultishowChecker<Fr> {
+    let poseidon_params = setup_poseidon_params(Curve::Bls381, 3, POSEIDON_WIDTH);
+    let max_num_presentations: u16 = 128;
+    let nonce = Fr::from(1337u32);
+    let epoch = 5;
+    let ctr: u16 = 1;
+    let token = info
+        .compute_presentation_token(poseidon_params.clone(), epoch, ctr, nonce)
+        .unwrap();
+
+    RevealingMultishowChecker {
+        token,
+        epoch,
+        nonce,
+        max_num_presentations,
+        ctr,
+        params: poseidon_params,
     }
 }
 
@@ -265,12 +337,83 @@ fn user_prove_ageface<R: Rng>(
     proof
 }
 
+fn user_prove_age<R: Rng>(
+    rng: &mut R,
+    c: &mut Criterion,
+    age_pk: &PredProvingKey,
+    age_checker: &AgeAndExpiryChecker,
+    info: &PersonalInfo,
+    auth_path: &ComTreePath,
+) -> PredProof {
+    // Compute the proof wrt the public parameters
+    c.bench_function("Passport: proving age", |b| {
+        b.iter(|| {
+            prove_pred(rng, age_pk, age_checker.clone(), info.clone(), auth_path).unwrap();
+        })
+    });
+    let age_proof = prove_pred(rng, age_pk, age_checker.clone(), info.clone(), auth_path).unwrap();
+    // DEBUG: Assert that the proof verifies
+    assert!(zeronym::pred::verify_pred(
+        &age_pk.prepare_verifying_key(),
+        &age_proof,
+        age_checker,
+        &info.commit(),
+        &auth_path.root(),
+    )
+    .unwrap());
+
+    age_proof
+}
+
+fn user_prove_multishow<R: Rng>(
+    rng: &mut R,
+    c: &mut Criterion,
+    multishow_pk: &PredProvingKey,
+    multishow_checker: &RevealingMultishowChecker<Fr>,
+    info: &PersonalInfo,
+    auth_path: &ComTreePath,
+) -> PredProof {
+    c.bench_function("Passport: proving multishow", |b| {
+        b.iter(|| {
+            prove_pred(
+                rng,
+                multishow_pk,
+                multishow_checker.clone(),
+                info.clone(),
+                auth_path,
+            )
+            .unwrap();
+        })
+    });
+    let multishow_proof = prove_pred(
+        rng,
+        multishow_pk,
+        multishow_checker.clone(),
+        info.clone(),
+        auth_path,
+    )
+    .unwrap();
+    // DEBUG: Assert that the proof verifies
+    assert!(zeronym::pred::verify_pred(
+        &multishow_pk.prepare_verifying_key(),
+        &multishow_proof,
+        multishow_checker,
+        &info.commit(),
+        &auth_path.root(),
+    )
+    .unwrap());
+
+    multishow_proof
+}
+
 pub fn bench_passport(c: &mut Criterion) {
     let mut rng = ark_std::test_rng();
 
     // Generate all the Groth16 and Groth-Sahai proving and verifying keys
     let (issuance_pk, issuance_vk) = gen_issuance_crs(&mut rng);
     let (ageface_pk, ageface_vk) = gen_ageface_crs(&mut rng);
+    let (age_pk, age_vk) = gen_age_crs(&mut rng);
+    let (multishow_pk, multishow_vk) = gen_multishow_crs(&mut rng);
     let (tree_pk, tree_vk) = gen_tree_crs(&mut rng);
     let (forest_pk, forest_vk) = gen_forest_crs(&mut rng);
     let gs_crs = GsCrs::rand(&mut rng);
@@ -293,7 +436,7 @@ pub fn bench_passport(c: &mut Criterion) {
     //
     println!("USER");
 
-    // User wants to prove age and face. They precompute this proof
+    // In a bar: User wants to prove age and face. They precompute this proof
     let ageface_checker = get_ageface_checker(&personal_info);
     let ageface_proof = user_prove_ageface(
         &mut rng,
@@ -304,6 +447,27 @@ pub fn bench_passport(c: &mut Criterion) {
         &auth_path,
     );
     println!("\tComputed age+face proof");
+
+    // Online: User wants to prove age and give a multishow token
+    let age_checker = get_age_checker();
+    let age_proof = user_prove_age(
+        &mut rng,
+        c,
+        &age_pk,
+        &age_checker,
+        &personal_info,
+        &auth_path,
+    );
+    let mut multishow_checker = get_multishow_checker(&personal_info);
+    let multishow_proof = user_prove_multishow(
+        &mut rng,
+        c,
+        &multishow_pk,
+        &multishow_checker,
+        &personal_info,
+        &auth_path,
+    );
+
     // User gets all the roots from the issuer
     let roots = issuer_state.com_forest.roots();
     // Now user proves tree and forest membership
@@ -331,65 +495,122 @@ pub fn bench_passport(c: &mut Criterion) {
         .unwrap();
 
     println!("\tComputed tree and forest memebership proofs");
-    // User prepares the predicate public inputs
-    let mut pred_inputs = PredPublicInputs::default();
-    pred_inputs.prepare_pred_checker(&ageface_vk, &ageface_checker);
-
-    // Now the user links everything
-    let link_vk = LinkVerifyingKey {
-        gs_crs,
-        pred_inputs,
-        com_forest_roots: roots,
-        forest_verif_key: forest_vk,
-        tree_verif_key: tree_vk,
-        pred_verif_keys: vec![ageface_vk.clone()],
-    };
-    let link_ctx = LinkProofCtx {
-        attrs_com: cred,
-        merkle_root: auth_path.root(),
-        forest_proof,
-        tree_proof,
-        pred_proofs: vec![ageface_proof],
-        vk: link_vk.clone(),
-    };
-    c.bench_function("Passport: proving linkage", |b| {
-        b.iter(|| link_proofs(&mut rng, &link_ctx))
-    });
-    let link_proof = link_proofs(&mut rng, &link_ctx);
-    println!("\tLinked proofs");
-
-    //
-    // The bouncer takes a look
-    //
-    println!("BOUNCER");
-
-    // First the bouncer needs to get all the public parameters for their verifying key. Part is
-    // fixed and part is given by the user. Specifically, biometrics_hash is supplied by the user,
-    // and everything else is fixed. (we just use the vk from above)
-    let link_vk = link_vk;
-    let biometrics = personal_info.biometrics;
-    let ageface_checker = AgeFaceExpiryChecker {
-        threshold_dob: Fr::from(TWENTY_ONE_YEARS_AGO),
-        threshold_expiry: Fr::from(TODAY),
-        face_hash: biometrics.hash(),
-    };
-    println!("\tDownloaded user's biometrics");
-    // Use the previous link_vk. It's all predetermined values except for the ageface_checker
-    // contents
-    let mut link_vk = link_vk;
-    // User prepares the predicate public inputs
-    link_vk.pred_inputs = {
+    {
+        // User prepares the predicate public inputs
         let mut pred_inputs = PredPublicInputs::default();
         pred_inputs.prepare_pred_checker(&ageface_vk, &ageface_checker);
-        pred_inputs
-    };
-    println!("\tCreated verification key");
-    // Bouncer checks the proof
-    c.bench_function("Passport: verifying linkage", |b| {
-        b.iter(|| assert!(verif_link_proof(&link_proof, &link_vk)))
-    });
 
-    println!("The bouncer unlatches the velvet rope. The user walks through.");
+        // Now the user links everything
+        let link_vk = LinkVerifyingKey {
+            gs_crs: gs_crs.clone(),
+            pred_inputs,
+            com_forest_roots: roots.clone(),
+            forest_verif_key: forest_vk.clone(),
+            tree_verif_key: tree_vk.clone(),
+            pred_verif_keys: vec![ageface_vk.clone()],
+        };
+        let link_ctx = LinkProofCtx {
+            attrs_com: cred,
+            merkle_root: auth_path.root(),
+            forest_proof: forest_proof.clone(),
+            tree_proof: tree_proof.clone(),
+            pred_proofs: vec![ageface_proof],
+            vk: link_vk.clone(),
+        };
+        c.bench_function("Passport: proving ageface linkage", |b| {
+            b.iter(|| link_proofs(&mut rng, &link_ctx))
+        });
+        let link_proof = link_proofs(&mut rng, &link_ctx);
+        println!("\tLinked proofs");
 
-    c.final_summary();
+        //
+        // The bouncer takes a look
+        //
+        println!("BOUNCER");
+
+        // First the bouncer needs to get all the public parameters for their verifying key. Part is
+        // fixed and part is given by the user. Specifically, biometrics_hash is supplied by the user,
+        // and everything else is fixed. (we just use the vk from above)
+        let link_vk = link_vk;
+        let biometrics = personal_info.biometrics;
+        let ageface_checker = AgeFaceExpiryChecker {
+            threshold_dob: Fr::from(TWENTY_ONE_YEARS_AGO),
+            threshold_expiry: Fr::from(TODAY),
+            face_hash: biometrics.hash(),
+        };
+        println!("\tDownloaded user's biometrics");
+        // Use the previous link_vk. It's all predetermined values except for the ageface_checker
+        // contents
+        let mut link_vk = link_vk;
+        // User prepares the predicate public inputs
+        link_vk.pred_inputs = {
+            let mut pred_inputs = PredPublicInputs::default();
+            pred_inputs.prepare_pred_checker(&ageface_vk, &ageface_checker);
+            pred_inputs
+        };
+        println!("\tCreated verification key");
+        // Bouncer checks the proof
+        c.bench_function("Passport: verifying ageface linkage", |b| {
+            b.iter(|| assert!(verif_link_proof(&link_proof, &link_vk)))
+        });
+
+        println!("The bouncer unlatches the velvet rope. The user walks through.");
+    }
+
+    {
+        // User prepares the predicate public inputs
+        let mut pred_inputs = PredPublicInputs::default();
+        pred_inputs.prepare_pred_checker(&age_vk, &age_checker);
+        pred_inputs.prepare_pred_checker(&multishow_vk, &multishow_checker);
+
+        // Now the user links everything
+        let link_vk = LinkVerifyingKey {
+            gs_crs,
+            pred_inputs,
+            com_forest_roots: roots,
+            forest_verif_key: forest_vk,
+            tree_verif_key: tree_vk,
+            pred_verif_keys: vec![age_vk.clone(), multishow_vk.clone()],
+        };
+        let link_ctx = LinkProofCtx {
+            attrs_com: cred,
+            merkle_root: auth_path.root(),
+            forest_proof,
+            tree_proof,
+            pred_proofs: vec![age_proof, multishow_proof],
+            vk: link_vk.clone(),
+        };
+        c.bench_function("Passport: proving age+multishow linkage", |b| {
+            b.iter(|| link_proofs(&mut rng, &link_ctx))
+        });
+        let link_proof = link_proofs(&mut rng, &link_ctx);
+        println!("\tLinked proofs");
+
+        //
+        // The server
+        //
+        println!("SERVER");
+
+        // Clear the CTR. That's a private input and it's not necessary for verification
+        let link_vk = link_vk;
+        multishow_checker.ctr = 0;
+
+        // Use the previous link_vk. It's all predetermined values except for the ageface_checker
+        // contents
+        let mut link_vk = link_vk;
+        // User prepares the predicate public inputs
+        link_vk.pred_inputs = {
+            let mut pred_inputs = PredPublicInputs::default();
+            pred_inputs.prepare_pred_checker(&age_vk, &age_checker);
+            pred_inputs.prepare_pred_checker(&multishow_vk, &multishow_checker);
+            pred_inputs
+        };
+        println!("\tCreated verification key");
+        // Bouncer checks the proof
+        c.bench_function("Passport: verifying age+multishow linkage", |b| {
+            b.iter(|| assert!(verif_link_proof(&link_proof, &link_vk)))
+        });
+
+        println!("The internet service provider capitulates");
+    }
 }

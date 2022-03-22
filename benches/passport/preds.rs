@@ -64,3 +64,46 @@ impl PredicateChecker<Fr, PersonalInfo, PersonalInfoVar, PassportComScheme, Pass
         .concat()
     }
 }
+
+#[derive(Clone, Default)]
+pub(crate) struct AgeAndExpiryChecker {
+    // Verifier-chosen values
+    pub(crate) threshold_dob: Fr,
+    pub(crate) threshold_expiry: Fr,
+}
+
+impl PredicateChecker<Fr, PersonalInfo, PersonalInfoVar, PassportComScheme, PassportComSchemeG>
+    for AgeAndExpiryChecker
+{
+    /// Returns whether or not the predicate was satisfied
+    fn pred(
+        self,
+        cs: ConstraintSystemRef<Fr>,
+        attrs: &PersonalInfoVar,
+    ) -> Result<(), SynthesisError> {
+        // Witness as public inputs the threshold DOB, threshold expiry date, face hash
+        let threshold_dob =
+            FpVar::<Fr>::new_input(ns!(cs, "threshold dob"), || Ok(self.threshold_dob))?;
+        let threshold_expiry =
+            FpVar::<Fr>::new_input(ns!(cs, "threshold expiry"), || Ok(self.threshold_expiry))?;
+
+        // Assert that attrs.dob ≤ threshold_dob
+        attrs
+            .dob
+            .enforce_cmp(&threshold_dob, core::cmp::Ordering::Less, true)?;
+        // Assert that attrs.passport_expiry > threshold_expiry
+        attrs.passport_expiry.enforce_cmp(
+            &threshold_expiry,
+            core::cmp::Ordering::Greater,
+            false,
+        )?;
+
+        Ok(())
+    }
+
+    /// This outputs the field elements corresponding to the public inputs of this predicate.
+    /// This DOES NOT include `attrs`.
+    fn public_inputs(&self) -> Vec<Fr> {
+        [vec![self.threshold_dob], vec![self.threshold_expiry]].concat()
+    }
+}
