@@ -118,6 +118,24 @@ fn gen_agefaceexpiry_crs<R: Rng>(rng: &mut R) -> (PredProvingKey, PredVerifyingK
     (pk.clone(), pk.prepare_verifying_key())
 }
 
+fn gen_expiry_crs<R: Rng>(rng: &mut R) -> (PredProvingKey, PredVerifyingKey) {
+    // Generate the hash checker circuit's CRS
+    let pk = zeronym::pred::gen_pred_crs::<
+        _,
+        _,
+        Bls12_381,
+        PersonalInfo,
+        PersonalInfoVar,
+        PassportComScheme,
+        PassportComSchemeG,
+        H,
+        HG,
+    >(rng, ExpiryChecker::default())
+    .unwrap();
+
+    (pk.clone(), pk.prepare_verifying_key())
+}
+
 fn gen_ageexpiry_crs<R: Rng>(rng: &mut R) -> (PredProvingKey, PredVerifyingKey) {
     // Generate the hash checker circuit's CRS
     let pk = zeronym::pred::gen_pred_crs::<
@@ -468,6 +486,7 @@ pub fn bench_passport(c: &mut Criterion) {
     let (agemultishowexpiry_pk, agemultishowexpiry_vk) = gen_agemultishowexpiry_crs(&mut rng);
     let (ageexpiry_pk, ageexpiry_vk) = gen_ageexpiry_crs(&mut rng);
     let (multishow_pk, multishow_vk) = gen_multishow_crs(&mut rng);
+    let (expiry_pk, expiry_vk) = gen_expiry_crs(&mut rng);
     let (tree_pk, tree_vk) = gen_tree_crs(&mut rng);
     let (forest_pk, forest_vk) = gen_forest_crs(&mut rng);
 
@@ -508,6 +527,15 @@ pub fn bench_passport(c: &mut Criterion) {
         &personal_info,
         &auth_path,
     );
+    let expiry_proof = user_prove_pred(
+        &mut rng,
+        c,
+        "Passport: proving expiry",
+        &expiry_pk,
+        &get_expiry_checker(),
+        &personal_info,
+        &auth_path,
+    );
     let multishow_proof = user_prove_pred(
         &mut rng,
         c,
@@ -524,6 +552,24 @@ pub fn bench_passport(c: &mut Criterion) {
 
     let tree_proof = user_prove_tree_memb(&mut rng, c, &auth_path, &tree_pk, cred);
     let forest_proof = user_prove_forest_memb(&mut rng, c, &roots, &auth_path, &forest_pk, cred);
+
+    let pred_inputs = PredPublicInputs::default();
+    user_link(
+        &mut rng,
+        c,
+        "Passport: Proving empty linkage",
+        "Passport: Verifying empty linkage",
+        &tree_vk,
+        &forest_vk,
+        &roots,
+        pred_inputs,
+        vec![],
+        cred,
+        &auth_path,
+        &tree_proof,
+        &forest_proof,
+        vec![],
+    );
 
     let mut pred_inputs = PredPublicInputs::default();
     pred_inputs.prepare_pred_checker(
@@ -567,6 +613,25 @@ pub fn bench_passport(c: &mut Criterion) {
         &tree_proof,
         &forest_proof,
         vec![agemultishowexpiry_proof],
+    );
+
+    let mut pred_inputs = PredPublicInputs::default();
+    pred_inputs.prepare_pred_checker(&expiry_vk, &get_expiry_checker());
+    user_link(
+        &mut rng,
+        c,
+        "Passport: Proving expiry linkage",
+        "Passport: Verifying expiry linkage",
+        &tree_vk,
+        &forest_vk,
+        &roots,
+        pred_inputs,
+        vec![expiry_vk],
+        cred,
+        &auth_path,
+        &tree_proof,
+        &forest_proof,
+        vec![expiry_proof],
     );
 
     let mut pred_inputs = PredPublicInputs::default();

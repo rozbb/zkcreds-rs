@@ -15,9 +15,9 @@ criterion_group!(
     benches,
     /*bench_linkage,
     bench_tree_forest,
-    bench_multishow_age,
-    bench_passport,*/
-    com_scaling::bench_pred_proof_0::bench_pred_proof_0,
+    bench_multishow_age,*/
+    bench_passport,
+    /*com_scaling::bench_pred_proof_0::bench_pred_proof_0,
     com_scaling::bench_pred_proof_16::bench_pred_proof_16,
     com_scaling::bench_pred_proof_32::bench_pred_proof_32,
     com_scaling::bench_pred_proof_48::bench_pred_proof_48,
@@ -33,6 +33,6 @@ criterion_group!(
     com_scaling::bench_pred_proof_208::bench_pred_proof_208,
     com_scaling::bench_pred_proof_224::bench_pred_proof_224,
     com_scaling::bench_pred_proof_240::bench_pred_proof_240,
-    com_scaling::bench_pred_proof_256::bench_pred_proof_256
+    com_scaling::bench_pred_proof_256::bench_pred_proof_256*/
 );
 criterion_main!(benches);
