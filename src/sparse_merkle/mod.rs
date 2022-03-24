@@ -368,11 +368,14 @@ where
         }
 
         // Calculate the root
-        let (final_left_hash, final_right_hash) = &path.inner_hashes.last().unwrap();
+        let (final_left_hash, final_right_hash) = match path.inner_hashes.last() {
+            Some((l, r)) => (to_bytes!(l), to_bytes!(r)),
+            None => (to_bytes!(path.leaf_hashes.0), to_bytes!(path.leaf_hashes.0)),
+        };
         path.root = P::TwoToOneHash::evaluate(
             &self.two_to_one_param,
-            &to_bytes!(final_left_hash)?,
-            &to_bytes!(final_right_hash)?,
+            &final_left_hash?,
+            &final_right_hash?,
         )?;
 
         if path.height() != self.height {

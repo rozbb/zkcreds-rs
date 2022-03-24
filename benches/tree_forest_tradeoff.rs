@@ -20,10 +20,14 @@ pub fn bench_tree_forest(c: &mut Criterion) {
     let person_com = person.commit();
 
     for log2_num_leaves in [16, 32, 48, 64] {
-        //for log2_num_trees in 0..log2_num_leaves {
-        for log2_num_trees in 0..16 {
+        for log2_num_trees in 0..log2_num_leaves {
             let tree_height = log2_num_leaves - log2_num_trees;
             let num_trees = 2usize.pow(log2_num_trees);
+
+            // SparseMerkleTree requires trees of height ≥ 2
+            if tree_height < 2 {
+                continue;
+            }
 
             // Generate the tree and forest circuits' CRS
             let tree_pk = gen_tree_memb_crs::<
@@ -53,7 +57,7 @@ pub fn bench_tree_forest(c: &mut Criterion) {
 
             // Set up an auth path for tree membership
             let auth_path = {
-                let leaf_idx = 17;
+                let leaf_idx = 0;
                 let mut tree = ComTree::<_, TestTreeH, TestComScheme>::empty(
                     MERKLE_CRH_PARAM.clone(),
                     tree_height,
