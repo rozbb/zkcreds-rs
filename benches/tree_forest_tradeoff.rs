@@ -21,7 +21,7 @@ pub fn bench_tree_forest(c: &mut Criterion) {
 
     for log2_num_leaves in [16, 32, 48, 64] {
         for log2_num_trees in 0..log2_num_leaves {
-            let tree_height = log2_num_leaves - log2_num_trees;
+            let tree_height = (log2_num_leaves + 1) - log2_num_trees;
             let num_trees = 2usize.pow(log2_num_trees);
 
             // SparseMerkleTree requires trees of height ≥ 2
