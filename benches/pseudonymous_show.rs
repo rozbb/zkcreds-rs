@@ -100,29 +100,26 @@ lazy_static! {
 struct Attrs {
     nonce: ComNonce<ComScheme>,
     seed: Fr,
-    id: u8,
 }
 
 #[derive(Clone)]
 struct AttrsVar {
     nonce: ComNonceVar<ComScheme, ComSchemeG, Fr>,
     seed: FpVar<Fr>,
-    id: UInt8<Fr>,
 }
 
 impl Attrs {
     fn new<R: Rng>(rng: &mut R) -> Attrs {
         let nonce = <ComScheme as CommitmentScheme>::Randomness::rand(rng);
         let seed = Fr::rand(rng);
-        let id = u8::rand(rng);
-        Attrs { nonce, seed, id }
+        Attrs { nonce, seed }
     }
 }
 
 impl AttrsTrait<Fr, ComScheme> for Attrs {
     /// Serializes the attrs into bytes
     fn to_bytes(&self) -> Vec<u8> {
-        to_bytes![self.seed, self.id].unwrap()
+        to_bytes![self.seed].unwrap()
     }
 
     fn get_com_param(&self) -> &ComParam<ComScheme> {
@@ -139,7 +136,7 @@ impl AccountableAttrsTrait<Fr, ComScheme> for Attrs {
     type Seed = Fr;
 
     fn get_id(&self) -> Self::Id {
-        vec![self.id]
+        Vec::new()
     }
 
     fn get_seed(&self) -> Fr {
@@ -149,7 +146,7 @@ impl AccountableAttrsTrait<Fr, ComScheme> for Attrs {
 
 impl ToBytesGadget<Fr> for AttrsVar {
     fn to_bytes(&self) -> Result<Vec<UInt8<Fr>>, SynthesisError> {
-        Ok([self.seed.to_bytes()?, vec![self.id.clone()]].concat())
+        self.seed.to_bytes()
     }
 }
 
@@ -168,7 +165,6 @@ impl AllocVar<Attrs, Fr> for AttrsVar {
         let Attrs {
             ref nonce,
             ref seed,
-            ref id,
         } = native_attrs
             .as_ref()
             .map(Borrow::borrow)
@@ -180,9 +176,8 @@ impl AllocVar<Attrs, Fr> for AttrsVar {
             mode,
         )?;
         let seed = FpVar::<Fr>::new_variable(ns!(cs, "seed"), || Ok(*seed), mode)?;
-        let id = UInt8::<Fr>::new_variable(ns!(cs, "id"), || Ok(*id), mode)?;
 
-        Ok(AttrsVar { nonce, seed, id })
+        Ok(AttrsVar { nonce, seed })
     }
 }
 
@@ -202,7 +197,7 @@ impl AccountableAttrsVarTrait<Fr, Attrs, ComScheme, ComSchemeG> for AttrsVar {
     type Seed = FpVar<Fr>;
 
     fn get_id(&self) -> Result<Self::Id, SynthesisError> {
-        Ok(vec![self.id.clone()])
+        Ok(Vec::new())
     }
 
     fn get_seed(&self) -> Result<FpVar<Fr>, SynthesisError> {
