@@ -30,12 +30,13 @@ const HASH_DOMAIN_SEP: u8 = 125;
 /// they can be combined to derive the (hash of the) user's ID.
 #[derive(Clone, Default)]
 pub struct PresentationToken<ConstraintF: PrimeField> {
-    /// This is `PRFₛ(ctr)` where s is the seed
+    /// This is `PRFₛ(epoch || ctr)` where s is the seed
     hidden_ctr: ConstraintF,
 
-    /// This is `H(ID) + H(n)·PRFₛ'(ctr)` where `ID` is the user ID, s is the seed, and n is the
-    /// presentation nonce. Notice that if `ctr` repeats then we have two elements on the line
-    /// `H(ID) + x·PRFₛ'(ctr)`. An observer can solve for the y-intercept and recover `H(ID)`.
+    /// This is `H(ID) + H(n)·PRFₛ'(epoch || ctr)` where `ID` is the user ID, s is the seed, and n
+    /// is the presentation nonce. Notice that if `ctr` repeats within an epoch then we have two
+    /// elements on the line `H(ID) + x·PRFₛ'(epoch || ctr)`. An observer can solve for the
+    /// y-intercept and recover `H(ID)`.
     hidden_line_point: ConstraintF,
 }
 
