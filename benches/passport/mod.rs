@@ -29,7 +29,8 @@ use zeronym::{
         link_proofs, verif_link_proof, GsCrs, LinkProofCtx, LinkVerifyingKey, PredPublicInputs,
     },
     pred::{prove_birth, prove_pred, verify_birth, PredicateChecker},
-    revealing_multishow::{setup_poseidon_params, MultishowableAttrs, RevealingMultishowChecker},
+    revealing_multishow::{MultishowableAttrs, RevealingMultishowChecker},
+    utils::setup_poseidon_params,
     Com,
 };
 

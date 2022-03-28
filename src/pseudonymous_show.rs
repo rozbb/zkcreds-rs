@@ -136,7 +136,7 @@ where
     ConstraintF: PrimeField,
 {
     // Public inputs //
-    /// The psuedorandom values associated with this presentation
+    /// The psuedorandom values associated with all presentations of this cred
     pub token: PresentationToken<ConstraintF>,
 
     // Constants //

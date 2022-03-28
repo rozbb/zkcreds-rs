@@ -6,11 +6,12 @@ use zeronym::{
         link_proofs, verif_link_proof, GsCrs, LinkProofCtx, LinkVerifyingKey, PredPublicInputs,
     },
     pred::{gen_pred_crs, prove_pred},
-    revealing_multishow::{setup_poseidon_params, MultishowableAttrs, RevealingMultishowChecker},
+    revealing_multishow::{MultishowableAttrs, RevealingMultishowChecker},
     test_util::{
         AgeChecker, NameAndBirthYear, NameAndBirthYearVar, TestComScheme, TestComSchemeG,
         TestTreeH, TestTreeHG, MERKLE_CRH_PARAM,
     },
+    utils::setup_poseidon_params,
 };
 
 use ark_bls12_381::{Bls12_381 as E, Fr};
