@@ -16,9 +16,9 @@ use ark_bls12_381::{Bls12_381 as E, Fr};
 use criterion::Criterion;
 
 const EIGHTEEN_YEARS_AGO: u16 = 2004;
-const LOG2_NUM_LEAVES: u32 = 32;
+const LOG2_NUM_LEAVES: u32 = 31;
 const LOG2_NUM_TREES: u32 = 10;
-const TREE_HEIGHT: u32 = LOG2_NUM_LEAVES - LOG2_NUM_TREES;
+const TREE_HEIGHT: u32 = LOG2_NUM_LEAVES + 1 - LOG2_NUM_TREES;
 const NUM_TREES: usize = 2usize.pow(LOG2_NUM_TREES);
 
 // This benchmarks the linkage functions as the number of predicates increases

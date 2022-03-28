@@ -41,9 +41,9 @@ use ark_std::rand::{CryptoRng, Rng};
 use arkworks_utils::Curve;
 use criterion::Criterion;
 
-const LOG2_NUM_LEAVES: u32 = 32;
+const LOG2_NUM_LEAVES: u32 = 31;
 const LOG2_NUM_TREES: u32 = 10;
-const TREE_HEIGHT: u32 = LOG2_NUM_LEAVES - LOG2_NUM_TREES;
+const TREE_HEIGHT: u32 = LOG2_NUM_LEAVES + 1 - LOG2_NUM_TREES;
 const NUM_TREES: usize = 2usize.pow(LOG2_NUM_TREES);
 
 const POSEIDON_WIDTH: u8 = 5;
