@@ -215,6 +215,31 @@ where
     _marker: PhantomData<(ConstraintF, AC, ACG, H, HG, HG)>,
 }
 
+impl<ConstraintF, AC, ACG, H, HG> ForestMembershipProver<ConstraintF, AC, ACG, H, HG>
+where
+    ConstraintF: PrimeField,
+    AC: CommitmentScheme,
+    AC::Output: ToConstraintField<ConstraintF>,
+    ACG: CommitmentGadget<AC, ConstraintF>,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<ConstraintF>,
+    HG: TwoToOneCRHGadget<H, ConstraintF>,
+{
+    fn pred(
+        &self,
+        member_root: &HG::OutputVar,
+        all_roots: &[HG::OutputVar],
+    ) -> Result<(), SynthesisError> {
+        // Assert that member_root equals one of the roots
+        let mut is_member = Boolean::FALSE;
+        for root in all_roots {
+            is_member = is_member.or(&member_root.is_eq(root)?)?;
+        }
+
+        is_member.enforce_equal(&Boolean::TRUE)
+    }
+}
+
 impl<ConstraintF, AC, ACG, H, HG> ConstraintSynthesizer<ConstraintF>
     for ForestMembershipProver<ConstraintF, AC, ACG, H, HG>
 where
@@ -232,19 +257,16 @@ where
     ) -> Result<(), SynthesisError> {
         // Witness the public variables. In ALL zeronym proofs, it's the commitment to the
         // attributes and the merkle root
-        let _attrs_com = ACG::OutputVar::new_input(ns!(cs, "attrs com"), || Ok(self.attrs_com))?;
-        let member_root = HG::OutputVar::new_input(ns!(cs, "root"), || Ok(self.member_root))?;
+        let _attrs_com =
+            ACG::OutputVar::new_input(ns!(cs, "attrs com"), || Ok(self.attrs_com.clone()))?;
+        let member_root =
+            HG::OutputVar::new_input(ns!(cs, "root"), || Ok(self.member_root.clone()))?;
 
         // Witness the roots
-        let roots = Vec::<HG::OutputVar>::new_input(ns!(cs, "roots"), || Ok(self.roots))?;
+        let all_roots =
+            Vec::<HG::OutputVar>::new_input(ns!(cs, "roots"), || Ok(self.roots.clone()))?;
 
-        // Assert that member_root equals one of the roots
-        let mut is_member = Boolean::FALSE;
-        for root in roots {
-            is_member = is_member.or(&member_root.is_eq(&root)?)?;
-        }
-
-        is_member.enforce_equal(&Boolean::TRUE)
+        self.pred(&member_root, &all_roots)
     }
 }
 

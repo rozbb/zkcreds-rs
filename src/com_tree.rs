@@ -16,7 +16,7 @@ use ark_crypto_primitives::{
 use ark_ec::PairingEngine;
 use ark_ff::to_bytes;
 use ark_ff::{PrimeField, ToConstraintField};
-use ark_r1cs_std::alloc::AllocVar;
+use ark_r1cs_std::{alloc::AllocVar, R1CSVar};
 use ark_relations::{
     ns,
     r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError},
@@ -308,6 +308,52 @@ where
     _marker: PhantomData<(ConstraintF, AC, ACG, H, HG, HG)>,
 }
 
+fn default_auth_path<AC, H>(height: u32) -> SparseMerkleTreePath<ComTreeConfig<H>>
+where
+    AC: CommitmentScheme,
+    H: TwoToOneCRH,
+{
+    let default_com_bytes = to_bytes!(AC::Output::default()).unwrap();
+    SparseMerkleTreePath::<ComTreeConfig<H>> {
+        leaf_hashes: (default_com_bytes.clone(), default_com_bytes),
+        inner_hashes: vec![
+            (H::Output::default(), H::Output::default());
+            height.checked_sub(2).expect("tree height cannot be < 2") as usize
+        ],
+        root: H::Output::default(),
+    }
+}
+
+impl<ConstraintF, AC, ACG, H, HG> TreeMembershipProver<ConstraintF, AC, ACG, H, HG>
+where
+    ConstraintF: PrimeField,
+    AC: CommitmentScheme,
+    AC::Output: ToConstraintField<ConstraintF>,
+    ACG: CommitmentGadget<AC, ConstraintF>,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<ConstraintF>,
+    HG: TwoToOneCRHGadget<H, ConstraintF>,
+{
+    fn pred(
+        &self,
+        attrs_com_var: &ACG::OutputVar,
+        root_var: &HG::OutputVar,
+        path_var: &SparseMerkleTreePathVar<ComTreeConfig<H>, IdentityCRHGadget, HG, ConstraintF>,
+        crh_param_var: &HG::ParametersVar,
+        leaf_param_var: &UnitVar<ConstraintF>,
+    ) -> Result<(), SynthesisError> {
+        let cs = attrs_com_var.cs().or(root_var.cs());
+
+        path_var.check_membership(
+            ns!(cs, "check_membership").cs(),
+            leaf_param_var,
+            crh_param_var,
+            root_var,
+            &attrs_com_var,
+        )
+    }
+}
+
 impl<ConstraintF, AC, ACG, H, HG> ConstraintSynthesizer<ConstraintF>
     for TreeMembershipProver<ConstraintF, AC, ACG, H, HG>
 where
@@ -326,8 +372,8 @@ where
         // Witness the public variables. In ALL zeronym proofs, it's the commitment to the
         // attributes and the merkle root
         let attrs_com_var =
-            ACG::OutputVar::new_input(ns!(cs, "attrs com var"), || Ok(self.attrs_com))?;
-        let root_var = HG::OutputVar::new_input(ns!(cs, "root var"), || Ok(self.root))?;
+            ACG::OutputVar::new_input(ns!(cs, "attrs com var"), || Ok(self.attrs_com.clone()))?;
+        let root_var = HG::OutputVar::new_input(ns!(cs, "root var"), || Ok(self.root.clone()))?;
 
         // Now we do the tree membership proof. Input the two-to-one params
         let crh_param_var =
@@ -336,36 +382,24 @@ where
         let leaf_param_var = UnitVar::default();
 
         // If there is no auth path, make one of the appropriate length
-        let auth_path = match self.auth_path {
-            Some(p) => p,
-            None => {
-                let default_com_bytes = to_bytes!(AC::Output::default()).unwrap();
-                SparseMerkleTreePath::<ComTreeConfig<H>> {
-                    leaf_hashes: (default_com_bytes.clone(), default_com_bytes),
-                    inner_hashes: vec![
-                        (H::Output::default(), H::Output::default());
-                        self.height
-                            .checked_sub(2)
-                            .expect("tree height cannot be < 2")
-                            as usize
-                    ],
-                    root: H::Output::default(),
-                }
-            }
-        };
+        let auth_path = self
+            .auth_path
+            .clone()
+            .unwrap_or_else(|| default_auth_path::<AC, H>(self.height));
 
+        // Witness the auth path
         let path_var = SparseMerkleTreePathVar::<_, IdentityCRHGadget, HG, _>::new_witness(
             ns!(cs, "auth path"),
             || Ok(auth_path),
             self.height,
         )?;
 
-        path_var.check_membership(
-            ns!(cs, "check_membership").cs(),
-            &leaf_param_var,
-            &crh_param_var,
-            &root_var,
+        self.pred(
             &attrs_com_var,
+            &root_var,
+            &path_var,
+            &crh_param_var,
+            &leaf_param_var,
         )
     }
 }
