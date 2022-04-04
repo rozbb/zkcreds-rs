@@ -282,7 +282,7 @@ where
 
 /// A circuit that proves that a commitment to `attrs` appears in the Merkle tree of height `height`
 /// defined by root hash `root`.
-struct TreeMembershipProver<ConstraintF, AC, ACG, H, HG>
+pub(crate) struct TreeMembershipProver<ConstraintF, AC, ACG, H, HG>
 where
     ConstraintF: PrimeField,
     AC: CommitmentScheme,
@@ -293,22 +293,22 @@ where
     HG: TwoToOneCRHGadget<H, ConstraintF>,
 {
     // Constants //
-    height: u32,
-    crh_param: TwoToOneParam<ComTreeConfig<H>>,
+    pub(crate) height: u32,
+    pub(crate) crh_param: TwoToOneParam<ComTreeConfig<H>>,
 
     // Private inputs //
     /// The leaf value
-    attrs_com: AC::Output,
+    pub(crate) attrs_com: AC::Output,
     /// The tree root's value
-    root: H::Output,
+    pub(crate) root: H::Output,
     /// Merkle auth path of the leaf `attrs_com`
-    auth_path: Option<SparseMerkleTreePath<ComTreeConfig<H>>>,
+    pub(crate) auth_path: Option<SparseMerkleTreePath<ComTreeConfig<H>>>,
 
     // Marker //
     _marker: PhantomData<(ConstraintF, AC, ACG, H, HG, HG)>,
 }
 
-fn default_auth_path<AC, H>(height: u32) -> SparseMerkleTreePath<ComTreeConfig<H>>
+pub(crate) fn default_auth_path<AC, H>(height: u32) -> SparseMerkleTreePath<ComTreeConfig<H>>
 where
     AC: CommitmentScheme,
     H: TwoToOneCRH,
@@ -334,7 +334,7 @@ where
     H::Output: ToConstraintField<ConstraintF>,
     HG: TwoToOneCRHGadget<H, ConstraintF>,
 {
-    fn pred(
+    pub(crate) fn circuit(
         &self,
         attrs_com_var: &ACG::OutputVar,
         root_var: &HG::OutputVar,
@@ -394,7 +394,7 @@ where
             self.height,
         )?;
 
-        self.pred(
+        self.circuit(
             &attrs_com_var,
             &root_var,
             &path_var,

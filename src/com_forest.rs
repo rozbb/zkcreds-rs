@@ -192,7 +192,7 @@ where
     })
 }
 
-struct ForestMembershipProver<ConstraintF, AC, ACG, H, HG>
+pub(crate) struct ForestMembershipProver<ConstraintF, AC, ACG, H, HG>
 where
     ConstraintF: PrimeField,
     AC: CommitmentScheme,
@@ -203,13 +203,13 @@ where
     HG: TwoToOneCRHGadget<H, ConstraintF>,
 {
     // Public inputs
-    roots: Vec<H::Output>,
+    pub(crate) roots: Vec<H::Output>,
 
     // Private inputs //
     // This is necessary for all proofs
-    attrs_com: AC::Output,
+    pub(crate) attrs_com: AC::Output,
     // The root that's the member of the forest
-    member_root: H::Output,
+    pub(crate) member_root: H::Output,
 
     // Marker //
     _marker: PhantomData<(ConstraintF, AC, ACG, H, HG, HG)>,
@@ -225,7 +225,7 @@ where
     H::Output: ToConstraintField<ConstraintF>,
     HG: TwoToOneCRHGadget<H, ConstraintF>,
 {
-    fn pred(
+    pub(crate) fn circuit(
         &self,
         member_root: &HG::OutputVar,
         all_roots: &[HG::OutputVar],
@@ -266,7 +266,7 @@ where
         let all_roots =
             Vec::<HG::OutputVar>::new_input(ns!(cs, "roots"), || Ok(self.roots.clone()))?;
 
-        self.pred(&member_root, &all_roots)
+        self.circuit(&member_root, &all_roots)
     }
 }
 

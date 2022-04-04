@@ -12,6 +12,7 @@ pub mod pseudonymous_show;
 pub mod revealing_multishow;
 mod sparse_merkle;
 pub mod test_util;
+pub mod tf_membership;
 pub mod utils;
 
 pub type Error = Box<dyn ark_std::error::Error>;
