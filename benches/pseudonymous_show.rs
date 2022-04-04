@@ -10,6 +10,7 @@ use zeronym::{
     link::{
         link_proofs, verif_link_proof, GsCrs, LinkProofCtx, LinkVerifyingKey, PredPublicInputs,
     },
+    monolithic_proof::{gen_monolithic_crs, prove_monolithic, verify_monolithic},
     pred::{gen_pred_crs, prove_pred},
     pseudonymous_show::{PseudonymousAttrs, PseudonymousShowChecker},
     utils::setup_poseidon_params,
@@ -289,10 +290,56 @@ pub fn bench_pseudonymous_show(c: &mut Criterion) {
         &mut rng,
         &pseudonymous_show_pk,
         pseudonymous_show_checker.clone(),
-        attrs,
+        attrs.clone(),
         &auth_path,
     )
     .unwrap();
+
+    let monolithic_pk: ark_groth16::ProvingKey<E> =
+        gen_monolithic_crs::<_, E, Attrs, AttrsVar, ComScheme, ComSchemeG, TreeH, TreeHG, _>(
+            &mut rng,
+            MERKLE_CRH_PARAM.clone(),
+            TREE_HEIGHT,
+            NUM_TREES,
+            pseudonymous_show_checker.clone(),
+        )
+        .unwrap();
+    let monolithic_pvk = ark_groth16::prepare_verifying_key(&monolithic_pk.vk);
+    c.bench_function("Psuedonymous show: proving monolithic", |b| {
+        b.iter(|| {
+            prove_monolithic::<_, _, _, AttrsVar, _, ComSchemeG, _, TreeHG, _>(
+                &mut rng,
+                &monolithic_pk,
+                &*MERKLE_CRH_PARAM,
+                &roots,
+                &auth_path,
+                attrs.clone(),
+                pseudonymous_show_checker.clone(),
+            )
+            .unwrap()
+        })
+    });
+    let proof = prove_monolithic::<_, _, _, AttrsVar, _, ComSchemeG, _, TreeHG, _>(
+        &mut rng,
+        &monolithic_pk,
+        &*MERKLE_CRH_PARAM,
+        &roots,
+        &auth_path,
+        attrs.clone(),
+        pseudonymous_show_checker.clone(),
+    )
+    .unwrap();
+    c.bench_function("Pseudonym show: verifying monolithic", |b| {
+        b.iter(|| {
+            assert!(verify_monolithic::<_, Attrs, AttrsVar, _, _, _, TreeHG, _>(
+                &monolithic_pvk,
+                &roots,
+                &proof,
+                pseudonymous_show_checker.clone()
+            )
+            .unwrap())
+        })
+    });
 
     // Prepare expiry inputs
     let mut pred_inputs = PredPublicInputs::default();

@@ -5,6 +5,7 @@ pub mod com_tree;
 pub mod compressed_pedersen;
 mod identity_crh;
 pub mod link;
+pub mod monolithic_proof;
 pub mod multishow;
 pub mod pred;
 pub mod proof_data_structures;
@@ -12,7 +13,6 @@ pub mod pseudonymous_show;
 pub mod revealing_multishow;
 mod sparse_merkle;
 pub mod test_util;
-pub mod tf_membership;
 pub mod utils;
 
 pub type Error = Box<dyn ark_std::error::Error>;
