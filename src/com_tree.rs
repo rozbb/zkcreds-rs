@@ -305,7 +305,7 @@ where
     pub(crate) auth_path: Option<SparseMerkleTreePath<ComTreeConfig<H>>>,
 
     // Marker //
-    _marker: PhantomData<(ConstraintF, AC, ACG, H, HG, HG)>,
+    pub(crate) _marker: PhantomData<(ConstraintF, AC, ACG, H, HG, HG)>,
 }
 
 pub(crate) fn default_auth_path<AC, H>(height: u32) -> SparseMerkleTreePath<ComTreeConfig<H>>

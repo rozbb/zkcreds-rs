@@ -1,21 +1,27 @@
 //! We define a gadget that proofs tree and forest membership simulatneously
 use crate::{
+    attrs::Attrs,
     com_forest::ForestMembershipProver,
     com_tree::{default_auth_path, TreeMembershipProver},
     identity_crh::{IdentityCRHGadget, UnitVar},
     sparse_merkle::constraints::SparseMerkleTreePathVar,
 };
 
+use core::marker::PhantomData;
+
 use ark_crypto_primitives::{
     commitment::{constraints::CommitmentGadget, CommitmentScheme},
     crh::{constraints::TwoToOneCRHGadget, TwoToOneCRH},
 };
+use ark_ec::PairingEngine;
 use ark_ff::{PrimeField, ToConstraintField};
+use ark_groth16::{Proof as Groth16Proof, ProvingKey as Groth16ProvingKey};
 use ark_r1cs_std::alloc::AllocVar;
 use ark_relations::{
     ns,
     r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError},
 };
+use ark_std::rand::Rng;
 
 // Tree & Forest membership. Proves cred ∈ tree and tree ∈ forest
 struct TfMembershipProver<ConstraintF, AC, ACG, H, HG>
@@ -91,4 +97,53 @@ where
             &leaf_param_var,
         )
     }
+}
+
+/// Generates the membership proving key for this tree
+pub fn gen_memb_crs<R, E, A, AC, ACG, H, HG>(
+    rng: &mut R,
+    crh_param: H::Parameters,
+    height: u32,
+    num_trees: usize,
+) -> Result<Groth16ProvingKey<E>, SynthesisError>
+where
+    R: Rng,
+    E: PairingEngine,
+    A: Attrs<E::Fr, AC>,
+    AC: CommitmentScheme,
+    AC::Output: ToConstraintField<E::Fr>,
+    ACG: CommitmentGadget<AC, E::Fr>,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<E::Fr>,
+    HG: TwoToOneCRHGadget<H, E::Fr>,
+{
+    // Make a placeholder tree
+    let tree_prover: TreeMembershipProver<E::Fr, AC, ACG, H, HG> = TreeMembershipProver {
+        height,
+        crh_param,
+        attrs_com: Default::default(),
+        root: Default::default(),
+        //root: self.tree.root(),
+        //root_com_nonce: self.nonce,
+        auth_path: None,
+        _marker: PhantomData,
+    };
+
+    // Make a placeholder forest
+    let roots = vec![H::Output::default(); num_trees];
+    let attrs_com = AC::Output::default();
+    let member_root = H::Output::default();
+    let forest_prover = ForestMembershipProver::<E::Fr, AC, ACG, H, HG> {
+        roots,
+        attrs_com,
+        member_root,
+        _marker: PhantomData,
+    };
+
+    let tf_prover = TfMembershipProver {
+        tree_prover,
+        forest_prover,
+    };
+
+    ark_groth16::generate_random_parameters(tf_prover, rng)
 }

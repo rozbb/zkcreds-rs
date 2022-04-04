@@ -212,7 +212,7 @@ where
     pub(crate) member_root: H::Output,
 
     // Marker //
-    _marker: PhantomData<(ConstraintF, AC, ACG, H, HG, HG)>,
+    pub(crate) _marker: PhantomData<(ConstraintF, AC, ACG, H, HG, HG)>,
 }
 
 impl<ConstraintF, AC, ACG, H, HG> ForestMembershipProver<ConstraintF, AC, ACG, H, HG>
