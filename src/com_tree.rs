@@ -45,7 +45,7 @@ where
     AC::Output: ToConstraintField<ConstraintF>,
 {
     /// The path
-    pub(crate) path: SparseMerkleTreePath<ComTreeConfig<H>>,
+    pub path: SparseMerkleTreePath<ComTreeConfig<H>>,
 
     _marker: PhantomData<(ConstraintF, AC)>,
 }
@@ -282,7 +282,7 @@ where
 
 /// A circuit that proves that a commitment to `attrs` appears in the Merkle tree of height `height`
 /// defined by root hash `root`.
-pub(crate) struct TreeMembershipProver<ConstraintF, AC, ACG, H, HG>
+pub struct TreeMembershipProver<ConstraintF, AC, ACG, H, HG>
 where
     ConstraintF: PrimeField,
     AC: CommitmentScheme,
@@ -293,22 +293,22 @@ where
     HG: TwoToOneCRHGadget<H, ConstraintF>,
 {
     // Constants //
-    pub(crate) height: u32,
-    pub(crate) crh_param: TwoToOneParam<ComTreeConfig<H>>,
+    pub height: u32,
+    pub crh_param: TwoToOneParam<ComTreeConfig<H>>,
 
     // Private inputs //
     /// The leaf value
-    pub(crate) attrs_com: AC::Output,
+    pub attrs_com: AC::Output,
     /// The tree root's value
-    pub(crate) root: H::Output,
+    pub root: H::Output,
     /// Merkle auth path of the leaf `attrs_com`
-    pub(crate) auth_path: Option<SparseMerkleTreePath<ComTreeConfig<H>>>,
+    pub auth_path: Option<SparseMerkleTreePath<ComTreeConfig<H>>>,
 
     // Marker //
-    pub(crate) _marker: PhantomData<(ConstraintF, AC, ACG, H, HG, HG)>,
+    pub _marker: PhantomData<(ConstraintF, AC, ACG, H, HG, HG)>,
 }
 
-pub(crate) fn default_auth_path<AC, H>(height: u32) -> SparseMerkleTreePath<ComTreeConfig<H>>
+pub fn default_auth_path<AC, H>(height: u32) -> SparseMerkleTreePath<ComTreeConfig<H>>
 where
     AC: CommitmentScheme,
     H: TwoToOneCRH,
@@ -334,7 +334,7 @@ where
     H::Output: ToConstraintField<ConstraintF>,
     HG: TwoToOneCRHGadget<H, ConstraintF>,
 {
-    pub(crate) fn circuit(
+    pub fn circuit(
         &self,
         attrs_com_var: &ACG::OutputVar,
         root_var: &HG::OutputVar,

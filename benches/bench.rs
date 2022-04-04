@@ -2,36 +2,17 @@ use criterion::{criterion_group, criterion_main};
 
 mod com_scaling;
 mod empty;
-mod linkage_microbench;
-mod multishow;
-mod multishow_age;
+mod microbenches;
 mod passport;
-mod pseudonymous_show;
-mod revealing_multishow;
-mod simple_expiry;
-mod tree_forest_tradeoff;
 
 use empty::bench_empty;
-use linkage_microbench::bench_linkage;
-use multishow::bench_multishow;
-use multishow_age::bench_multishow_age;
+use microbenches::microbenches;
 use passport::bench_passport;
-use pseudonymous_show::bench_pseudonymous_show;
-use revealing_multishow::bench_revealing_multishow;
-use simple_expiry::bench_expiry;
-use tree_forest_tradeoff::bench_tree_forest;
 
 criterion_group!(
     benches,
-    bench_pseudonymous_show,
-    bench_multishow,
-    bench_revealing_multishow,
-    bench_linkage,
-    bench_tree_forest,
-    bench_multishow_age,
     bench_passport,
     bench_empty,
-    bench_expiry,
     com_scaling::bench_pred_proof_0::bench_pred_proof_0,
     com_scaling::bench_pred_proof_16::bench_pred_proof_16,
     com_scaling::bench_pred_proof_32::bench_pred_proof_32,
@@ -50,4 +31,4 @@ criterion_group!(
     com_scaling::bench_pred_proof_240::bench_pred_proof_240,
     com_scaling::bench_pred_proof_256::bench_pred_proof_256
 );
-criterion_main!(benches);
+criterion_main!(/*benches,*/ microbenches);

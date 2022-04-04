@@ -1,6 +1,6 @@
 ///! Defines a single Groth16 proof for pred(cred) ∧ cred ∈ tree ∧ tree ∈ forest
 // All this code is pieced together from com_tree, com_forest, link, and pred
-use crate::{
+use zeronym::{
     attrs::{Attrs, AttrsVar},
     com_forest::{ComForestRoots, ForestMembershipProver},
     com_tree::{default_auth_path, ComTreePath, TreeMembershipProver},

@@ -179,14 +179,14 @@ where
             inner_hashes: inner_hashes_var,
         })
     }
-    pub(crate) fn new_constant(
+    pub fn new_constant(
         cs: impl Into<Namespace<ConstraintF>>,
         t: impl Borrow<SparseMerkleTreePath<P>>,
         height: u32,
     ) -> Result<Self, SynthesisError> {
         Self::new_variable(cs, || Ok(t), AllocationMode::Constant, height)
     }
-    pub(crate) fn new_input<T: Borrow<SparseMerkleTreePath<P>>>(
+    pub fn new_input<T: Borrow<SparseMerkleTreePath<P>>>(
         cs: impl Into<Namespace<ConstraintF>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
         height: u32,
@@ -194,7 +194,7 @@ where
         Self::new_variable(cs, f, AllocationMode::Input, height)
     }
 
-    pub(crate) fn new_witness<T: Borrow<SparseMerkleTreePath<P>>>(
+    pub fn new_witness<T: Borrow<SparseMerkleTreePath<P>>>(
         cs: impl Into<Namespace<ConstraintF>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
         height: u32,

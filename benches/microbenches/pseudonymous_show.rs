@@ -1,3 +1,7 @@
+use crate::microbenches::monolithic_proof::{
+    gen_monolithic_crs, prove_monolithic, verify_monolithic,
+};
+
 use core::borrow::Borrow;
 
 use zeronym::{
@@ -11,7 +15,7 @@ use zeronym::{
         link_proofs, verif_link_proof, GsCrs, LinkProofCtx, LinkVerifyingKey, PredPublicInputs,
     },
     pred::{gen_pred_crs, prove_pred},
-    revealing_multishow::{MultishowableAttrs, RevealingMultishowChecker},
+    pseudonymous_show::{PseudonymousAttrs, PseudonymousShowChecker},
     utils::setup_poseidon_params,
     ComNonce, ComNonceVar, ComParam, ComParamVar,
 };
@@ -100,29 +104,26 @@ lazy_static! {
 struct Attrs {
     nonce: ComNonce<ComScheme>,
     seed: Fr,
-    id: u8,
 }
 
 #[derive(Clone)]
 struct AttrsVar {
     nonce: ComNonceVar<ComScheme, ComSchemeG, Fr>,
     seed: FpVar<Fr>,
-    id: UInt8<Fr>,
 }
 
 impl Attrs {
     fn new<R: Rng>(rng: &mut R) -> Attrs {
         let nonce = <ComScheme as CommitmentScheme>::Randomness::rand(rng);
         let seed = Fr::rand(rng);
-        let id = u8::rand(rng);
-        Attrs { nonce, seed, id }
+        Attrs { nonce, seed }
     }
 }
 
 impl AttrsTrait<Fr, ComScheme> for Attrs {
     /// Serializes the attrs into bytes
     fn to_bytes(&self) -> Vec<u8> {
-        to_bytes![self.seed, self.id].unwrap()
+        to_bytes![self.seed].unwrap()
     }
 
     fn get_com_param(&self) -> &ComParam<ComScheme> {
@@ -139,7 +140,7 @@ impl AccountableAttrsTrait<Fr, ComScheme> for Attrs {
     type Seed = Fr;
 
     fn get_id(&self) -> Self::Id {
-        vec![self.id]
+        Vec::new()
     }
 
     fn get_seed(&self) -> Fr {
@@ -149,7 +150,7 @@ impl AccountableAttrsTrait<Fr, ComScheme> for Attrs {
 
 impl ToBytesGadget<Fr> for AttrsVar {
     fn to_bytes(&self) -> Result<Vec<UInt8<Fr>>, SynthesisError> {
-        Ok([self.seed.to_bytes()?, vec![self.id.clone()]].concat())
+        self.seed.to_bytes()
     }
 }
 
@@ -168,7 +169,6 @@ impl AllocVar<Attrs, Fr> for AttrsVar {
         let Attrs {
             ref nonce,
             ref seed,
-            ref id,
         } = native_attrs
             .as_ref()
             .map(Borrow::borrow)
@@ -180,9 +180,8 @@ impl AllocVar<Attrs, Fr> for AttrsVar {
             mode,
         )?;
         let seed = FpVar::<Fr>::new_variable(ns!(cs, "seed"), || Ok(*seed), mode)?;
-        let id = UInt8::<Fr>::new_variable(ns!(cs, "id"), || Ok(*id), mode)?;
 
-        Ok(AttrsVar { nonce, seed, id })
+        Ok(AttrsVar { nonce, seed })
     }
 }
 
@@ -202,7 +201,7 @@ impl AccountableAttrsVarTrait<Fr, Attrs, ComScheme, ComSchemeG> for AttrsVar {
     type Seed = FpVar<Fr>;
 
     fn get_id(&self) -> Result<Self::Id, SynthesisError> {
-        Ok(vec![self.id.clone()])
+        Ok(Vec::new())
     }
 
     fn get_seed(&self) -> Result<FpVar<Fr>, SynthesisError> {
@@ -211,23 +210,21 @@ impl AccountableAttrsVarTrait<Fr, Attrs, ComScheme, ComSchemeG> for AttrsVar {
 }
 
 // This benchmarks the linkage functions as the number of predicates increases
-pub fn bench_revealing_multishow(c: &mut Criterion) {
+pub fn bench_pseudonymous_show(c: &mut Criterion) {
     let mut rng = ark_std::test_rng();
 
     //
     // Generate CRSs
     //
 
-    let epoch = 5;
     let params = setup_poseidon_params(Curve::Bls381, 3, POSEIDON_WIDTH);
-    let max_num_presentations: u16 = 128;
-    let placeholder_checker = RevealingMultishowChecker {
+    let placeholder_checker = PseudonymousShowChecker {
         params: params.clone(),
         ..Default::default()
     };
-    let multishow_pk =
+    let pseudonymous_show_pk =
         gen_pred_crs::<_, _, E, _, _, _, _, TreeH, TreeHG>(&mut rng, placeholder_checker).unwrap();
-    let multishow_vk = multishow_pk.prepare_verifying_key();
+    let pseudonymous_show_vk = pseudonymous_show_pk.prepare_verifying_key();
     let tree_pk = gen_tree_memb_crs::<_, E, Attrs, ComScheme, ComSchemeG, TreeH, TreeHG>(
         &mut rng,
         MERKLE_CRH_PARAM.clone(),
@@ -242,21 +239,17 @@ pub fn bench_revealing_multishow(c: &mut Criterion) {
     let forest_vk = forest_pk.prepare_verifying_key();
 
     //
-    // User makes a cred and computes the token
+    // User makes a cred and computes the pseudonym
     //
 
     let attrs = Attrs::new(&mut rng);
     let cred = attrs.commit();
-    let nonce = Fr::rand(&mut rng);
-    let ctr: u16 = 1;
-    let token = attrs
-        .compute_presentation_token(params.clone(), epoch, ctr, nonce)
-        .unwrap();
+    let token = attrs.compute_presentation_token(params.clone()).unwrap();
 
     // Create the tree proof
     let mut tree = ComTree::empty(MERKLE_CRH_PARAM.clone(), TREE_HEIGHT);
     let auth_path = tree.insert(0, &cred);
-    c.bench_function("Revealing multishow: proving tree", |b| {
+    c.bench_function("Pseudonymous show: proving tree", |b| {
         b.iter(|| {
             auth_path
                 .prove_membership(&mut rng, &tree_pk, &*MERKLE_CRH_PARAM, cred)
@@ -271,7 +264,7 @@ pub fn bench_revealing_multishow(c: &mut Criterion) {
     let root = tree.root();
     let mut roots = ComForestRoots::new(NUM_TREES - 1);
     roots.roots.push(root);
-    c.bench_function("Revealing multishow: proving forest", |b| {
+    c.bench_function("Pseudonymous show: proving forest", |b| {
         b.iter(|| {
             roots
                 .prove_membership(&mut rng, &forest_pk, root, cred)
@@ -282,39 +275,78 @@ pub fn bench_revealing_multishow(c: &mut Criterion) {
         .prove_membership(&mut rng, &forest_pk, root, cred)
         .unwrap();
 
-    // Create expiry proof
-    let multishow_checker = RevealingMultishowChecker {
-        token,
-        epoch,
-        nonce,
-        max_num_presentations,
-        ctr,
-        params,
-    };
-    c.bench_function("Revealing multishow: proving multishow", |b| {
+    // Create pseudonym proof
+    let pseudonymous_show_checker = PseudonymousShowChecker { token, params };
+    c.bench_function("Pseudonymous show: proving pseudonym", |b| {
         b.iter(|| {
             prove_pred(
                 &mut rng,
-                &multishow_pk,
-                multishow_checker.clone(),
+                &pseudonymous_show_pk,
+                pseudonymous_show_checker.clone(),
                 attrs.clone(),
                 &auth_path,
             )
             .unwrap()
         })
     });
-    let multishow_proof = prove_pred(
+    let pseudonymous_show_proof = prove_pred(
         &mut rng,
-        &multishow_pk,
-        multishow_checker.clone(),
-        attrs,
+        &pseudonymous_show_pk,
+        pseudonymous_show_checker.clone(),
+        attrs.clone(),
         &auth_path,
     )
     .unwrap();
 
+    let monolithic_pk: ark_groth16::ProvingKey<E> =
+        gen_monolithic_crs::<_, E, Attrs, AttrsVar, ComScheme, ComSchemeG, TreeH, TreeHG, _>(
+            &mut rng,
+            MERKLE_CRH_PARAM.clone(),
+            TREE_HEIGHT,
+            NUM_TREES,
+            pseudonymous_show_checker.clone(),
+        )
+        .unwrap();
+    let monolithic_pvk = ark_groth16::prepare_verifying_key(&monolithic_pk.vk);
+    c.bench_function("Psuedonymous show: proving monolithic", |b| {
+        b.iter(|| {
+            prove_monolithic::<_, _, _, AttrsVar, _, ComSchemeG, _, TreeHG, _>(
+                &mut rng,
+                &monolithic_pk,
+                &*MERKLE_CRH_PARAM,
+                &roots,
+                &auth_path,
+                attrs.clone(),
+                pseudonymous_show_checker.clone(),
+            )
+            .unwrap()
+        })
+    });
+    let proof = prove_monolithic::<_, _, _, AttrsVar, _, ComSchemeG, _, TreeHG, _>(
+        &mut rng,
+        &monolithic_pk,
+        &*MERKLE_CRH_PARAM,
+        &roots,
+        &auth_path,
+        attrs.clone(),
+        pseudonymous_show_checker.clone(),
+    )
+    .unwrap();
+    c.bench_function("Pseudonymous show: verifying monolithic", |b| {
+        b.iter(|| {
+            assert!(verify_monolithic::<_, Attrs, AttrsVar, _, _, _, TreeHG, _>(
+                &monolithic_pvk,
+                &roots,
+                &proof,
+                pseudonymous_show_checker.clone()
+            )
+            .unwrap())
+        })
+    });
+
     // Prepare expiry inputs
     let mut pred_inputs = PredPublicInputs::default();
-    pred_inputs.prepare_pred_checker(&multishow_vk, &multishow_checker);
+    pred_inputs.prepare_pred_checker(&pseudonymous_show_vk, &pseudonymous_show_checker);
 
     let gs_crs = GsCrs::rand(&mut rng);
     let link_vk = LinkVerifyingKey::<_, _, AttrsVar, _, _, _, _> {
@@ -323,22 +355,22 @@ pub fn bench_revealing_multishow(c: &mut Criterion) {
         com_forest_roots: roots,
         forest_verif_key: forest_vk,
         tree_verif_key: tree_vk,
-        pred_verif_keys: vec![multishow_vk],
+        pred_verif_keys: vec![pseudonymous_show_vk],
     };
     let link_ctx = LinkProofCtx {
         attrs_com: cred,
         merkle_root: root,
         forest_proof,
         tree_proof,
-        pred_proofs: vec![multishow_proof],
+        pred_proofs: vec![pseudonymous_show_proof],
         vk: link_vk.clone(),
     };
-    c.bench_function("Revealing multishow: proving linkage", |b| {
+    c.bench_function("Pseudonymous show: proving linkage", |b| {
         b.iter(|| link_proofs(&mut rng, &link_ctx))
     });
     let link_proof = link_proofs(&mut rng, &link_ctx);
 
-    c.bench_function("Revealing multishow: verifying linkage", |b| {
+    c.bench_function("Pseudonymous show: verifying linkage", |b| {
         b.iter(|| assert!(verif_link_proof(&link_proof, &link_vk)))
     });
 }

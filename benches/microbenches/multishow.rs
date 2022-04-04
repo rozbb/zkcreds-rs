@@ -1,13 +1,22 @@
+use crate::microbenches::monolithic_proof::{
+    gen_monolithic_crs, prove_monolithic, verify_monolithic,
+};
+
 use core::borrow::Borrow;
 
 use zeronym::{
-    attrs::{Attrs, AttrsVar},
+    attrs::{
+        AccountableAttrs as AccountableAttrsTrait, AccountableAttrsVar as AccountableAttrsVarTrait,
+        Attrs as AttrsTrait, AttrsVar as AttrsVarTrait,
+    },
     com_forest::{gen_forest_memb_crs, ComForestRoots},
     com_tree::{gen_tree_memb_crs, ComTree},
     link::{
         link_proofs, verif_link_proof, GsCrs, LinkProofCtx, LinkVerifyingKey, PredPublicInputs,
     },
-    pred::{gen_pred_crs, prove_pred, PredicateChecker},
+    multishow::{MultishowChecker, MultishowableAttrs},
+    pred::{gen_pred_crs, prove_pred},
+    utils::setup_poseidon_params,
     ComNonce, ComNonceVar, ComParam, ComParamVar,
 };
 
@@ -28,12 +37,13 @@ use ark_r1cs_std::{
 };
 use ark_relations::{
     ns,
-    r1cs::{ConstraintSystemRef, Namespace, SynthesisError},
+    r1cs::{Namespace, SynthesisError},
 };
 use ark_std::{
     io::Write,
     rand::{rngs::StdRng, Rng, SeedableRng},
 };
+use arkworks_utils::Curve;
 use criterion::Criterion;
 use lazy_static::lazy_static;
 
@@ -41,6 +51,7 @@ const LOG2_NUM_LEAVES: u32 = 31;
 const LOG2_NUM_TREES: u32 = 10;
 const TREE_HEIGHT: u32 = LOG2_NUM_LEAVES + 1 - LOG2_NUM_TREES;
 const NUM_TREES: usize = 2usize.pow(LOG2_NUM_TREES);
+const POSEIDON_WIDTH: u8 = 5;
 
 type E = Bls12_381;
 type Fr = <E as PairingEngine>::Fr;
@@ -62,7 +73,7 @@ type TreeHG = bowe_hopwood::constraints::CRHGadget<EdwardsParameters, FqVar>;
 struct CustomWindow;
 impl pedersen::Window for CustomWindow {
     const WINDOW_SIZE: usize = 128;
-    const NUM_WINDOWS: usize = 2;
+    const NUM_WINDOWS: usize = 3;
 }
 
 type ComScheme = CompressedPedersenCom<CustomWindow>;
@@ -90,31 +101,30 @@ lazy_static! {
 }
 
 #[derive(Clone, Default)]
-struct ExpiryAttrs {
+struct Attrs {
     nonce: ComNonce<ComScheme>,
-    expiry: Fr,
+    seed: Fr,
 }
 
 #[derive(Clone)]
-struct ExpiryAttrsVar {
+struct AttrsVar {
     nonce: ComNonceVar<ComScheme, ComSchemeG, Fr>,
-    expiry: FpVar<Fr>,
+    seed: FpVar<Fr>,
 }
 
-impl ExpiryAttrs {
-    fn new<R: Rng>(rng: &mut R, expiry: u32) -> ExpiryAttrs {
+impl Attrs {
+    fn new<R: Rng>(rng: &mut R) -> Attrs {
         let nonce = <ComScheme as CommitmentScheme>::Randomness::rand(rng);
-        ExpiryAttrs {
-            nonce,
-            expiry: Fr::from(expiry),
-        }
+        let seed = Fr::rand(rng);
+        let id = u8::rand(rng);
+        Attrs { nonce, seed }
     }
 }
 
-impl Attrs<Fr, ComScheme> for ExpiryAttrs {
+impl AttrsTrait<Fr, ComScheme> for Attrs {
     /// Serializes the attrs into bytes
     fn to_bytes(&self) -> Vec<u8> {
-        to_bytes![self.expiry].unwrap()
+        to_bytes![self.seed].unwrap()
     }
 
     fn get_com_param(&self) -> &ComParam<ComScheme> {
@@ -126,14 +136,27 @@ impl Attrs<Fr, ComScheme> for ExpiryAttrs {
     }
 }
 
-impl ToBytesGadget<Fr> for ExpiryAttrsVar {
-    fn to_bytes(&self) -> Result<Vec<UInt8<Fr>>, SynthesisError> {
-        self.expiry.to_bytes()
+impl AccountableAttrsTrait<Fr, ComScheme> for Attrs {
+    type Id = Vec<u8>;
+    type Seed = Fr;
+
+    fn get_id(&self) -> Self::Id {
+        Vec::new()
+    }
+
+    fn get_seed(&self) -> Fr {
+        self.seed
     }
 }
 
-impl AllocVar<ExpiryAttrs, Fr> for ExpiryAttrsVar {
-    fn new_variable<T: Borrow<ExpiryAttrs>>(
+impl ToBytesGadget<Fr> for AttrsVar {
+    fn to_bytes(&self) -> Result<Vec<UInt8<Fr>>, SynthesisError> {
+        self.seed.to_bytes()
+    }
+}
+
+impl AllocVar<Attrs, Fr> for AttrsVar {
+    fn new_variable<T: Borrow<Attrs>>(
         cs: impl Into<Namespace<Fr>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
         mode: AllocationMode,
@@ -141,12 +164,12 @@ impl AllocVar<ExpiryAttrs, Fr> for ExpiryAttrsVar {
         let cs = cs.into().cs();
         let native_attrs = f();
 
-        let default_info = ExpiryAttrs::default();
+        let default_info = Attrs::default();
 
         // Unpack the given attributes
-        let ExpiryAttrs {
+        let Attrs {
             ref nonce,
-            ref expiry,
+            ref seed,
         } = native_attrs
             .as_ref()
             .map(Borrow::borrow)
@@ -157,13 +180,13 @@ impl AllocVar<ExpiryAttrs, Fr> for ExpiryAttrsVar {
             || Ok(nonce),
             mode,
         )?;
-        let expiry = FpVar::<Fr>::new_variable(ns!(cs, "expiry"), || Ok(*expiry), mode)?;
+        let seed = FpVar::<Fr>::new_variable(ns!(cs, "seed"), || Ok(*seed), mode)?;
 
-        Ok(ExpiryAttrsVar { nonce, expiry })
+        Ok(AttrsVar { nonce, seed })
     }
 }
 
-impl AttrsVar<Fr, ExpiryAttrs, ComScheme, ComSchemeG> for ExpiryAttrsVar {
+impl AttrsVarTrait<Fr, Attrs, ComScheme, ComSchemeG> for AttrsVar {
     fn get_com_param(&self) -> Result<ComParamVar<ComScheme, ComSchemeG, Fr>, SynthesisError> {
         let cs = self.nonce.cs();
         ComParamVar::<_, ComSchemeG, _>::new_constant(cs, &*COM_PARAM)
@@ -174,67 +197,65 @@ impl AttrsVar<Fr, ExpiryAttrs, ComScheme, ComSchemeG> for ExpiryAttrsVar {
     }
 }
 
-#[derive(Clone, Default)]
-pub(crate) struct ExpiryChecker {
-    pub(crate) threshold_expiry: Fr,
-}
+impl AccountableAttrsVarTrait<Fr, Attrs, ComScheme, ComSchemeG> for AttrsVar {
+    type Id = Vec<UInt8<Fr>>;
+    type Seed = FpVar<Fr>;
 
-impl PredicateChecker<Fr, ExpiryAttrs, ExpiryAttrsVar, ComScheme, ComSchemeG> for ExpiryChecker {
-    /// Returns whether or not the predicate was satisfied
-    fn pred(
-        self,
-        cs: ConstraintSystemRef<Fr>,
-        attrs: &ExpiryAttrsVar,
-    ) -> Result<(), SynthesisError> {
-        // Assert that attrs.expiry > threshold_expiry
-        let threshold_expiry =
-            FpVar::<Fr>::new_input(ns!(cs, "threshold expiry"), || Ok(self.threshold_expiry))?;
-        attrs
-            .expiry
-            .enforce_cmp(&threshold_expiry, core::cmp::Ordering::Greater, false)
+    fn get_id(&self) -> Result<Self::Id, SynthesisError> {
+        Ok(Vec::new())
     }
 
-    /// This outputs the field elements corresponding to the public inputs of this predicate.
-    /// This DOES NOT include `attrs`.
-    fn public_inputs(&self) -> Vec<Fr> {
-        vec![self.threshold_expiry]
+    fn get_seed(&self) -> Result<FpVar<Fr>, SynthesisError> {
+        Ok(self.seed.clone())
     }
 }
 
 // This benchmarks the linkage functions as the number of predicates increases
-pub fn bench_expiry(c: &mut Criterion) {
+pub fn bench_multishow(c: &mut Criterion) {
     let mut rng = ark_std::test_rng();
 
-    let expiry_checker = ExpiryChecker {
-        threshold_expiry: Fr::from(110),
-    };
-
+    //
     // Generate CRSs
-    let expiry_pk =
-        gen_pred_crs::<_, _, E, _, _, _, _, TreeH, TreeHG>(&mut rng, expiry_checker.clone())
-            .unwrap();
-    let expiry_vk = expiry_pk.prepare_verifying_key();
-    let tree_pk = gen_tree_memb_crs::<_, E, ExpiryAttrs, ComScheme, ComSchemeG, TreeH, TreeHG>(
+    //
+
+    let epoch = 5;
+    let params = setup_poseidon_params(Curve::Bls381, 3, POSEIDON_WIDTH);
+    let max_num_presentations: u16 = 128;
+    let placeholder_checker = MultishowChecker {
+        params: params.clone(),
+        ..Default::default()
+    };
+    let multishow_pk =
+        gen_pred_crs::<_, _, E, _, _, _, _, TreeH, TreeHG>(&mut rng, placeholder_checker).unwrap();
+    let multishow_vk = multishow_pk.prepare_verifying_key();
+    let tree_pk = gen_tree_memb_crs::<_, E, Attrs, ComScheme, ComSchemeG, TreeH, TreeHG>(
         &mut rng,
         MERKLE_CRH_PARAM.clone(),
         TREE_HEIGHT,
     )
     .unwrap();
     let tree_vk = tree_pk.prepare_verifying_key();
-    let forest_pk = gen_forest_memb_crs::<_, E, ExpiryAttrs, ComScheme, ComSchemeG, TreeH, TreeHG>(
+    let forest_pk = gen_forest_memb_crs::<_, E, Attrs, ComScheme, ComSchemeG, TreeH, TreeHG>(
         &mut rng, NUM_TREES,
     )
     .unwrap();
     let forest_vk = forest_pk.prepare_verifying_key();
 
-    // Make the empty attribute
-    let attrs = ExpiryAttrs::new(&mut rng, 200);
+    //
+    // User makes a cred and computes the token
+    //
+
+    let attrs = Attrs::new(&mut rng);
     let cred = attrs.commit();
+    let ctr: u16 = 1;
+    let token = attrs
+        .compute_presentation_token(params.clone(), epoch, ctr)
+        .unwrap();
 
     // Create the tree proof
     let mut tree = ComTree::empty(MERKLE_CRH_PARAM.clone(), TREE_HEIGHT);
     let auth_path = tree.insert(0, &cred);
-    c.bench_function("Expiry: proving tree", |b| {
+    c.bench_function("Multishow: proving tree", |b| {
         b.iter(|| {
             auth_path
                 .prove_membership(&mut rng, &tree_pk, &*MERKLE_CRH_PARAM, cred)
@@ -249,7 +270,7 @@ pub fn bench_expiry(c: &mut Criterion) {
     let root = tree.root();
     let mut roots = ComForestRoots::new(NUM_TREES - 1);
     roots.roots.push(root);
-    c.bench_function("Expiry: proving forest", |b| {
+    c.bench_function("Multishow: proving forest", |b| {
         b.iter(|| {
             roots
                 .prove_membership(&mut rng, &forest_pk, root, cred)
@@ -260,55 +281,108 @@ pub fn bench_expiry(c: &mut Criterion) {
         .prove_membership(&mut rng, &forest_pk, root, cred)
         .unwrap();
 
-    // Create expiry proof
-    c.bench_function("Expiry: proving expiry", |b| {
+    // Create multishow proof
+    let multishow_checker = MultishowChecker {
+        token,
+        epoch,
+        max_num_presentations,
+        ctr,
+        params,
+    };
+    c.bench_function("Multishow: proving multishow", |b| {
         b.iter(|| {
             prove_pred(
                 &mut rng,
-                &expiry_pk,
-                expiry_checker.clone(),
+                &multishow_pk,
+                multishow_checker.clone(),
                 attrs.clone(),
                 &auth_path,
             )
             .unwrap()
         })
     });
-    let expiry_proof = prove_pred(
+    let multishow_proof = prove_pred(
         &mut rng,
-        &expiry_pk,
-        expiry_checker.clone(),
-        attrs,
+        &multishow_pk,
+        multishow_checker.clone(),
+        attrs.clone(),
         &auth_path,
     )
     .unwrap();
 
-    // Prepare expiry inputs
+    let monolithic_pk: ark_groth16::ProvingKey<E> =
+        gen_monolithic_crs::<_, E, Attrs, AttrsVar, ComScheme, ComSchemeG, TreeH, TreeHG, _>(
+            &mut rng,
+            MERKLE_CRH_PARAM.clone(),
+            TREE_HEIGHT,
+            NUM_TREES,
+            multishow_checker.clone(),
+        )
+        .unwrap();
+    let monolithic_pvk = ark_groth16::prepare_verifying_key(&monolithic_pk.vk);
+    c.bench_function("Multishow: proving monolithic", |b| {
+        b.iter(|| {
+            prove_monolithic::<_, _, _, AttrsVar, _, ComSchemeG, _, TreeHG, _>(
+                &mut rng,
+                &monolithic_pk,
+                &*MERKLE_CRH_PARAM,
+                &roots,
+                &auth_path,
+                attrs.clone(),
+                multishow_checker.clone(),
+            )
+            .unwrap()
+        })
+    });
+    let proof = prove_monolithic::<_, _, _, AttrsVar, _, ComSchemeG, _, TreeHG, _>(
+        &mut rng,
+        &monolithic_pk,
+        &*MERKLE_CRH_PARAM,
+        &roots,
+        &auth_path,
+        attrs.clone(),
+        multishow_checker.clone(),
+    )
+    .unwrap();
+    c.bench_function("Multishow: verifying monolithic", |b| {
+        b.iter(|| {
+            assert!(verify_monolithic::<_, Attrs, AttrsVar, _, _, _, TreeHG, _>(
+                &monolithic_pvk,
+                &roots,
+                &proof,
+                multishow_checker.clone()
+            )
+            .unwrap())
+        })
+    });
+
+    // Prepare multishow inputs
     let mut pred_inputs = PredPublicInputs::default();
-    pred_inputs.prepare_pred_checker(&expiry_vk, &expiry_checker);
+    pred_inputs.prepare_pred_checker(&multishow_vk, &multishow_checker);
 
     let gs_crs = GsCrs::rand(&mut rng);
-    let link_vk = LinkVerifyingKey::<_, _, ExpiryAttrsVar, _, _, _, _> {
+    let link_vk = LinkVerifyingKey::<_, _, AttrsVar, _, _, _, _> {
         gs_crs,
         pred_inputs,
         com_forest_roots: roots,
         forest_verif_key: forest_vk,
         tree_verif_key: tree_vk,
-        pred_verif_keys: vec![expiry_vk],
+        pred_verif_keys: vec![multishow_vk],
     };
     let link_ctx = LinkProofCtx {
         attrs_com: cred,
         merkle_root: root,
         forest_proof,
         tree_proof,
-        pred_proofs: vec![expiry_proof],
+        pred_proofs: vec![multishow_proof],
         vk: link_vk.clone(),
     };
-    c.bench_function("Expiry: proving linkage", |b| {
+    c.bench_function("Multishow: proving linkage", |b| {
         b.iter(|| link_proofs(&mut rng, &link_ctx))
     });
     let link_proof = link_proofs(&mut rng, &link_ctx);
 
-    c.bench_function("Expiry: verifying linkage", |b| {
+    c.bench_function("Multishow: verifying linkage", |b| {
         b.iter(|| assert!(verif_link_proof(&link_proof, &link_vk)))
     });
 }

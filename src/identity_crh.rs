@@ -37,7 +37,7 @@ impl CRH for IdentityCRH {
 }
 
 // This CRH is the identity function in its input
-pub(crate) struct IdentityCRHGadget;
+pub struct IdentityCRHGadget;
 impl<ConstraintF: PrimeField> CRHGadget<IdentityCRH, ConstraintF> for IdentityCRHGadget {
     /// A `Bytestring` is just a wrapper around `Vec<UInt8<F>>`
     type OutputVar = Bytestring<ConstraintF>;
@@ -56,7 +56,7 @@ impl<ConstraintF: PrimeField> CRHGadget<IdentityCRH, ConstraintF> for IdentityCR
 
 // The unit type for circuit variables. This contains no data.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct UnitVar<ConstraintF: PrimeField>(PhantomData<ConstraintF>);
+pub struct UnitVar<ConstraintF: PrimeField>(PhantomData<ConstraintF>);
 
 impl<ConstraintF: PrimeField> AllocVar<(), ConstraintF> for UnitVar<ConstraintF> {
     fn new_variable<T: Borrow<()>>(

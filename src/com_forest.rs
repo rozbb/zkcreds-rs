@@ -91,7 +91,7 @@ where
         ark_groth16::verify_proof(&vk.pvk, &proof.proof, &all_inputs)
     }
 
-    pub(crate) fn public_inputs(&self) -> Vec<ConstraintF> {
+    pub fn public_inputs(&self) -> Vec<ConstraintF> {
         self.roots
             .iter()
             .flat_map(|t| t.to_field_elements().unwrap())
@@ -192,7 +192,7 @@ where
     })
 }
 
-pub(crate) struct ForestMembershipProver<ConstraintF, AC, ACG, H, HG>
+pub struct ForestMembershipProver<ConstraintF, AC, ACG, H, HG>
 where
     ConstraintF: PrimeField,
     AC: CommitmentScheme,
@@ -203,16 +203,16 @@ where
     HG: TwoToOneCRHGadget<H, ConstraintF>,
 {
     // Public inputs
-    pub(crate) roots: Vec<H::Output>,
+    pub roots: Vec<H::Output>,
 
     // Private inputs //
     // This is necessary for all proofs
-    pub(crate) attrs_com: AC::Output,
+    pub attrs_com: AC::Output,
     // The root that's the member of the forest
-    pub(crate) member_root: H::Output,
+    pub member_root: H::Output,
 
     // Marker //
-    pub(crate) _marker: PhantomData<(ConstraintF, AC, ACG, H, HG, HG)>,
+    pub _marker: PhantomData<(ConstraintF, AC, ACG, H, HG, HG)>,
 }
 
 impl<ConstraintF, AC, ACG, H, HG> ForestMembershipProver<ConstraintF, AC, ACG, H, HG>
@@ -225,7 +225,7 @@ where
     H::Output: ToConstraintField<ConstraintF>,
     HG: TwoToOneCRHGadget<H, ConstraintF>,
 {
-    pub(crate) fn circuit(
+    pub fn circuit(
         &self,
         member_root: &HG::OutputVar,
         all_roots: &[HG::OutputVar],
