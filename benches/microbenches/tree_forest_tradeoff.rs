@@ -1,3 +1,5 @@
+use crate::microbenches::tf_proof::{gen_tf_crs, prove_tf, verify_tf};
+
 use zeronym::{
     attrs::Attrs,
     com_forest::{gen_forest_memb_crs, ComForestRoots},
@@ -51,10 +53,6 @@ pub fn bench_tree_forest(c: &mut Criterion) {
             >(&mut rng, num_trees)
             .unwrap();
 
-            // Make an empty forest of the correct size and prove membership of the 0th root
-            let roots = ComForestRoots::<Fr, TestTreeH>::new(num_trees);
-            let member_root = roots.roots[0];
-
             // Set up an auth path for tree membership
             let auth_path = {
                 let leaf_idx = 0;
@@ -64,6 +62,11 @@ pub fn bench_tree_forest(c: &mut Criterion) {
                 );
                 tree.insert(leaf_idx, &person_com)
             };
+            let member_root = auth_path.root();
+
+            // Make an empty forest of the correct size and prove membership of the 0th root
+            let mut roots = ComForestRoots::<Fr, TestTreeH>::new(num_trees);
+            roots.roots[0] = member_root;
 
             // Benchmark the tree and forest proofs in serial
             c.bench_function(
@@ -85,6 +88,60 @@ pub fn bench_tree_forest(c: &mut Criterion) {
                             .prove_membership(&mut rng, &forest_pk, member_root, person_com)
                             .unwrap();
                     });
+                },
+            );
+
+            let tf_pk: ark_groth16::ProvingKey<E> =
+                gen_tf_crs::<_, E, TestComScheme, TestComSchemeG, TestTreeH, TestTreeHG>(
+                    &mut rng,
+                    MERKLE_CRH_PARAM.clone(),
+                    tree_height,
+                    num_trees,
+                )
+                .unwrap();
+            let tf_pvk = ark_groth16::prepare_verifying_key(&tf_pk.vk);
+            c.bench_function(
+                &format!(
+                    "Proving treeforest [lnl={},th={}]",
+                    log2_num_leaves, tree_height
+                ),
+                |b| {
+                    b.iter(|| {
+                        prove_tf::<_, E, TestComScheme, TestComSchemeG, TestTreeH, TestTreeHG>(
+                            &mut rng,
+                            &tf_pk,
+                            &*MERKLE_CRH_PARAM,
+                            &roots,
+                            &auth_path,
+                            person_com,
+                        )
+                        .unwrap()
+                    })
+                },
+            );
+            let proof = prove_tf::<_, E, TestComScheme, TestComSchemeG, TestTreeH, TestTreeHG>(
+                &mut rng,
+                &tf_pk,
+                &*MERKLE_CRH_PARAM,
+                &roots,
+                &auth_path,
+                person_com,
+            )
+            .unwrap();
+            c.bench_function(
+                &format!(
+                    "Veryfing treeforest [lnl={},th={}]",
+                    log2_num_leaves, tree_height
+                ),
+                |b| {
+                    b.iter(|| {
+                        assert!(
+                            verify_tf::<E, TestComScheme, TestComSchemeG, TestTreeH, TestTreeHG>(
+                                &tf_pvk, &roots, &proof,
+                            )
+                            .unwrap()
+                        )
+                    })
                 },
             );
         }
