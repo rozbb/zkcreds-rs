@@ -1,5 +1,6 @@
 use crate::microbenches::tf_proof::{gen_tf_crs, prove_tf, verify_tf};
 
+use linkg16::groth16;
 use zeronym::{
     attrs::Attrs,
     com_forest::{gen_forest_memb_crs, ComForestRoots},
@@ -91,7 +92,7 @@ pub fn bench_tree_forest(c: &mut Criterion) {
                 },
             );
 
-            let tf_pk: ark_groth16::ProvingKey<E> =
+            let tf_pk: groth16::ProvingKey<E> =
                 gen_tf_crs::<_, E, TestComScheme, TestComSchemeG, TestTreeH, TestTreeHG>(
                     &mut rng,
                     MERKLE_CRH_PARAM.clone(),
@@ -99,7 +100,7 @@ pub fn bench_tree_forest(c: &mut Criterion) {
                     num_trees,
                 )
                 .unwrap();
-            let tf_pvk = ark_groth16::prepare_verifying_key(&tf_pk.vk);
+            let tf_vk = tf_pk.verifying_key();
             c.bench_function(
                 &format!(
                     "Proving treeforest [lnl={},th={}]",
@@ -137,7 +138,7 @@ pub fn bench_tree_forest(c: &mut Criterion) {
                     b.iter(|| {
                         assert!(
                             verify_tf::<E, TestComScheme, TestComSchemeG, TestTreeH, TestTreeHG>(
-                                &tf_pvk, &roots, &proof,
+                                &tf_vk, &roots, &proof,
                             )
                             .unwrap()
                         )

@@ -20,12 +20,12 @@ use tree_forest_tradeoff::bench_tree_forest;
 
 criterion_group!(
     microbenches,
-    /*bench_pseudonymous_show,
+    bench_pseudonymous_show,
     bench_multishow,
     bench_revealing_multishow,
-    bench_linkage,*/
+    bench_linkage,
     bench_tree_forest,
-    /*bench_multishow_age,
-    bench_expiry,*/
+    bench_multishow_age,
+    bench_expiry,
 );
 criterion_main!(microbenches);

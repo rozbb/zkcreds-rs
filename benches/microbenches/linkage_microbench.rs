@@ -2,9 +2,7 @@ use zeronym::{
     attrs::Attrs,
     com_forest::{gen_forest_memb_crs, ComForestRoots},
     com_tree::{gen_tree_memb_crs, ComTree},
-    link::{
-        link_proofs, verif_link_proof, GsCrs, LinkProofCtx, LinkVerifyingKey, PredPublicInputs,
-    },
+    link::{link_proofs, verif_link_proof, LinkProofCtx, LinkVerifyingKey, PredPublicInputs},
     pred::{gen_pred_crs, prove_pred},
     test_util::{
         AgeChecker, NameAndBirthYear, TestComScheme, TestComSchemeG, TestTreeH, TestTreeHG,
@@ -28,9 +26,6 @@ pub fn bench_linkage(c: &mut Criterion) {
     //
     // Generate CRSs
     //
-
-    // Linking CRS
-    let gs_crs = GsCrs::rand(&mut rng);
 
     // Forest predicate
     let forest_pk = gen_forest_memb_crs::<
@@ -109,7 +104,6 @@ pub fn bench_linkage(c: &mut Criterion) {
 
         // Now link everything together
         let link_vk = LinkVerifyingKey {
-            gs_crs: gs_crs.clone(),
             pred_inputs: pred_inputs.clone(),
             com_forest_roots: roots.clone(),
             forest_verif_key: forest_vk.clone(),
@@ -131,7 +125,7 @@ pub fn bench_linkage(c: &mut Criterion) {
 
         // Verify the link proof
         c.bench_function(&format!("Verifying linkage [np={}]", num_preds), |b| {
-            b.iter(|| verif_link_proof(&link_proof, &link_vk))
+            b.iter(|| assert!(verif_link_proof(&link_proof, &link_vk).unwrap()))
         });
     }
 }

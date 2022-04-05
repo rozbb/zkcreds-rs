@@ -8,9 +8,7 @@ use zeronym::{
     attrs::{Attrs, AttrsVar},
     com_forest::{gen_forest_memb_crs, ComForestRoots},
     com_tree::{gen_tree_memb_crs, ComTree},
-    link::{
-        link_proofs, verif_link_proof, GsCrs, LinkProofCtx, LinkVerifyingKey, PredPublicInputs,
-    },
+    link::{link_proofs, verif_link_proof, LinkProofCtx, LinkVerifyingKey, PredPublicInputs},
     pred::{gen_pred_crs, prove_pred, PredicateChecker},
     ComNonce, ComNonceVar, ComParam, ComParamVar,
 };
@@ -40,6 +38,7 @@ use ark_std::{
 };
 use criterion::Criterion;
 use lazy_static::lazy_static;
+use linkg16::groth16;
 
 const LOG2_NUM_LEAVES: u32 = 31;
 const LOG2_NUM_TREES: u32 = 10;
@@ -286,7 +285,7 @@ pub fn bench_expiry(c: &mut Criterion) {
     )
     .unwrap();
 
-    let monolithic_pk: ark_groth16::ProvingKey<E> = gen_monolithic_crs::<
+    let monolithic_pk: groth16::ProvingKey<E> = gen_monolithic_crs::<
         _,
         E,
         ExpiryAttrs,
@@ -304,7 +303,7 @@ pub fn bench_expiry(c: &mut Criterion) {
         expiry_checker.clone(),
     )
     .unwrap();
-    let monolithic_pvk = ark_groth16::prepare_verifying_key(&monolithic_pk.vk);
+    let monolithic_vk = monolithic_pk.verifying_key();
     c.bench_function("Expiry show: proving monolithic", |b| {
         b.iter(|| {
             prove_monolithic::<_, _, _, ExpiryAttrsVar, _, ComSchemeG, _, TreeHG, _>(
@@ -333,7 +332,7 @@ pub fn bench_expiry(c: &mut Criterion) {
         b.iter(|| {
             assert!(
                 verify_monolithic::<_, ExpiryAttrs, ExpiryAttrsVar, _, _, _, TreeHG, _>(
-                    &monolithic_pvk,
+                    &monolithic_vk,
                     &roots,
                     &proof,
                     expiry_checker.clone()
@@ -347,9 +346,7 @@ pub fn bench_expiry(c: &mut Criterion) {
     let mut pred_inputs = PredPublicInputs::default();
     pred_inputs.prepare_pred_checker(&expiry_vk, &expiry_checker);
 
-    let gs_crs = GsCrs::rand(&mut rng);
     let link_vk = LinkVerifyingKey::<_, _, ExpiryAttrsVar, _, _, _, _> {
-        gs_crs,
         pred_inputs,
         com_forest_roots: roots,
         forest_verif_key: forest_vk,
@@ -370,6 +367,6 @@ pub fn bench_expiry(c: &mut Criterion) {
     let link_proof = link_proofs(&mut rng, &link_ctx);
 
     c.bench_function("Expiry: verifying linkage", |b| {
-        b.iter(|| assert!(verif_link_proof(&link_proof, &link_vk)))
+        b.iter(|| assert!(verif_link_proof(&link_proof, &link_vk).unwrap()))
     });
 }

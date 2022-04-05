@@ -1,11 +1,9 @@
-///! Defines a single Groth16 proof for pred(cred) ∧ cred ∈ tree ∧ tree ∈ forest
-// All this code is pieced together from com_tree, com_forest, link, and pred
+///! Defines a single Groth16 proof for cred ∈ tree ∧ tree ∈ forest. This is a pared down version
+///of monolithic_proof.rs
 use zeronym::{
-    attrs::{Attrs, AttrsVar},
     com_forest::{ComForestRoots, ForestMembershipProver},
     com_tree::{default_auth_path, ComTreePath, TreeMembershipProver},
     identity_crh::{IdentityCRHGadget, UnitVar},
-    pred::PredicateChecker,
     sparse_merkle::constraints::SparseMerkleTreePathVar,
 };
 
@@ -28,50 +26,41 @@ use groth16::{
 };
 use linkg16::groth16;
 
-// A single Groth16 proof for pred(cred) ∧ cred ∈ tree ∧ tree ∈ forest
-struct MonolithicProver<ConstraintF, A, AV, AC, ACG, H, HG, P>
+// Tree-forest prover. A single Groth16 proof for cred ∈ tree ∧ tree ∈ forest
+struct TfProver<ConstraintF, AC, ACG, H, HG>
 where
     ConstraintF: PrimeField,
-    A: Attrs<ConstraintF, AC>,
-    AV: AttrsVar<ConstraintF, A, AC, ACG>,
     AC: CommitmentScheme,
     AC::Output: ToConstraintField<ConstraintF>,
     ACG: CommitmentGadget<AC, ConstraintF>,
     H: TwoToOneCRH,
     H::Output: ToConstraintField<ConstraintF>,
     HG: TwoToOneCRHGadget<H, ConstraintF>,
-    P: PredicateChecker<ConstraintF, A, AV, AC, ACG>,
 {
     tree_prover: TreeMembershipProver<ConstraintF, AC, ACG, H, HG>,
     forest_prover: ForestMembershipProver<ConstraintF, AC, ACG, H, HG>,
-    pred_checker: P,
-    attrs: A,
-    _marker: PhantomData<(A, AV)>,
 }
 
-impl<ConstraintF, A, AV, AC, ACG, H, HG, P> ConstraintSynthesizer<ConstraintF>
-    for MonolithicProver<ConstraintF, A, AV, AC, ACG, H, HG, P>
+impl<ConstraintF, AC, ACG, H, HG> ConstraintSynthesizer<ConstraintF>
+    for TfProver<ConstraintF, AC, ACG, H, HG>
 where
     ConstraintF: PrimeField,
-    A: Attrs<ConstraintF, AC>,
-    AV: AttrsVar<ConstraintF, A, AC, ACG>,
     AC: CommitmentScheme,
     AC::Output: ToConstraintField<ConstraintF>,
     ACG: CommitmentGadget<AC, ConstraintF>,
     H: TwoToOneCRH,
     H::Output: ToConstraintField<ConstraintF>,
     HG: TwoToOneCRHGadget<H, ConstraintF>,
-    P: PredicateChecker<ConstraintF, A, AV, AC, ACG>,
 {
     fn generate_constraints(
         self,
         cs: ConstraintSystemRef<ConstraintF>,
     ) -> Result<(), SynthesisError> {
         let tree_height = self.tree_prover.height;
+        let attrs_com = &self.tree_prover.attrs_com;
 
-        // Check that the attrs commitment is consistent
-        let attrs_var = AV::new_witness(ns!(cs, "attrs var"), || Ok(&self.attrs))?;
-        let attrs_com_var = &attrs_var.commit()?;
+        let attrs_com_var =
+            ACG::OutputVar::new_witness(ns!(cs, "attrs com var"), || Ok(attrs_com.clone()))?;
 
         // Witness the public variables. In ALL zeronym proofs, it's the commitment to the
         // attributes and the merkle root
@@ -105,36 +94,31 @@ where
 
         self.forest_prover.circuit(&root_var, &all_roots)?;
         self.tree_prover.circuit(
-            attrs_com_var,
+            &attrs_com_var,
             &root_var,
             &path_var,
             &crh_param_var,
             &leaf_param_var,
-        )?;
-        self.pred_checker.pred(cs, &attrs_var)
+        )
     }
 }
 
 /// Generates the membership proving key for this tree
-pub fn gen_monolithic_crs<R, E, A, AV, AC, ACG, H, HG, P>(
+pub fn gen_tf_crs<R, E, AC, ACG, H, HG>(
     rng: &mut R,
     crh_param: H::Parameters,
     height: u32,
     num_trees: usize,
-    pred_checker: P,
 ) -> Result<Groth16ProvingKey<E>, SynthesisError>
 where
     R: Rng,
     E: PairingEngine,
-    A: Attrs<E::Fr, AC>,
-    AV: AttrsVar<E::Fr, A, AC, ACG>,
     AC: CommitmentScheme,
     AC::Output: ToConstraintField<E::Fr>,
     ACG: CommitmentGadget<AC, E::Fr>,
     H: TwoToOneCRH,
     H::Output: ToConstraintField<E::Fr>,
     HG: TwoToOneCRHGadget<H, E::Fr>,
-    P: PredicateChecker<E::Fr, A, AV, AC, ACG>,
 {
     // Make a placeholder tree
     let tree_prover: TreeMembershipProver<E::Fr, AC, ACG, H, HG> = TreeMembershipProver {
@@ -157,41 +141,33 @@ where
         _marker: PhantomData,
     };
 
-    let tf_prover = MonolithicProver {
+    let tf_prover = TfProver {
         tree_prover,
         forest_prover,
-        pred_checker,
-        attrs: A::default(),
-        _marker: PhantomData,
     };
 
     groth16::generate_random_parameters(tf_prover, rng)
 }
 
-pub fn prove_monolithic<R, E, A, AV, AC, ACG, H, HG, P>(
+pub fn prove_tf<R, E, AC, ACG, H, HG>(
     rng: &mut R,
     pk: &Groth16ProvingKey<E>,
     two_to_one_params: &H::Parameters,
     roots: &ComForestRoots<E::Fr, H>,
     auth_path: &ComTreePath<E::Fr, H, AC>,
-    attrs: A,
-    pred_checker: P,
+    attrs_com: AC::Output,
 ) -> Result<Groth16Proof<E>, SynthesisError>
 where
     R: Rng,
     E: PairingEngine,
-    A: Attrs<E::Fr, AC>,
-    AV: AttrsVar<E::Fr, A, AC, ACG>,
     AC: CommitmentScheme,
     AC::Output: ToConstraintField<E::Fr>,
     ACG: CommitmentGadget<AC, E::Fr>,
     H: TwoToOneCRH,
     H::Output: ToConstraintField<E::Fr>,
     HG: TwoToOneCRHGadget<H, E::Fr>,
-    P: PredicateChecker<E::Fr, A, AV, AC, ACG>,
 {
     let member_root = auth_path.root();
-    let attrs_com = attrs.commit();
 
     // Construct the prover with all the relevant info, and prove
     let tree_prover: TreeMembershipProver<E::Fr, AC, ACG, H, HG> = TreeMembershipProver {
@@ -210,35 +186,27 @@ where
         _marker: PhantomData,
     };
 
-    let monolith_prover = MonolithicProver {
+    let monolith_prover = TfProver {
         tree_prover,
         forest_prover,
-        pred_checker,
-        attrs,
-        _marker: PhantomData,
     };
 
     groth16::create_random_proof(monolith_prover, pk, rng)
 }
 
-pub fn verify_monolithic<E, A, AV, AC, ACG, H, HG, P>(
+pub fn verify_tf<E, AC, ACG, H, HG>(
     vk: &Groth16VerifyingKey<E>,
     roots: &ComForestRoots<E::Fr, H>,
     proof: &Groth16Proof<E>,
-    pred_checker: P,
 ) -> Result<bool, SynthesisError>
 where
     E: PairingEngine,
-    A: Attrs<E::Fr, AC>,
-    AV: AttrsVar<E::Fr, A, AC, ACG>,
     AC: CommitmentScheme,
     AC::Output: ToConstraintField<E::Fr>,
     ACG: CommitmentGadget<AC, E::Fr>,
     H: TwoToOneCRH,
     H::Output: ToConstraintField<E::Fr>,
     HG: TwoToOneCRHGadget<H, E::Fr>,
-    P: PredicateChecker<E::Fr, A, AV, AC, ACG>,
 {
-    let public_inputs = [roots.public_inputs(), pred_checker.public_inputs()].concat();
-    groth16::verify_proof(vk, proof, &public_inputs)
+    groth16::verify_proof(vk, proof, &roots.public_inputs())
 }

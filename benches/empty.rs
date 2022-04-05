@@ -4,9 +4,7 @@ use zeronym::{
     attrs::{Attrs, AttrsVar},
     com_forest::{gen_forest_memb_crs, ComForestRoots},
     com_tree::{gen_tree_memb_crs, ComTree},
-    link::{
-        link_proofs, verif_link_proof, GsCrs, LinkProofCtx, LinkVerifyingKey, PredPublicInputs,
-    },
+    link::{link_proofs, verif_link_proof, LinkProofCtx, LinkVerifyingKey, PredPublicInputs},
     ComNonce, ComNonceVar, ComParam, ComParamVar,
 };
 
@@ -26,7 +24,7 @@ use ark_r1cs_std::{
 };
 use ark_relations::{
     ns,
-    r1cs::{ConstraintSystemRef, Namespace, SynthesisError},
+    r1cs::{Namespace, SynthesisError},
 };
 use ark_std::{
     io::Write,
@@ -207,9 +205,7 @@ pub fn bench_empty(c: &mut Criterion) {
         .prove_membership(&mut rng, &forest_pk, root, cred)
         .unwrap();
 
-    let gs_crs = GsCrs::rand(&mut rng);
     let link_vk = LinkVerifyingKey::<_, _, EmptyAttrsVar, _, _, _, _> {
-        gs_crs,
         pred_inputs: PredPublicInputs::default(),
         com_forest_roots: roots,
         forest_verif_key: forest_vk,
@@ -230,6 +226,6 @@ pub fn bench_empty(c: &mut Criterion) {
     let link_proof = link_proofs(&mut rng, &link_ctx);
 
     c.bench_function("Empty: verifying linkage", |b| {
-        b.iter(|| assert!(verif_link_proof(&link_proof, &link_vk)))
+        b.iter(|| assert!(verif_link_proof(&link_proof, &link_vk).unwrap()))
     });
 }

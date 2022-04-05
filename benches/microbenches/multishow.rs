@@ -11,9 +11,7 @@ use zeronym::{
     },
     com_forest::{gen_forest_memb_crs, ComForestRoots},
     com_tree::{gen_tree_memb_crs, ComTree},
-    link::{
-        link_proofs, verif_link_proof, GsCrs, LinkProofCtx, LinkVerifyingKey, PredPublicInputs,
-    },
+    link::{link_proofs, verif_link_proof, LinkProofCtx, LinkVerifyingKey, PredPublicInputs},
     multishow::{MultishowChecker, MultishowableAttrs},
     pred::{gen_pred_crs, prove_pred},
     utils::setup_poseidon_params,
@@ -46,6 +44,7 @@ use ark_std::{
 use arkworks_utils::Curve;
 use criterion::Criterion;
 use lazy_static::lazy_static;
+use linkg16::groth16;
 
 const LOG2_NUM_LEAVES: u32 = 31;
 const LOG2_NUM_TREES: u32 = 10;
@@ -310,7 +309,7 @@ pub fn bench_multishow(c: &mut Criterion) {
     )
     .unwrap();
 
-    let monolithic_pk: ark_groth16::ProvingKey<E> =
+    let monolithic_pk: groth16::ProvingKey<E> =
         gen_monolithic_crs::<_, E, Attrs, AttrsVar, ComScheme, ComSchemeG, TreeH, TreeHG, _>(
             &mut rng,
             MERKLE_CRH_PARAM.clone(),
@@ -319,7 +318,7 @@ pub fn bench_multishow(c: &mut Criterion) {
             multishow_checker.clone(),
         )
         .unwrap();
-    let monolithic_pvk = ark_groth16::prepare_verifying_key(&monolithic_pk.vk);
+    let monolithic_vk = monolithic_pk.verifying_key();
     c.bench_function("Multishow: proving monolithic", |b| {
         b.iter(|| {
             prove_monolithic::<_, _, _, AttrsVar, _, ComSchemeG, _, TreeHG, _>(
@@ -347,7 +346,7 @@ pub fn bench_multishow(c: &mut Criterion) {
     c.bench_function("Multishow: verifying monolithic", |b| {
         b.iter(|| {
             assert!(verify_monolithic::<_, Attrs, AttrsVar, _, _, _, TreeHG, _>(
-                &monolithic_pvk,
+                &monolithic_vk,
                 &roots,
                 &proof,
                 multishow_checker.clone()
@@ -360,9 +359,7 @@ pub fn bench_multishow(c: &mut Criterion) {
     let mut pred_inputs = PredPublicInputs::default();
     pred_inputs.prepare_pred_checker(&multishow_vk, &multishow_checker);
 
-    let gs_crs = GsCrs::rand(&mut rng);
     let link_vk = LinkVerifyingKey::<_, _, AttrsVar, _, _, _, _> {
-        gs_crs,
         pred_inputs,
         com_forest_roots: roots,
         forest_verif_key: forest_vk,
@@ -383,6 +380,6 @@ pub fn bench_multishow(c: &mut Criterion) {
     let link_proof = link_proofs(&mut rng, &link_ctx);
 
     c.bench_function("Multishow: verifying linkage", |b| {
-        b.iter(|| assert!(verif_link_proof(&link_proof, &link_vk)))
+        b.iter(|| assert!(verif_link_proof(&link_proof, &link_vk).unwrap()))
     });
 }

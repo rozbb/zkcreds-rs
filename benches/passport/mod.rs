@@ -25,9 +25,7 @@ use crate::passport::{
 
 use zeronym::{
     attrs::Attrs,
-    link::{
-        link_proofs, verif_link_proof, GsCrs, LinkProofCtx, LinkVerifyingKey, PredPublicInputs,
-    },
+    link::{link_proofs, verif_link_proof, LinkProofCtx, LinkVerifyingKey, PredPublicInputs},
     pred::{prove_birth, prove_pred, verify_birth, PredicateChecker},
     revealing_multishow::{MultishowableAttrs, RevealingMultishowChecker},
     utils::setup_poseidon_params,
@@ -450,9 +448,7 @@ fn user_link<R: Rng + CryptoRng>(
     forest_proof: &ForestProof,
     pred_proofs: Vec<PredProof>,
 ) {
-    let gs_crs = GsCrs::rand(rng);
     let link_vk = LinkVerifyingKey {
-        gs_crs,
         pred_inputs,
         com_forest_roots: roots.clone(),
         forest_verif_key: forest_vk.clone(),
@@ -472,7 +468,7 @@ fn user_link<R: Rng + CryptoRng>(
     let link_proof = link_proofs(rng, &link_ctx);
 
     c.bench_function(verif_bench_name, |b| {
-        b.iter(|| assert!(verif_link_proof(&link_proof, &link_vk)))
+        b.iter(|| assert!(verif_link_proof(&link_proof, &link_vk).unwrap()))
     });
 
     println!("The bouncer unlatches the velvet rope. The user walks through.");

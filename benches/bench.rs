@@ -31,4 +31,4 @@ criterion_group!(
     com_scaling::bench_pred_proof_240::bench_pred_proof_240,
     com_scaling::bench_pred_proof_256::bench_pred_proof_256
 );
-criterion_main!(/*benches,*/ microbenches);
+criterion_main!(benches, microbenches);
