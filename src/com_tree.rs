@@ -22,6 +22,7 @@ use ark_relations::{
     r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError},
 };
 use ark_std::rand::Rng;
+use linkg16::groth16;
 
 #[cfg(test)]
 use crate::proof_data_structures::TreeVerifyingKey;
@@ -214,7 +215,7 @@ where
             _marker: PhantomData,
         };
 
-        let proof = ark_groth16::create_random_proof(prover, &pk.pk, rng)?;
+        let proof = groth16::create_random_proof(prover, &pk.pk, rng)?;
         Ok(TreeProof {
             proof,
             _marker: PhantomData,
@@ -249,7 +250,7 @@ where
         auth_path: None,
         _marker: PhantomData,
     };
-    let pk = ark_groth16::generate_random_parameters(prover, rng)?;
+    let pk = groth16::generate_random_parameters(prover, rng)?;
     Ok(TreeProvingKey {
         pk,
         _marker: PhantomData,
@@ -277,7 +278,7 @@ where
     let root_input = merkle_root.to_field_elements().unwrap();
 
     let all_inputs = [attr_com_input, root_input].concat();
-    ark_groth16::verify_proof(&vk.pvk, &proof.proof, &all_inputs)
+    groth16::verify_proof(&vk.vk, &proof.proof, &all_inputs)
 }
 
 /// A circuit that proves that a commitment to `attrs` appears in the Merkle tree of height `height`

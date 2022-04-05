@@ -14,41 +14,9 @@ use ark_crypto_primitives::{
 };
 use ark_ec::PairingEngine;
 use ark_ff::{ToConstraintField, Zero};
+use ark_relations::r1cs::SynthesisError;
 use ark_std::rand::{CryptoRng, Rng};
-use groth_sahai_wrappers::{
-    groth16::{prove_linked_g16_equations, verify_linked_g16_equations},
-    groth_sahai::{
-        prover::{Commit1, Commit2, EquProof},
-        AbstractCrs, CRS,
-    },
-};
-
-pub struct LinkProof<E: PairingEngine> {
-    x_com: Commit1<E>,
-    y_com: Commit2<E>,
-    gs_proofs: Vec<EquProof<E>>,
-}
-
-/// A CRS of a Groth-Sahai
-pub struct GsCrs<E: PairingEngine>(CRS<E>);
-
-impl<E: PairingEngine> GsCrs<E> {
-    pub fn rand<R: Rng + CryptoRng>(rng: &mut R) -> GsCrs<E> {
-        GsCrs(CRS::generate_crs(rng))
-    }
-}
-
-impl<E: PairingEngine> Clone for GsCrs<E> {
-    fn clone(&self) -> GsCrs<E> {
-        GsCrs(CRS {
-            u: self.0.u.clone(),
-            v: self.0.v.clone(),
-            g1_gen: self.0.g1_gen,
-            g2_gen: self.0.g2_gen,
-            gt_gen: self.0.gt_gen,
-        })
-    }
-}
+use linkg16::{groth16, LinkedProof};
 
 #[derive(Clone)]
 pub struct PredPublicInputs<E: PairingEngine>(Vec<E::G1Projective>);
@@ -85,8 +53,7 @@ impl<E: PairingEngine> PredPublicInputs<E> {
         pred_public_input.extend(checker.public_inputs());
 
         // Prepare the inputs and add them to the list of predicate inputs
-        let prepared =
-            ark_groth16::prepare_inputs(&pred_verif_key.pvk, &pred_public_input).unwrap();
+        let prepared = groth16::prepare_inputs(&pred_verif_key.vk, &pred_public_input).unwrap();
         self.0.push(prepared);
     }
 }
@@ -103,7 +70,6 @@ where
     H::Output: ToConstraintField<E::Fr>,
     HG: TwoToOneCRHGadget<H, E::Fr>,
 {
-    pub gs_crs: GsCrs<E>,
     pub pred_inputs: PredPublicInputs<E>,
     pub com_forest_roots: ComForestRoots<E::Fr, H>,
     pub forest_verif_key: ForestVerifyingKey<E, A, AC, ACG, H, HG>,
@@ -125,7 +91,6 @@ where
 {
     fn clone(&self) -> Self {
         Self {
-            gs_crs: self.gs_crs.clone(),
             pred_inputs: self.pred_inputs.clone(),
             com_forest_roots: self.com_forest_roots.clone(),
             forest_verif_key: self.forest_verif_key.clone(),
@@ -158,7 +123,7 @@ where
 pub fn link_proofs<R, E, A, AV, AC, ACG, H, HG>(
     rng: &mut R,
     ctx: &LinkProofCtx<E, A, AV, AC, ACG, H, HG>,
-) -> LinkProof<E>
+) -> LinkedProof<E>
 where
     R: Rng + CryptoRng,
     E: PairingEngine,
@@ -178,65 +143,28 @@ where
         let root_input = ctx.merkle_root.to_field_elements().unwrap();
         &[attr_com_input, root_input].concat()
     };
-    let num_common_inputs = common_inputs.len();
-    let zeroed_common_inputs = vec![E::Fr::zero(); num_common_inputs];
 
-    // The tree proof's public inputs are just the attrs com and root
-    let tree_public_input = zeroed_common_inputs.clone();
-    // The forest's public inputs are the attrs com and root, plus all the roots of the forest
-    let forest_public_input = [
-        zeroed_common_inputs,
-        ctx.vk.com_forest_roots.public_inputs(),
-    ]
-    .concat();
-
-    // Prepare the inputs
-    let tree_prepared_inputs =
-        ark_groth16::prepare_inputs(&ctx.vk.tree_verif_key.pvk, &tree_public_input).unwrap();
-    let forest_prepared_inputs =
-        ark_groth16::prepare_inputs(&ctx.vk.forest_verif_key.pvk, &forest_public_input).unwrap();
-
-    // Collect (proof, vk, prepared_inputs) for all our predicates
-    let pred_triples = ctx
-        .pred_proofs
+    // Collect (vk, proof) for all our predicates
+    let pred_pairs: Vec<(&groth16::VerifyingKey<E>, &groth16::Proof<E>)> = ctx
+        .vk
+        .pred_verif_keys
         .iter()
-        .zip(ctx.vk.pred_verif_keys.iter())
-        .zip(ctx.vk.pred_inputs.0.iter())
-        .map(|((proof, vk), input)| (&proof.proof, &vk.pvk.vk, input))
+        .zip(ctx.pred_proofs.iter())
+        .map(|(vk, proof)| (&vk.vk, &proof.proof))
         .collect();
 
-    // Collect (proof, vk, prepared_inputs) for the tree and forest
-    let mut all_triples: Vec<(
-        &ark_groth16::Proof<E>,
-        &ark_groth16::VerifyingKey<E>,
-        &E::G1Projective,
-    )> = pred_triples;
-    all_triples.push((
-        &ctx.tree_proof.proof,
-        &ctx.vk.tree_verif_key.pvk.vk,
-        &tree_prepared_inputs,
-    ));
-    all_triples.push((
-        &ctx.forest_proof.proof,
-        &ctx.vk.forest_verif_key.pvk.vk,
-        &forest_prepared_inputs,
-    ));
+    // Collect (proof, vk) for the tree and forest
+    let mut all_pairs = pred_pairs;
+    all_pairs.push((&ctx.vk.tree_verif_key.vk, &ctx.tree_proof.proof));
+    all_pairs.push((&ctx.vk.forest_verif_key.vk, &ctx.forest_proof.proof));
 
-    let (x_com, y_com, gs_proofs) =
-        prove_linked_g16_equations(&all_triples, common_inputs, &ctx.vk.gs_crs.0, rng);
-
-    LinkProof {
-        x_com,
-        y_com,
-        gs_proofs,
-    }
+    linkg16::link(rng, &all_pairs, common_inputs)
 }
 
-#[must_use]
 pub fn verif_link_proof<E, A, AV, AC, ACG, H, HG>(
-    proof: &LinkProof<E>,
+    proof: &LinkedProof<E>,
     vk: &LinkVerifyingKey<E, A, AV, AC, ACG, H, HG>,
-) -> bool
+) -> Result<bool, SynthesisError>
 where
     E: PairingEngine,
     A: Attrs<E::Fr, AC>,
@@ -248,44 +176,31 @@ where
     H::Output: ToConstraintField<E::Fr>,
     HG: TwoToOneCRHGadget<H, E::Fr>,
 {
-    // Get the number of field elements that the two proofs have in common. This is just
-    // |attrs_com| + |root|
-    let num_common_inputs = {
-        let attr_com_input = AC::Output::default().to_field_elements().unwrap();
-        let root_input = H::Output::default().to_field_elements().unwrap();
-        attr_com_input.len() + root_input.len()
-    };
-    let zeroed_common_inputs = vec![E::Fr::zero(); num_common_inputs];
-
-    // The tree proof's public inputs are just the attrs com and root
-    let tree_public_input = zeroed_common_inputs.clone();
+    // The tree proof's public inputs are just the attrs com and root, i.e., all inputs are hidden
+    let tree_public_input = vec![];
     // The forest's public inputs are the attrs com and root, plus all the roots of the forest
-    let forest_public_input = [zeroed_common_inputs, vk.com_forest_roots.public_inputs()].concat();
+    let forest_public_input = [vk.com_forest_roots.public_inputs()].concat();
 
     // Prepare the inputs
     let tree_prepared_inputs =
-        ark_groth16::prepare_inputs(&vk.tree_verif_key.pvk, &tree_public_input).unwrap();
+        groth16::prepare_inputs(&vk.tree_verif_key.vk, &tree_public_input).unwrap();
     let forest_prepared_inputs =
-        ark_groth16::prepare_inputs(&vk.forest_verif_key.pvk, &forest_public_input).unwrap();
+        groth16::prepare_inputs(&vk.forest_verif_key.vk, &forest_public_input).unwrap();
 
     // Collect (vk, prepared_inputs) for all our predicates
     let pred_tuples = vk
         .pred_verif_keys
         .iter()
         .zip(vk.pred_inputs.0.iter())
-        .map(|(vk, input)| (&vk.pvk.vk, input))
+        .map(|(vk, input)| (&vk.vk, input))
         .collect();
 
     // Collect (vk, prepared_inputs) for the tree and forest
-    let mut all_tuples: Vec<(&ark_groth16::VerifyingKey<E>, &E::G1Projective)> = pred_tuples;
-    all_tuples.push((&vk.tree_verif_key.pvk.vk, &tree_prepared_inputs));
-    all_tuples.push((&vk.forest_verif_key.pvk.vk, &forest_prepared_inputs));
+    let mut all_tuples: Vec<(&groth16::VerifyingKey<E>, &E::G1Projective)> = pred_tuples;
+    all_tuples.push((&vk.tree_verif_key.vk, &tree_prepared_inputs));
+    all_tuples.push((&vk.forest_verif_key.vk, &forest_prepared_inputs));
 
-    verify_linked_g16_equations(
-        &all_tuples,
-        (&proof.x_com, &proof.y_com, &proof.gs_proofs),
-        &vk.gs_crs.0,
-    )
+    linkg16::verify_link(proof, &all_tuples)
 }
 
 #[cfg(test)]
@@ -410,9 +325,7 @@ mod test {
             .unwrap());
 
         // Now link everything together
-        let gs_crs = GsCrs::rand(&mut rng);
         let link_vk = LinkVerifyingKey {
-            gs_crs,
             pred_inputs: pred_inputs.clone(),
             com_forest_roots: forest.roots(),
             forest_verif_key,
@@ -430,6 +343,6 @@ mod test {
         let link_proof = link_proofs(&mut rng, &link_ctx);
 
         // Verify the link proof
-        assert!(verif_link_proof(&link_proof, &link_vk));
+        assert!(verif_link_proof(&link_proof, &link_vk).unwrap());
     }
 }

@@ -18,6 +18,7 @@ use ark_relations::{
     r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError},
 };
 use ark_std::rand::Rng;
+use linkg16::groth16;
 
 /// Describes any predicate that someone might want to prove over an `Attrs` object.
 pub trait PredicateChecker<ConstraintF, A, AV, AC, ACG>
@@ -60,7 +61,7 @@ where
         merkle_root: H::Output::default(),
         _marker: PhantomData,
     };
-    let pk = ark_groth16::generate_random_parameters(prover, rng)?;
+    let pk = groth16::generate_random_parameters(prover, rng)?;
     Ok(PredProvingKey {
         pk,
         _marker: PhantomData,
@@ -95,7 +96,7 @@ where
         merkle_root,
         _marker: PhantomData,
     };
-    let proof = ark_groth16::create_random_proof(prover, &pk.pk, rng)?;
+    let proof = groth16::create_random_proof(prover, &pk.pk, rng)?;
     Ok(PredProof {
         proof,
         _marker: PhantomData,
@@ -154,7 +155,7 @@ where
     let root_input = merkle_root.to_field_elements().unwrap();
 
     let all_inputs = [attr_com_input, root_input, checker.public_inputs()].concat();
-    ark_groth16::verify_proof(&vk.pvk, &proof.proof, &all_inputs)
+    groth16::verify_proof(&vk.vk, &proof.proof, &all_inputs)
 }
 
 // Same as a predicate proof but we don't care about the merkle root
@@ -198,7 +199,7 @@ where
     H::Output: ToConstraintField<E::Fr>,
     HG: TwoToOneCRHGadget<H, E::Fr>,
 {
-    let pinput = ark_groth16::prepare_inputs(&vk.pvk, &checker.public_inputs())?;
+    let pinput = groth16::prepare_inputs(&vk.vk, &checker.public_inputs())?;
     Ok(PredPublicInput {
         pinput,
         _marker: PhantomData,

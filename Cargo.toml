@@ -11,7 +11,6 @@ ark-crypto-primitives = { version = "0.3", features = ["r1cs"], default-features
 ark-ec = "0.3"
 ark-ed-on-bls12-381 = { version = "0.3", features = ["r1cs"] }
 ark-ff = "0.3"
-ark-groth16 = { version = "0.3", default-features = false }
 ark-relations = "0.3"
 ark-r1cs-std = "0.3"
 ark-std = "0.3"
@@ -26,9 +25,9 @@ lazy_static = "1.4"
 rand = "0.8"
 rand_core = "0.6"
 
-[dependencies.groth-sahai-wrappers]
-git = "https://github.com/jdwhite88/groth-sahai-wrappers"
-rev = "84d30dcd8c5f073a6b4c80f3baccd7556aeccb0a"
+[dependencies.linkg16]
+git = "ssh://git@github.com/rozbb/linkg16"
+rev = "12be919bd9e942a1bbe4cb15002356e6f30e502b"
 
 [patch.crates-io.ark-crypto-primitives]
 git = "https://github.com/arkworks-rs/crypto-primitives.git"
@@ -39,7 +38,7 @@ default = ["std", "parallel", "asm"]
 asm = ["ark-ff/asm"]
 parallel = [
     "ark-crypto-primitives/parallel",
-    "ark-groth16/parallel",
+    "linkg16/parallel",
     "ark-std/parallel",
     "ark-ec/parallel",
     "ark-ff/parallel",
@@ -47,7 +46,7 @@ parallel = [
 ]
 std = [
     "ark-crypto-primitives/std",
-    "ark-groth16/std",
+    "linkg16/std",
     "ark-std/std",
     "ark-ec/std",
     "ark-ff/std",

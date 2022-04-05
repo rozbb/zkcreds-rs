@@ -8,9 +8,8 @@ use ark_crypto_primitives::{
 };
 use ark_ec::PairingEngine;
 use ark_ff::ToConstraintField;
-use ark_groth16::{
-    PreparedVerifyingKey as Groth16PreparedVerifyingKey, Proof as Groth16Proof,
-    ProvingKey as Groth16ProvingKey,
+use linkg16::groth16::{
+    Proof as Groth16Proof, ProvingKey as Groth16ProvingKey, VerifyingKey as Groth16VerifyingKey,
 };
 
 //
@@ -47,9 +46,9 @@ where
     HG: TwoToOneCRHGadget<H, E::Fr>,
 {
     pub fn prepare_verifying_key(&self) -> PredVerifyingKey<E, A, AV, AC, ACG, H, HG> {
-        let pvk = ark_groth16::prepare_verifying_key(&self.pk.vk);
+        let vk = self.pk.verifying_key();
         PredVerifyingKey {
-            pvk,
+            vk,
             _marker: self._marker,
         }
     }
@@ -88,7 +87,7 @@ where
     H::Output: ToConstraintField<E::Fr>,
     HG: TwoToOneCRHGadget<H, E::Fr>,
 {
-    pub(crate) pvk: Groth16PreparedVerifyingKey<E>,
+    pub(crate) vk: Groth16VerifyingKey<E>,
     pub(crate) _marker: PhantomData<(A, AV, AC, ACG, H, HG)>,
 }
 
@@ -106,7 +105,7 @@ where
 {
     fn clone(&self) -> Self {
         Self {
-            pvk: self.pvk.clone(),
+            vk: self.vk.clone(),
             _marker: PhantomData,
         }
     }
@@ -194,9 +193,9 @@ where
     ACG: CommitmentGadget<AC, E::Fr>,
 {
     pub fn prepare_verifying_key(&self) -> BirthVerifyingKey<E, A, AV, AC, ACG> {
-        let pvk = ark_groth16::prepare_verifying_key(&self.pk.vk);
+        let vk = self.pk.verifying_key();
         BirthVerifyingKey {
-            pvk,
+            vk,
             _marker: self._marker,
         }
     }
@@ -212,7 +211,7 @@ where
     AC::Output: ToConstraintField<E::Fr>,
     ACG: CommitmentGadget<AC, E::Fr>,
 {
-    pub(crate) pvk: Groth16PreparedVerifyingKey<E>,
+    pub(crate) vk: Groth16VerifyingKey<E>,
     pub(crate) _marker: PhantomData<(A, AV, AC, ACG)>,
 }
 
@@ -295,9 +294,9 @@ where
     HG: TwoToOneCRHGadget<H, E::Fr>,
 {
     pub fn prepare_verifying_key(&self) -> TreeVerifyingKey<E, A, AC, ACG, H, HG> {
-        let pvk = ark_groth16::prepare_verifying_key(&self.pk.vk);
+        let vk = self.pk.verifying_key();
         TreeVerifyingKey {
-            pvk,
+            vk,
             _marker: self._marker,
         }
     }
@@ -315,7 +314,7 @@ where
     H::Output: ToConstraintField<E::Fr>,
     HG: TwoToOneCRHGadget<H, E::Fr>,
 {
-    pub(crate) pvk: Groth16PreparedVerifyingKey<E>,
+    pub(crate) vk: Groth16VerifyingKey<E>,
     pub(crate) _marker: PhantomData<(A, AC, ACG, H, HG)>,
 }
 
@@ -332,7 +331,7 @@ where
 {
     fn clone(&self) -> Self {
         Self {
-            pvk: self.pvk.clone(),
+            vk: self.vk.clone(),
             _marker: PhantomData,
         }
     }
@@ -440,9 +439,9 @@ where
     HG: TwoToOneCRHGadget<H, E::Fr>,
 {
     pub fn prepare_verifying_key(&self) -> ForestVerifyingKey<E, A, AC, ACG, H, HG> {
-        let pvk = ark_groth16::prepare_verifying_key(&self.pk.vk);
+        let vk = self.pk.verifying_key();
         ForestVerifyingKey {
-            pvk,
+            vk,
             _marker: self._marker,
         }
     }
@@ -460,7 +459,7 @@ where
     H::Output: ToConstraintField<E::Fr>,
     HG: TwoToOneCRHGadget<H, E::Fr>,
 {
-    pub(crate) pvk: Groth16PreparedVerifyingKey<E>,
+    pub(crate) vk: Groth16VerifyingKey<E>,
     pub(crate) _marker: PhantomData<(A, AC, ACG, H, HG)>,
 }
 
@@ -477,7 +476,7 @@ where
 {
     fn clone(&self) -> Self {
         Self {
-            pvk: self.pvk.clone(),
+            vk: self.vk.clone(),
             _marker: PhantomData,
         }
     }

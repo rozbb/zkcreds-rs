@@ -18,6 +18,7 @@ use ark_relations::{
     r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError},
 };
 use ark_std::rand::Rng;
+use linkg16::groth16;
 
 #[cfg(test)]
 use crate::proof_data_structures::ForestVerifyingKey;
@@ -88,7 +89,7 @@ where
         let roots_input = self.public_inputs();
 
         let all_inputs = [attr_com_input, member_root_input, roots_input].concat();
-        ark_groth16::verify_proof(&vk.pvk, &proof.proof, &all_inputs)
+        groth16::verify_proof(&vk.vk, &proof.proof, &all_inputs)
     }
 
     pub fn public_inputs(&self) -> Vec<ConstraintF> {
@@ -122,7 +123,7 @@ where
             _marker: PhantomData,
         };
 
-        let proof = ark_groth16::create_random_proof(prover, &pk.pk, rng)?;
+        let proof = groth16::create_random_proof(prover, &pk.pk, rng)?;
         Ok(ForestProof {
             proof,
             _marker: PhantomData,
@@ -185,7 +186,7 @@ where
         _marker: PhantomData,
     };
 
-    let pk = ark_groth16::generate_random_parameters(prover, rng)?;
+    let pk = groth16::generate_random_parameters(prover, rng)?;
     Ok(ForestProvingKey {
         pk,
         _marker: PhantomData,
