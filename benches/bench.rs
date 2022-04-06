@@ -9,15 +9,10 @@ mod util;
 use empty::bench_empty;
 use microbenches::microbenches;
 use passport::bench_passport;
-
-// Set up proof size logging
-fn setup(_c: &mut criterion::Criterion) {
-    util::new_size_file();
-}
+use util::new_size_file as setup; // Gotta set up logging proof sizes to CSV
 
 criterion_group!(
     benches,
-    setup,
     bench_passport,
     bench_empty,
     com_scaling::bench_pred_proof_0::bench_pred_proof_0,
@@ -38,4 +33,4 @@ criterion_group!(
     com_scaling::bench_pred_proof_240::bench_pred_proof_240,
     com_scaling::bench_pred_proof_256::bench_pred_proof_256
 );
-criterion_main!(benches, microbenches);
+criterion_main!(setup, benches, microbenches);
