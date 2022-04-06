@@ -5,7 +5,8 @@ const SIZE_LOG_FILE: &str = "proof_sizes.csv";
 
 // Make a new CSV file if none exists. If one does, clear its contents.
 pub fn new_size_file() {
-    File::create(SIZE_LOG_FILE).unwrap();
+    let mut f = File::create(SIZE_LOG_FILE).unwrap();
+    writeln!(f, "description,proof_size_in_bytes").unwrap();
 }
 
 // Record DESC,SIZE in the CSV file
