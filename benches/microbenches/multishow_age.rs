@@ -203,6 +203,7 @@ pub fn bench_multishow_age(c: &mut Criterion) {
         b.iter(|| link_proofs(&mut rng, &link_ctx))
     });
     let link_proof = link_proofs(&mut rng, &link_ctx);
+    crate::util::record_size("Age+Multishow", &link_proof);
 
     // Verify the link proof
     c.bench_function("Age+Multishow: Verifying linkage", |b| {

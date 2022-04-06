@@ -378,6 +378,7 @@ pub fn bench_multishow(c: &mut Criterion) {
         b.iter(|| link_proofs(&mut rng, &link_ctx))
     });
     let link_proof = link_proofs(&mut rng, &link_ctx);
+    crate::util::record_size("Multishow", &link_proof);
 
     c.bench_function("Multishow: verifying linkage", |b| {
         b.iter(|| assert!(verif_link_proof(&link_proof, &link_vk).unwrap()))

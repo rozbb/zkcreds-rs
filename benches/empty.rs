@@ -154,6 +154,17 @@ impl AttrsVar<Fr, EmptyAttrs, ComScheme, ComSchemeG> for EmptyAttrsVar {
     }
 }
 
+// Record DESC,SIZE in the CSV file
+const SIZE_LOG_FILE: &str = "proof_sizes.csv";
+pub fn record_size(desc: impl AsRef<str>, val: &impl ark_serialize::CanonicalSerialize) {
+    let mut f = std::fs::OpenOptions::new()
+        .append(true)
+        .open(SIZE_LOG_FILE)
+        .unwrap();
+    let size = val.serialized_size();
+    writeln!(f, "{},{}", desc.as_ref(), size).unwrap();
+}
+
 // This benchmarks the linkage functions as the number of predicates increases
 pub fn bench_empty(c: &mut Criterion) {
     let mut rng = ark_std::test_rng();
@@ -224,6 +235,7 @@ pub fn bench_empty(c: &mut Criterion) {
         b.iter(|| link_proofs(&mut rng, &link_ctx))
     });
     let link_proof = link_proofs(&mut rng, &link_ctx);
+    record_size("Empty", &link_proof);
 
     c.bench_function("Empty: verifying linkage", |b| {
         b.iter(|| assert!(verif_link_proof(&link_proof, &link_vk).unwrap()))

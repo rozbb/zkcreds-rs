@@ -466,6 +466,7 @@ fn user_link<R: Rng + CryptoRng>(
 
     c.bench_function(proof_bench_name, |b| b.iter(|| link_proofs(rng, &link_ctx)));
     let link_proof = link_proofs(rng, &link_ctx);
+    crate::util::record_size(proof_bench_name, &link_proof);
 
     c.bench_function(verif_bench_name, |b| {
         b.iter(|| assert!(verif_link_proof(&link_proof, &link_vk).unwrap()))

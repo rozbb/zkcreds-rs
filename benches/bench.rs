@@ -4,13 +4,20 @@ mod com_scaling;
 mod empty;
 mod microbenches;
 mod passport;
+mod util;
 
 use empty::bench_empty;
 use microbenches::microbenches;
 use passport::bench_passport;
 
+// Set up proof size logging
+fn setup(_c: &mut criterion::Criterion) {
+    util::new_size_file();
+}
+
 criterion_group!(
     benches,
+    setup,
     bench_passport,
     bench_empty,
     com_scaling::bench_pred_proof_0::bench_pred_proof_0,

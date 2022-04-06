@@ -122,6 +122,7 @@ pub fn bench_linkage(c: &mut Criterion) {
             b.iter(|| link_proofs(&mut rng, &link_ctx))
         });
         let link_proof = link_proofs(&mut rng, &link_ctx);
+        crate::util::record_size(format!("Age [np={}]", num_preds), &link_proof);
 
         // Verify the link proof
         c.bench_function(&format!("Verifying linkage [np={}]", num_preds), |b| {

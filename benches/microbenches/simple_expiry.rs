@@ -365,6 +365,7 @@ pub fn bench_expiry(c: &mut Criterion) {
         b.iter(|| link_proofs(&mut rng, &link_ctx))
     });
     let link_proof = link_proofs(&mut rng, &link_ctx);
+    crate::util::record_size("Expiry", &link_proof);
 
     c.bench_function("Expiry: verifying linkage", |b| {
         b.iter(|| assert!(verif_link_proof(&link_proof, &link_vk).unwrap()))
