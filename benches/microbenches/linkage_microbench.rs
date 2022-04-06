@@ -105,7 +105,7 @@ pub fn bench_linkage(c: &mut Criterion) {
         // Now link everything together
         let link_vk = LinkVerifyingKey {
             pred_inputs: pred_inputs.clone(),
-            com_forest_roots: roots.clone(),
+            prepared_roots: roots.prepare(&forest_vk).unwrap(),
             forest_verif_key: forest_vk.clone(),
             tree_verif_key: tree_vk.clone(),
             pred_verif_keys: vec![age_vk.clone(); num_preds],

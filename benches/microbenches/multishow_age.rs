@@ -186,7 +186,7 @@ pub fn bench_multishow_age(c: &mut Criterion) {
     // Now link everything together
     let link_vk = LinkVerifyingKey {
         pred_inputs: pred_inputs.clone(),
-        com_forest_roots: roots,
+        prepared_roots: roots.prepare(&forest_vk).unwrap(),
         forest_verif_key: forest_vk,
         tree_verif_key: tree_vk,
         pred_verif_keys: vec![age_vk, multishow_vk],

@@ -361,7 +361,7 @@ pub fn bench_multishow(c: &mut Criterion) {
 
     let link_vk = LinkVerifyingKey::<_, _, AttrsVar, _, _, _, _> {
         pred_inputs,
-        com_forest_roots: roots,
+        prepared_roots: roots.prepare(&forest_vk).unwrap(),
         forest_verif_key: forest_vk,
         tree_verif_key: tree_vk,
         pred_verif_keys: vec![multishow_vk],

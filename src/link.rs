@@ -1,6 +1,6 @@
 use crate::{
     attrs::{Attrs, AttrsVar},
-    com_forest::ComForestRoots,
+    com_forest::PreparedRoots,
     pred::PredicateChecker,
     proof_data_structures::{
         ForestProof, ForestVerifyingKey, PredProof, PredVerifyingKey, TreeProof, TreeVerifyingKey,
@@ -71,7 +71,7 @@ where
     HG: TwoToOneCRHGadget<H, E::Fr>,
 {
     pub pred_inputs: PredPublicInputs<E>,
-    pub com_forest_roots: ComForestRoots<E::Fr, H>,
+    pub prepared_roots: PreparedRoots<E>,
     pub forest_verif_key: ForestVerifyingKey<E, A, AC, ACG, H, HG>,
     pub tree_verif_key: TreeVerifyingKey<E, A, AC, ACG, H, HG>,
     pub pred_verif_keys: Vec<PredVerifyingKey<E, A, AV, AC, ACG, H, HG>>,
@@ -92,7 +92,7 @@ where
     fn clone(&self) -> Self {
         Self {
             pred_inputs: self.pred_inputs.clone(),
-            com_forest_roots: self.com_forest_roots.clone(),
+            prepared_roots: self.prepared_roots,
             forest_verif_key: self.forest_verif_key.clone(),
             tree_verif_key: self.tree_verif_key.clone(),
             pred_verif_keys: self.pred_verif_keys.clone(),
@@ -177,15 +177,7 @@ where
     HG: TwoToOneCRHGadget<H, E::Fr>,
 {
     // The tree proof's public inputs are just the attrs com and root, i.e., all inputs are hidden
-    let tree_public_input = vec![];
-    // The forest's public inputs are the attrs com and root, plus all the roots of the forest
-    let forest_public_input = [vk.com_forest_roots.public_inputs()].concat();
-
-    // Prepare the inputs
-    let tree_prepared_inputs =
-        groth16::prepare_inputs(&vk.tree_verif_key.vk, &tree_public_input).unwrap();
-    let forest_prepared_inputs =
-        groth16::prepare_inputs(&vk.forest_verif_key.vk, &forest_public_input).unwrap();
+    let tree_prepared_inputs = groth16::prepare_inputs(&vk.tree_verif_key.vk, &[]).unwrap();
 
     // Collect (vk, prepared_inputs) for all our predicates
     let pred_tuples = vk
@@ -198,7 +190,7 @@ where
     // Collect (vk, prepared_inputs) for the tree and forest
     let mut all_tuples: Vec<(&groth16::VerifyingKey<E>, &E::G1Projective)> = pred_tuples;
     all_tuples.push((&vk.tree_verif_key.vk, &tree_prepared_inputs));
-    all_tuples.push((&vk.forest_verif_key.vk, &forest_prepared_inputs));
+    all_tuples.push((&vk.forest_verif_key.vk, &vk.prepared_roots.0));
 
     linkg16::verify_link(proof, &all_tuples)
 }
@@ -327,7 +319,7 @@ mod test {
         // Now link everything together
         let link_vk = LinkVerifyingKey {
             pred_inputs: pred_inputs.clone(),
-            com_forest_roots: forest.roots(),
+            prepared_roots: forest.roots().prepare(&forest_verif_key).unwrap(),
             forest_verif_key,
             tree_verif_key,
             pred_verif_keys: vec![pred_verif_key],

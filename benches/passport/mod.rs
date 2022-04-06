@@ -450,7 +450,7 @@ fn user_link<R: Rng + CryptoRng>(
 ) {
     let link_vk = LinkVerifyingKey {
         pred_inputs,
-        com_forest_roots: roots.clone(),
+        prepared_roots: roots.prepare(&forest_vk).unwrap(),
         forest_verif_key: forest_vk.clone(),
         tree_verif_key: tree_vk.clone(),
         pred_verif_keys: pred_vks,

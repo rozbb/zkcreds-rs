@@ -1,7 +1,7 @@
 use crate::{
     attrs::Attrs,
     com_tree::ComTree,
-    proof_data_structures::{ForestProof, ForestProvingKey},
+    proof_data_structures::{ForestProof, ForestProvingKey, ForestVerifyingKey},
 };
 
 use core::marker::PhantomData;
@@ -20,8 +20,8 @@ use ark_relations::{
 use ark_std::rand::Rng;
 use linkg16::groth16;
 
-#[cfg(test)]
-use crate::proof_data_structures::ForestVerifyingKey;
+#[derive(Clone, Copy)]
+pub struct PreparedRoots<E: PairingEngine>(pub(crate) E::G1Projective);
 
 /// Roots of a `ComForest`
 pub struct ComForestRoots<ConstraintF, H>
@@ -32,20 +32,6 @@ where
 {
     pub roots: Vec<H::Output>,
     _marker: PhantomData<ConstraintF>,
-}
-
-impl<ConstraintF, H> ComForestRoots<ConstraintF, H>
-where
-    ConstraintF: PrimeField,
-    H: TwoToOneCRH,
-    H::Output: ToConstraintField<ConstraintF>,
-{
-    pub fn new(num_trees: usize) -> ComForestRoots<ConstraintF, H> {
-        ComForestRoots {
-            roots: vec![H::Output::default(); num_trees],
-            _marker: PhantomData,
-        }
-    }
 }
 
 impl<ConstraintF, H> Clone for ComForestRoots<ConstraintF, H>
@@ -68,6 +54,28 @@ where
     H: TwoToOneCRH,
     H::Output: ToConstraintField<ConstraintF>,
 {
+    pub fn new(num_trees: usize) -> ComForestRoots<ConstraintF, H> {
+        ComForestRoots {
+            roots: vec![H::Output::default(); num_trees],
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn prepare<E, A, AC, ACG, HG>(
+        &self,
+        vk: &ForestVerifyingKey<E, A, AC, ACG, H, HG>,
+    ) -> Result<PreparedRoots<E>, SynthesisError>
+    where
+        E: PairingEngine<Fr = ConstraintF>,
+        A: Attrs<E::Fr, AC>,
+        AC: CommitmentScheme,
+        ACG: CommitmentGadget<AC, E::Fr>,
+        AC::Output: ToConstraintField<E::Fr>,
+        HG: TwoToOneCRHGadget<H, E::Fr>,
+    {
+        groth16::prepare_inputs(&vk.vk, &self.public_inputs()).map(PreparedRoots)
+    }
+
     #[cfg(test)]
     pub(crate) fn verify_memb<E, A, AC, ACG, HG>(
         &self,
