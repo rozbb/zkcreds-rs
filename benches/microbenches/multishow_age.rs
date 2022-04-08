@@ -20,7 +20,7 @@ use criterion::Criterion;
 const POSEIDON_WIDTH: u8 = 5;
 const EIGHTEEN_YEARS_AGO: u16 = 2004;
 const LOG2_NUM_LEAVES: u32 = 31;
-const LOG2_NUM_TREES: u32 = 10;
+const LOG2_NUM_TREES: u32 = 8;
 const TREE_HEIGHT: u32 = LOG2_NUM_LEAVES + 1 - LOG2_NUM_TREES;
 const NUM_TREES: usize = 2usize.pow(LOG2_NUM_TREES);
 

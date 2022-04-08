@@ -34,7 +34,7 @@ use criterion::Criterion;
 use lazy_static::lazy_static;
 
 const LOG2_NUM_LEAVES: u32 = 31;
-const LOG2_NUM_TREES: u32 = 10;
+const LOG2_NUM_TREES: u32 = 8;
 const TREE_HEIGHT: u32 = LOG2_NUM_LEAVES + 1 - LOG2_NUM_TREES;
 const NUM_TREES: usize = 2usize.pow(LOG2_NUM_TREES);
 
