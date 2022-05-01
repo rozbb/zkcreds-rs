@@ -1,6 +1,6 @@
 ///! Defines a single Groth16 proof for cred ∈ tree ∧ tree ∈ forest. This is a pared down version
 ///of monolithic_proof.rs
-use zeronym::{
+use zkcreds::{
     com_forest::{ComForestRoots, ForestMembershipProver},
     com_tree::{default_auth_path, ComTreePath, TreeMembershipProver},
     identity_crh::{IdentityCRHGadget, UnitVar},
@@ -62,7 +62,7 @@ where
         let attrs_com_var =
             ACG::OutputVar::new_witness(ns!(cs, "attrs com var"), || Ok(attrs_com.clone()))?;
 
-        // Witness the public variables. In ALL zeronym proofs, it's the commitment to the
+        // Witness the public variables. In ALL zkcreds proofs, it's the commitment to the
         // attributes and the merkle root
         let root_var =
             HG::OutputVar::new_witness(ns!(cs, "root var"), || Ok(self.tree_prover.root.clone()))?;

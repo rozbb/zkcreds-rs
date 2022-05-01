@@ -1,5 +1,5 @@
 [package]
-name = "zeronym"
+name = "zkcreds"
 version = "0.1.0"
 authors = ["Michael Rosenberg <michael@mrosenberg.pub>"]
 edition = "2021"

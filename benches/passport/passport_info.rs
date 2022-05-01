@@ -9,7 +9,7 @@ use crate::passport::{
 use core::borrow::Borrow;
 
 use sha2::{Digest, Sha256};
-use zeronym::{
+use zkcreds::{
     attrs::{AccountableAttrs, AccountableAttrsVar, Attrs, AttrsVar},
     Bytestring, ComNonce, ComNonceVar, ComParam, ComParamVar,
 };

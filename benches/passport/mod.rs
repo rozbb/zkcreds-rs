@@ -23,7 +23,7 @@ use crate::passport::{
     sig_verif::load_usa_pubkey,
 };
 
-use zeronym::{
+use zkcreds::{
     attrs::Attrs,
     link::{link_proofs, verif_link_proof, LinkProofCtx, LinkVerifyingKey, PredPublicInputs},
     pred::{prove_birth, prove_pred, verify_birth, PredicateChecker},
@@ -83,7 +83,7 @@ struct IssuerState {
 
 fn gen_issuance_crs<R: Rng>(rng: &mut R) -> (PredProvingKey, PredVerifyingKey) {
     // Generate the hash checker circuit's CRS
-    let pk = zeronym::pred::gen_pred_crs::<
+    let pk = zkcreds::pred::gen_pred_crs::<
         _,
         _,
         Bls12_381,
@@ -101,7 +101,7 @@ fn gen_issuance_crs<R: Rng>(rng: &mut R) -> (PredProvingKey, PredVerifyingKey) {
 
 fn gen_agefaceexpiry_crs<R: Rng>(rng: &mut R) -> (PredProvingKey, PredVerifyingKey) {
     // Generate the hash checker circuit's CRS
-    let pk = zeronym::pred::gen_pred_crs::<
+    let pk = zkcreds::pred::gen_pred_crs::<
         _,
         _,
         Bls12_381,
@@ -119,7 +119,7 @@ fn gen_agefaceexpiry_crs<R: Rng>(rng: &mut R) -> (PredProvingKey, PredVerifyingK
 
 fn gen_expiry_crs<R: Rng>(rng: &mut R) -> (PredProvingKey, PredVerifyingKey) {
     // Generate the hash checker circuit's CRS
-    let pk = zeronym::pred::gen_pred_crs::<
+    let pk = zkcreds::pred::gen_pred_crs::<
         _,
         _,
         Bls12_381,
@@ -137,7 +137,7 @@ fn gen_expiry_crs<R: Rng>(rng: &mut R) -> (PredProvingKey, PredVerifyingKey) {
 
 fn gen_ageexpiry_crs<R: Rng>(rng: &mut R) -> (PredProvingKey, PredVerifyingKey) {
     // Generate the hash checker circuit's CRS
-    let pk = zeronym::pred::gen_pred_crs::<
+    let pk = zkcreds::pred::gen_pred_crs::<
         _,
         _,
         Bls12_381,
@@ -157,7 +157,7 @@ fn gen_multishow_crs<R: Rng>(rng: &mut R) -> (PredProvingKey, PredVerifyingKey) 
     let checker = get_multishow_checker(&PersonalInfo::default());
 
     // Generate the hash checker circuit's CRS
-    let pk = zeronym::pred::gen_pred_crs::<
+    let pk = zkcreds::pred::gen_pred_crs::<
         _,
         _,
         Bls12_381,
@@ -175,7 +175,7 @@ fn gen_multishow_crs<R: Rng>(rng: &mut R) -> (PredProvingKey, PredVerifyingKey) 
 
 fn gen_agemultishowexpiry_crs<R: Rng>(rng: &mut R) -> (PredProvingKey, PredVerifyingKey) {
     // Generate the hash checker circuit's CRS
-    let pk = zeronym::pred::gen_pred_crs::<
+    let pk = zkcreds::pred::gen_pred_crs::<
         _,
         _,
         Bls12_381,
@@ -196,7 +196,7 @@ fn gen_agemultishowexpiry_crs<R: Rng>(rng: &mut R) -> (PredProvingKey, PredVerif
 
 fn gen_tree_crs<R: Rng>(rng: &mut R) -> (TreeProvingKey, TreeVerifyingKey) {
     // Generate the predicate circuit's CRS
-    let pk = zeronym::com_tree::gen_tree_memb_crs::<
+    let pk = zkcreds::com_tree::gen_tree_memb_crs::<
         _,
         Bls12_381,
         PersonalInfo,
@@ -212,7 +212,7 @@ fn gen_tree_crs<R: Rng>(rng: &mut R) -> (TreeProvingKey, TreeVerifyingKey) {
 
 fn gen_forest_crs<R: Rng>(rng: &mut R) -> (ForestProvingKey, ForestVerifyingKey) {
     // Generate the predicate circuit's CRS
-    let pk = zeronym::com_forest::gen_forest_memb_crs::<
+    let pk = zkcreds::com_forest::gen_forest_memb_crs::<
         _,
         Bls12_381,
         PersonalInfo,
@@ -420,7 +420,7 @@ where
     let proof = prove_pred(rng, pk, checker.clone(), info.clone(), auth_path).unwrap();
 
     // DEBUG: Assert that the proof verifies
-    assert!(zeronym::pred::verify_pred(
+    assert!(zkcreds::pred::verify_pred(
         &pk.prepare_verifying_key(),
         &proof,
         checker,

@@ -9,9 +9,9 @@ pub(crate) type Fr = <E as PairingEngine>::Fr;
 #[derive(Copy, Clone)]
 pub struct EmptyPred;
 
-type CompressedPedersenCom<W> = zeronym::compressed_pedersen::Commitment<EdwardsParameters, W>;
+type CompressedPedersenCom<W> = zkcreds::compressed_pedersen::Commitment<EdwardsParameters, W>;
 type CompressedPedersenComG<W> =
-    zeronym::compressed_pedersen::constraints::CommGadget<EdwardsParameters, FqVar, W>;
+    zkcreds::compressed_pedersen::constraints::CommGadget<EdwardsParameters, FqVar, W>;
 
 #[derive(Clone)]
 struct Window9x63;
@@ -28,7 +28,7 @@ macro_rules! make_show_bench {
             use super::*;
             use core::borrow::Borrow;
 
-            use zeronym::{
+            use zkcreds::{
                 attrs::{Attrs, AttrsVar},
                 pred::{gen_pred_crs, prove_birth, PredicateChecker},
                 ComNonce, ComNonceVar, ComParam, ComParamVar,
@@ -68,7 +68,7 @@ macro_rules! make_show_bench {
                     let mut rng = {
                         let mut seed = [0u8; 32];
                         let mut writer = &mut seed[..];
-                        writer.write_all(b"zeronym-commitment-param").unwrap();
+                        writer.write_all(b"zkcreds-commitment-param").unwrap();
                         StdRng::from_seed(seed)
                     };
                     TestComScheme::setup(&mut rng).unwrap()

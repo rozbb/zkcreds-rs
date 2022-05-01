@@ -1,4 +1,4 @@
-use zeronym::{
+use zkcreds::{
     attrs::Attrs,
     com_forest::{gen_forest_memb_crs, ComForestRoots},
     com_tree::{gen_tree_memb_crs, ComTree},

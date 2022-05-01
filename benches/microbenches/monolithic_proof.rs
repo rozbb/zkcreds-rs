@@ -1,6 +1,6 @@
 ///! Defines a single Groth16 proof for pred(cred) ∧ cred ∈ tree ∧ tree ∈ forest
 // All this code is pieced together from com_tree, com_forest, link, and pred
-use zeronym::{
+use zkcreds::{
     attrs::{Attrs, AttrsVar},
     com_forest::{ComForestRoots, ForestMembershipProver},
     com_tree::{default_auth_path, ComTreePath, TreeMembershipProver},
@@ -73,7 +73,7 @@ where
         let attrs_var = AV::new_witness(ns!(cs, "attrs var"), || Ok(&self.attrs))?;
         let attrs_com_var = &attrs_var.commit()?;
 
-        // Witness the public variables. In ALL zeronym proofs, it's the commitment to the
+        // Witness the public variables. In ALL zkcreds proofs, it's the commitment to the
         // attributes and the merkle root
         let root_var =
             HG::OutputVar::new_witness(ns!(cs, "root var"), || Ok(self.tree_prover.root.clone()))?;

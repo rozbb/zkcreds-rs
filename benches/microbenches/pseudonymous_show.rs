@@ -4,7 +4,7 @@ use crate::microbenches::monolithic_proof::{
 
 use core::borrow::Borrow;
 
-use zeronym::{
+use zkcreds::{
     attrs::{
         AccountableAttrs as AccountableAttrsTrait, AccountableAttrsVar as AccountableAttrsVarTrait,
         Attrs as AttrsTrait, AttrsVar as AttrsVarTrait,
@@ -55,9 +55,9 @@ const POSEIDON_WIDTH: u8 = 5;
 type E = Bls12_381;
 type Fr = <E as PairingEngine>::Fr;
 
-type CompressedPedersenCom<W> = zeronym::compressed_pedersen::Commitment<EdwardsParameters, W>;
+type CompressedPedersenCom<W> = zkcreds::compressed_pedersen::Commitment<EdwardsParameters, W>;
 type CompressedPedersenComG<W> =
-    zeronym::compressed_pedersen::constraints::CommGadget<EdwardsParameters, FqVar, W>;
+    zkcreds::compressed_pedersen::constraints::CommGadget<EdwardsParameters, FqVar, W>;
 
 #[derive(Clone)]
 struct Window9x63;
@@ -83,7 +83,7 @@ lazy_static! {
         let mut rng = {
             let mut seed = [0u8; 32];
             let mut writer = &mut seed[..];
-            writer.write_all(b"zeronym-commitment-param").unwrap();
+            writer.write_all(b"zkcreds-commitment-param").unwrap();
             StdRng::from_seed(seed)
         };
         ComScheme::setup(&mut rng).unwrap()
@@ -92,7 +92,7 @@ lazy_static! {
         let mut rng = {
             let mut seed = [0u8; 32];
             let mut writer = &mut seed[..];
-            writer.write_all(b"zeronym-merkle-param").unwrap();
+            writer.write_all(b"zkcreds-merkle-param").unwrap();
             StdRng::from_seed(seed)
         };
         <TreeH as TwoToOneCRH>::setup(&mut rng).unwrap()

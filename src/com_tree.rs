@@ -370,7 +370,7 @@ where
         self,
         cs: ConstraintSystemRef<ConstraintF>,
     ) -> Result<(), SynthesisError> {
-        // Witness the public variables. In ALL zeronym proofs, it's the commitment to the
+        // Witness the public variables. In ALL zkcreds proofs, it's the commitment to the
         // attributes and the merkle root
         let attrs_com_var =
             ACG::OutputVar::new_input(ns!(cs, "attrs com var"), || Ok(self.attrs_com.clone()))?;

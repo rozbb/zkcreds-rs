@@ -105,7 +105,7 @@ lazy_static! {
         let mut rng = {
             let mut seed = [0u8; 32];
             let mut writer = &mut seed[..];
-            writer.write_all(b"zeronym-commitment-param").unwrap();
+            writer.write_all(b"zkcreds-commitment-param").unwrap();
             StdRng::from_seed(seed)
         };
         TestComScheme::setup(&mut rng).unwrap()
@@ -114,7 +114,7 @@ lazy_static! {
         let mut rng = {
             let mut seed = [0u8; 32];
             let mut writer = &mut seed[..];
-            writer.write_all(b"zeronym-merkle-param").unwrap();
+            writer.write_all(b"zkcreds-merkle-param").unwrap();
             StdRng::from_seed(seed)
         };
         <TestTreeH as TwoToOneCRH>::setup(&mut rng).unwrap()

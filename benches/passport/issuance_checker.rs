@@ -10,7 +10,7 @@ use crate::passport::{
     passport_info::{PersonalInfo, PersonalInfoVar},
 };
 
-use zeronym::{pred::PredicateChecker, Com};
+use zkcreds::{pred::PredicateChecker, Com};
 
 use ark_ff::ToConstraintField;
 use ark_r1cs_std::{

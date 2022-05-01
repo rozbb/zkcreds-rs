@@ -1,4 +1,4 @@
-use zeronym::merkle_forest::MerkleForestCircuit;
+use zkcreds::merkle_forest::MerkleForestCircuit;
 
 use ark_bls12_381::{Bls12_381 as E, Fr};
 use ark_crypto_primitives::{

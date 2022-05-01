@@ -3,7 +3,7 @@ use crate::passport::{
     passport_info::{PersonalInfo, PersonalInfoVar},
 };
 
-use zeronym::{pred::PredicateChecker, revealing_multishow::RevealingMultishowChecker};
+use zkcreds::{pred::PredicateChecker, revealing_multishow::RevealingMultishowChecker};
 
 use ark_ff::ToConstraintField;
 use ark_r1cs_std::{alloc::AllocVar, eq::EqGadget, fields::fp::FpVar, uint8::UInt8};

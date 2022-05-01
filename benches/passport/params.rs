@@ -1,6 +1,6 @@
 use crate::passport::passport_info::{PersonalInfo, PersonalInfoVar};
 
-use zeronym::proof_data_structures::{
+use zkcreds::proof_data_structures::{
     ForestProof as ZeronymForestProof, ForestProvingKey as ZeronymForestPk,
     ForestVerifyingKey as ZeronymForestVk, PredProof as ZeronymPredProof,
     PredProvingKey as ZeronymPredPk, PredVerifyingKey as ZeronymPredVk,
@@ -79,14 +79,14 @@ pub(crate) type HG = bowe_hopwood::constraints::CRHGadget<EdwardsParameters, FqV
 
 // Pick a commitment scheme
 pub(crate) type PassportComScheme =
-    zeronym::compressed_pedersen::Commitment<EdwardsParameters, Window9x128>;
+    zkcreds::compressed_pedersen::Commitment<EdwardsParameters, Window9x128>;
 pub(crate) type PassportComSchemeG =
-    zeronym::compressed_pedersen::constraints::CommGadget<EdwardsParameters, FqVar, Window9x128>;
+    zkcreds::compressed_pedersen::constraints::CommGadget<EdwardsParameters, FqVar, Window9x128>;
 
-pub(crate) type ComTree = zeronym::com_tree::ComTree<Fr, H, PassportComScheme>;
-pub(crate) type ComForest = zeronym::com_forest::ComForest<Fr, H, PassportComScheme>;
-pub(crate) type ComTreePath = zeronym::com_tree::ComTreePath<Fr, H, PassportComScheme>;
-pub(crate) type ComForestRoots = zeronym::com_forest::ComForestRoots<Fr, H>;
+pub(crate) type ComTree = zkcreds::com_tree::ComTree<Fr, H, PassportComScheme>;
+pub(crate) type ComForest = zkcreds::com_forest::ComForest<Fr, H, PassportComScheme>;
+pub(crate) type ComTreePath = zkcreds::com_tree::ComTreePath<Fr, H, PassportComScheme>;
+pub(crate) type ComForestRoots = zkcreds::com_forest::ComForestRoots<Fr, H>;
 
 /// Type aliases for Groth16 stuff
 pub(crate) type PredProvingKey = ZeronymPredPk<
@@ -135,7 +135,7 @@ lazy_static! {
         let mut rng = {
             let mut seed = [0u8; 32];
             let mut writer = &mut seed[..];
-            writer.write_all(b"zeronym-commitment-param").unwrap();
+            writer.write_all(b"zkcreds-commitment-param").unwrap();
             StdRng::from_seed(seed)
         };
         PassportComScheme::setup(&mut rng).unwrap()
@@ -144,7 +144,7 @@ lazy_static! {
         let mut rng = {
             let mut seed = [0u8; 32];
             let mut writer = &mut seed[..];
-            writer.write_all(b"zeronym-merkle-param").unwrap();
+            writer.write_all(b"zkcreds-merkle-param").unwrap();
             StdRng::from_seed(seed)
         };
         <H as TwoToOneCRH>::setup(&mut rng).unwrap()
