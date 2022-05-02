@@ -21,6 +21,7 @@ use ark_relations::{
     ns,
     r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError},
 };
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, SerializationError, Write};
 use ark_std::rand::Rng;
 use linkg16::groth16;
 
@@ -99,6 +100,7 @@ where
 }
 
 /// A Merkle tree of attribute commitments
+#[derive(CanonicalSerialize)]
 pub struct ComTree<ConstraintF, H, AC>
 where
     ConstraintF: PrimeField,

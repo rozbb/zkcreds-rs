@@ -121,6 +121,26 @@ where
     pub(crate) empty_hashes: EmptyHashes<P>,
 }
 
+// Serialize everything but the parameters
+impl<P> CanonicalSerialize for SparseMerkleTree<P>
+where
+    P: TreeConfig,
+    TwoToOneDigest<P>: Eq,
+{
+    fn serialized_size(&self) -> usize {
+        todo!()
+    }
+
+    fn serialize<W: Write>(&self, mut w: W) -> Result<(), SerializationError> {
+        self.height.serialize(&mut w)?;
+        self.leaf_hashes.serialize(&mut w)?;
+        self.inner_hashes.serialize(&mut w)?;
+        self.empty_hashes.serialize(&mut w)?;
+
+        Ok(())
+    }
+}
+
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub(crate) struct EmptyHashes<P: TreeConfig> {
     leaf_hash: LeafDigest<P>,
