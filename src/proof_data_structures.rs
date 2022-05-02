@@ -8,6 +8,7 @@ use ark_crypto_primitives::{
 };
 use ark_ec::PairingEngine;
 use ark_ff::ToConstraintField;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, SerializationError, Write};
 use linkg16::groth16::{
     Proof as Groth16Proof, ProvingKey as Groth16ProvingKey, VerifyingKey as Groth16VerifyingKey,
 };
@@ -17,6 +18,7 @@ use linkg16::groth16::{
 //
 
 /// Represents the proving key for a predicate proof
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct PredProvingKey<E, A, AV, AC, ACG, H, HG>
 where
     E: PairingEngine,
@@ -129,6 +131,7 @@ where
 }
 
 /// Represents a predicate proof
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct PredProof<E, A, AV, AC, ACG, H, HG>
 where
     E: PairingEngine,
