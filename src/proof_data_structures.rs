@@ -77,6 +77,7 @@ where
 }
 
 /// Represents the verifying key for a predicate proofs
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct PredVerifyingKey<E, A, AV, AC, ACG, H, HG>
 where
     E: PairingEngine,
