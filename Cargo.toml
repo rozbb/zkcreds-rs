@@ -27,7 +27,7 @@ rand_core = "0.6"
 
 [dependencies.linkg16]
 git = "ssh://git@github.com/rozbb/linkg16"
-rev = "ab6fac5b328807161787996cd9707e466b02ea03"
+rev = "a405a8501c9fa1b69f6ec1c9e39fb6885dc74233"
 
 [patch.crates-io.ark-crypto-primitives]
 git = "https://github.com/arkworks-rs/crypto-primitives.git"
