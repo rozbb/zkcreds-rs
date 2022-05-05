@@ -1,11 +1,11 @@
 use crate::passport::passport_info::{PersonalInfo, PersonalInfoVar};
 
 use zkcreds::proof_data_structures::{
-    ForestProof as ZeronymForestProof, ForestProvingKey as ZeronymForestPk,
-    ForestVerifyingKey as ZeronymForestVk, PredProof as ZeronymPredProof,
-    PredProvingKey as ZeronymPredPk, PredVerifyingKey as ZeronymPredVk,
-    TreeProof as ZeronymTreeProof, TreeProvingKey as ZeronymTreePk,
-    TreeVerifyingKey as ZeronymTreeVk,
+    ForestProof as ZkcredsForestProof, ForestProvingKey as ZkcredsForestPk,
+    ForestVerifyingKey as ZkcredsForestVk, PredProof as ZkcredsPredProof,
+    PredProvingKey as ZkcredsPredPk, PredVerifyingKey as ZkcredsPredVk,
+    TreeProof as ZkcredsTreeProof, TreeProvingKey as ZkcredsTreePk,
+    TreeVerifyingKey as ZkcredsTreeVk,
 };
 
 use ark_bls12_381::Bls12_381;
@@ -89,7 +89,7 @@ pub(crate) type ComTreePath = zkcreds::com_tree::ComTreePath<Fr, H, PassportComS
 pub(crate) type ComForestRoots = zkcreds::com_forest::ComForestRoots<Fr, H>;
 
 /// Type aliases for Groth16 stuff
-pub(crate) type PredProvingKey = ZeronymPredPk<
+pub(crate) type PredProvingKey = ZkcredsPredPk<
     Bls12_381,
     PersonalInfo,
     PersonalInfoVar,
@@ -98,7 +98,7 @@ pub(crate) type PredProvingKey = ZeronymPredPk<
     H,
     HG,
 >;
-pub(crate) type PredVerifyingKey = ZeronymPredVk<
+pub(crate) type PredVerifyingKey = ZkcredsPredVk<
     Bls12_381,
     PersonalInfo,
     PersonalInfoVar,
@@ -108,14 +108,14 @@ pub(crate) type PredVerifyingKey = ZeronymPredVk<
     HG,
 >;
 pub(crate) type TreeProvingKey =
-    ZeronymTreePk<Bls12_381, PersonalInfo, PassportComScheme, PassportComSchemeG, H, HG>;
+    ZkcredsTreePk<Bls12_381, PersonalInfo, PassportComScheme, PassportComSchemeG, H, HG>;
 pub(crate) type TreeVerifyingKey =
-    ZeronymTreeVk<Bls12_381, PersonalInfo, PassportComScheme, PassportComSchemeG, H, HG>;
+    ZkcredsTreeVk<Bls12_381, PersonalInfo, PassportComScheme, PassportComSchemeG, H, HG>;
 pub(crate) type ForestProvingKey =
-    ZeronymForestPk<Bls12_381, PersonalInfo, PassportComScheme, PassportComSchemeG, H, HG>;
+    ZkcredsForestPk<Bls12_381, PersonalInfo, PassportComScheme, PassportComSchemeG, H, HG>;
 pub(crate) type ForestVerifyingKey =
-    ZeronymForestVk<Bls12_381, PersonalInfo, PassportComScheme, PassportComSchemeG, H, HG>;
-pub(crate) type PredProof = ZeronymPredProof<
+    ZkcredsForestVk<Bls12_381, PersonalInfo, PassportComScheme, PassportComSchemeG, H, HG>;
+pub(crate) type PredProof = ZkcredsPredProof<
     Bls12_381,
     PersonalInfo,
     PersonalInfoVar,
@@ -125,9 +125,9 @@ pub(crate) type PredProof = ZeronymPredProof<
     HG,
 >;
 pub(crate) type TreeProof =
-    ZeronymTreeProof<Bls12_381, PersonalInfo, PassportComScheme, PassportComSchemeG, H, HG>;
+    ZkcredsTreeProof<Bls12_381, PersonalInfo, PassportComScheme, PassportComSchemeG, H, HG>;
 pub(crate) type ForestProof =
-    ZeronymForestProof<Bls12_381, PersonalInfo, PassportComScheme, PassportComSchemeG, H, HG>;
+    ZkcredsForestProof<Bls12_381, PersonalInfo, PassportComScheme, PassportComSchemeG, H, HG>;
 
 // Set params
 lazy_static! {
