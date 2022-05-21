@@ -1,7 +1,7 @@
 use criterion::{criterion_group, criterion_main};
 
 mod linkage_microbench;
-mod monolithic_proof;
+pub(crate) mod monolithic_proof;
 mod multishow;
 mod multishow_age;
 mod pseudonymous_show;

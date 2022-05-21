@@ -237,7 +237,7 @@ pub fn bench_expiry(c: &mut Criterion) {
     // Create the tree proof
     let mut tree = ComTree::empty(MERKLE_CRH_PARAM.clone(), TREE_HEIGHT);
     let auth_path = tree.insert(0, &cred);
-    c.bench_function("Expiry: proving tree", |b| {
+    c.bench_function("Expiry show: proving tree", |b| {
         b.iter(|| {
             auth_path
                 .prove_membership(&mut rng, &tree_pk, &*MERKLE_CRH_PARAM, cred)
@@ -252,7 +252,7 @@ pub fn bench_expiry(c: &mut Criterion) {
     let root = tree.root();
     let mut roots = ComForestRoots::new(NUM_TREES - 1);
     roots.roots.push(root);
-    c.bench_function("Expiry: proving forest", |b| {
+    c.bench_function("Expiry show: proving forest", |b| {
         b.iter(|| {
             roots
                 .prove_membership(&mut rng, &forest_pk, root, cred)
@@ -264,7 +264,7 @@ pub fn bench_expiry(c: &mut Criterion) {
         .unwrap();
 
     // Create expiry proof
-    c.bench_function("Expiry: proving expiry", |b| {
+    c.bench_function("Expiry show: proving expiry", |b| {
         b.iter(|| {
             prove_pred(
                 &mut rng,
@@ -361,13 +361,13 @@ pub fn bench_expiry(c: &mut Criterion) {
         pred_proofs: vec![expiry_proof],
         vk: link_vk.clone(),
     };
-    c.bench_function("Expiry: proving linkage", |b| {
+    c.bench_function("Expiry show: proving linkage", |b| {
         b.iter(|| link_proofs(&mut rng, &link_ctx))
     });
     let link_proof = link_proofs(&mut rng, &link_ctx);
     crate::util::record_size("Expiry", &link_proof);
 
-    c.bench_function("Expiry: verifying linkage", |b| {
+    c.bench_function("Expiry show: verifying linkage", |b| {
         b.iter(|| assert!(verif_link_proof(&link_proof, &link_vk).unwrap()))
     });
 }

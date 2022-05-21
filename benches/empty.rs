@@ -1,3 +1,8 @@
+// A horrible hack to let me use helper code from another module in benches
+#[path = "microbenches/monolithic_proof.rs"]
+mod monolithic_proof;
+use monolithic_proof::{gen_monolithic_crs, prove_monolithic, verify_monolithic};
+
 use core::borrow::Borrow;
 
 use zkcreds::{
@@ -5,6 +10,7 @@ use zkcreds::{
     com_forest::{gen_forest_memb_crs, ComForestRoots},
     com_tree::{gen_tree_memb_crs, ComTree},
     link::{link_proofs, verif_link_proof, LinkProofCtx, LinkVerifyingKey, PredPublicInputs},
+    pred::PredicateChecker,
     ComNonce, ComNonceVar, ComParam, ComParamVar,
 };
 
@@ -24,7 +30,7 @@ use ark_r1cs_std::{
 };
 use ark_relations::{
     ns,
-    r1cs::{Namespace, SynthesisError},
+    r1cs::{ConstraintSystemRef, Namespace, SynthesisError},
 };
 use ark_std::{
     io::Write,
@@ -32,6 +38,7 @@ use ark_std::{
 };
 use criterion::Criterion;
 use lazy_static::lazy_static;
+use linkg16::groth16;
 
 const LOG2_NUM_LEAVES: u32 = 31;
 const LOG2_NUM_TREES: u32 = 8;
@@ -99,6 +106,22 @@ impl EmptyAttrs {
     fn new<R: Rng>(rng: &mut R) -> EmptyAttrs {
         let nonce = <ComScheme as CommitmentScheme>::Randomness::rand(rng);
         EmptyAttrs { nonce }
+    }
+}
+
+/// An empty predicate type. We need this for our monolithic proofs
+struct EmptyPred;
+impl PredicateChecker<Fr, EmptyAttrs, EmptyAttrsVar, ComScheme, ComSchemeG> for EmptyPred {
+    fn pred(
+        self,
+        _cs: ConstraintSystemRef<Fr>,
+        _attrs: &EmptyAttrsVar,
+    ) -> Result<(), SynthesisError> {
+        Ok(())
+    }
+
+    fn public_inputs(&self) -> Vec<Fr> {
+        Vec::new()
     }
 }
 
@@ -215,6 +238,63 @@ pub fn bench_empty(c: &mut Criterion) {
     let forest_proof = roots
         .prove_membership(&mut rng, &forest_pk, root, cred)
         .unwrap();
+
+    let monolithic_pk: groth16::ProvingKey<E> = gen_monolithic_crs::<
+        _,
+        E,
+        EmptyAttrs,
+        EmptyAttrsVar,
+        ComScheme,
+        ComSchemeG,
+        TreeH,
+        TreeHG,
+        _,
+    >(
+        &mut rng,
+        MERKLE_CRH_PARAM.clone(),
+        TREE_HEIGHT,
+        NUM_TREES,
+        EmptyPred,
+    )
+    .unwrap();
+    let monolithic_vk = monolithic_pk.verifying_key();
+    c.bench_function("Empty show: proving monolithic", |b| {
+        b.iter(|| {
+            prove_monolithic::<_, _, _, EmptyAttrsVar, _, ComSchemeG, _, TreeHG, _>(
+                &mut rng,
+                &monolithic_pk,
+                &*MERKLE_CRH_PARAM,
+                &roots,
+                &auth_path,
+                attrs.clone(),
+                EmptyPred,
+            )
+            .unwrap()
+        })
+    });
+    let proof = prove_monolithic::<_, _, _, EmptyAttrsVar, _, ComSchemeG, _, TreeHG, _>(
+        &mut rng,
+        &monolithic_pk,
+        &*MERKLE_CRH_PARAM,
+        &roots,
+        &auth_path,
+        attrs.clone(),
+        EmptyPred,
+    )
+    .unwrap();
+    c.bench_function("Empty show: verifying monolithic", |b| {
+        b.iter(|| {
+            assert!(
+                verify_monolithic::<_, EmptyAttrs, EmptyAttrsVar, _, _, _, TreeHG, _>(
+                    &monolithic_vk,
+                    &roots,
+                    &proof,
+                    EmptyPred,
+                )
+                .unwrap()
+            )
+        })
+    });
 
     let link_vk = LinkVerifyingKey::<_, _, EmptyAttrsVar, _, _, _, _> {
         pred_inputs: PredPublicInputs::default(),

@@ -307,7 +307,7 @@ pub fn bench_pseudonymous_show(c: &mut Criterion) {
         )
         .unwrap();
     let monolithic_vk = monolithic_pk.verifying_key();
-    c.bench_function("Psuedonymous show: proving monolithic", |b| {
+    c.bench_function("Pseudonymous show: proving monolithic", |b| {
         b.iter(|| {
             prove_monolithic::<_, _, _, AttrsVar, _, ComSchemeG, _, TreeHG, _>(
                 &mut rng,
