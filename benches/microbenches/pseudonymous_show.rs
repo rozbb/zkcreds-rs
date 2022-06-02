@@ -343,7 +343,18 @@ pub fn bench_pseudonymous_show(c: &mut Criterion) {
         })
     });
 
-    // Prepare expiry inputs
+    c.bench_function("Pseudonymous show: preparing forest roots", |b| {
+        b.iter(|| roots.prepare(&forest_vk).unwrap())
+    });
+
+    // Prepare pseudonymous show inputs
+    let mut pred_inputs = PredPublicInputs::default();
+    c.bench_function("Pseudonymous show: preparing gadget inputs", |b| {
+        b.iter(|| {
+            pred_inputs.prepare_pred_checker(&pseudonymous_show_vk, &pseudonymous_show_checker)
+        })
+    });
+
     let mut pred_inputs = PredPublicInputs::default();
     pred_inputs.prepare_pred_checker(&pseudonymous_show_vk, &pseudonymous_show_checker);
 
