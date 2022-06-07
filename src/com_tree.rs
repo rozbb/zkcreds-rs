@@ -2,7 +2,10 @@ use crate::{
     attrs::Attrs,
     identity_crh::{IdentityCRH, IdentityCRHGadget, UnitVar},
     proof_data_structures::{TreeProof, TreeProvingKey},
-    sparse_merkle::{constraints::SparseMerkleTreePathVar, SparseMerkleTree, SparseMerkleTreePath},
+    sparse_merkle::{
+        constraints::SparseMerkleTreePathVar, SparseMerkleTree, SparseMerkleTreePath,
+        SparseMerkleTreeWireFormat,
+    },
 };
 
 use core::marker::PhantomData;
@@ -10,8 +13,8 @@ use std::collections::BTreeMap;
 
 use ark_crypto_primitives::{
     commitment::{constraints::CommitmentGadget, CommitmentScheme},
-    crh::{constraints::TwoToOneCRHGadget, TwoToOneCRH},
-    merkle_tree::{Config as TreeConfig, TwoToOneParam},
+    crh::{constraints::TwoToOneCRHGadget, TwoToOneCRH, CRH},
+    merkle_tree::{Config as TreeConfig, LeafParam, TwoToOneParam},
 };
 use ark_ec::PairingEngine;
 use ark_ff::to_bytes;
@@ -100,7 +103,6 @@ where
 }
 
 /// A Merkle tree of attribute commitments
-#[derive(CanonicalSerialize)]
 pub struct ComTree<ConstraintF, H, AC>
 where
     ConstraintF: PrimeField,
@@ -113,6 +115,45 @@ where
     tree: SparseMerkleTree<ComTreeConfig<H>>,
 
     _marker: PhantomData<(ConstraintF, AC)>,
+}
+
+/// A version of a ComTree that can be serialized and deserialized
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
+pub struct ComTreeWireFormat<ConstraintF, H, AC>
+where
+    ConstraintF: PrimeField,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<ConstraintF>,
+    AC: CommitmentScheme,
+    AC::Output: ToConstraintField<ConstraintF>,
+{
+    /// The tree's contents
+    tree: SparseMerkleTreeWireFormat<ComTreeConfig<H>>,
+
+    _marker: PhantomData<(ConstraintF, AC)>,
+}
+
+impl<ConstraintF, H, AC> ComTreeWireFormat<ConstraintF, H, AC>
+where
+    ConstraintF: PrimeField,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<ConstraintF>,
+    AC: CommitmentScheme,
+    AC::Output: ToConstraintField<ConstraintF>,
+{
+    pub fn into_com_tree(
+        self,
+        two_to_one_param: TwoToOneParam<ComTreeConfig<H>>,
+    ) -> ComTree<ConstraintF, H, AC> {
+        // Remember the ComTree doesn't hash its leaves
+        let leaf_param = <IdentityCRH as CRH>::Parameters::default();
+        ComTree {
+            tree: self
+                .tree
+                .into_sparse_merkle_tree(leaf_param, two_to_one_param),
+            _marker: self._marker,
+        }
+    }
 }
 
 impl<ConstraintF, H, AC> ComTree<ConstraintF, H, AC>
@@ -179,6 +220,14 @@ where
     /// Panics when `idx >= 2^tree_height`
     pub fn remove(&mut self, idx: u64) {
         self.tree.remove(idx).expect("could not remove item");
+    }
+
+    /// Converts this `ComTree` into a format that can be serialized and deserialized
+    pub fn into_wire_format(&self) -> ComTreeWireFormat<ConstraintF, H, AC> {
+        ComTreeWireFormat {
+            tree: self.tree.into_wire_format(),
+            _marker: PhantomData,
+        }
     }
 }
 

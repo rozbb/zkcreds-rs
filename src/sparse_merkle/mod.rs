@@ -104,6 +104,21 @@ where
     }
 }
 
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
+pub(crate) struct EmptyHashes<P: TreeConfig> {
+    leaf_hash: LeafDigest<P>,
+    inner_hashes: Vec<TwoToOneDigest<P>>,
+}
+
+impl<P: TreeConfig> Clone for EmptyHashes<P> {
+    fn clone(&self) -> Self {
+        EmptyHashes {
+            leaf_hash: self.leaf_hash.clone(),
+            inner_hashes: self.inner_hashes.clone(),
+        }
+    }
+}
+
 /// Merkle sparse tree
 pub struct SparseMerkleTree<P>
 where
@@ -121,30 +136,40 @@ where
     pub(crate) empty_hashes: EmptyHashes<P>,
 }
 
-// Serialize everything but the parameters
-impl<P> CanonicalSerialize for SparseMerkleTree<P>
+/// We can't serialize CRH parameters, so the merkle tree wire format is all but the params
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
+pub struct SparseMerkleTreeWireFormat<P>
 where
     P: TreeConfig,
     TwoToOneDigest<P>: Eq,
 {
-    fn serialized_size(&self) -> usize {
-        todo!()
-    }
-
-    fn serialize<W: Write>(&self, mut w: W) -> Result<(), SerializationError> {
-        self.height.serialize(&mut w)?;
-        self.leaf_hashes.serialize(&mut w)?;
-        self.inner_hashes.serialize(&mut w)?;
-        self.empty_hashes.serialize(&mut w)?;
-
-        Ok(())
-    }
+    pub(crate) height: u32,
+    pub(crate) leaf_hashes: BTreeMap<u64, LeafDigest<P>>,
+    pub(crate) inner_hashes: BTreeMap<u64, TwoToOneDigest<P>>,
+    pub(crate) empty_hashes: EmptyHashes<P>,
 }
 
-#[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub(crate) struct EmptyHashes<P: TreeConfig> {
-    leaf_hash: LeafDigest<P>,
-    inner_hashes: Vec<TwoToOneDigest<P>>,
+impl<P> SparseMerkleTreeWireFormat<P>
+where
+    P: TreeConfig,
+    TwoToOneDigest<P>: Eq,
+{
+    /// Converts thsi deserialized tree to a full `SparseMerkleTree` by providing the hashing
+    /// parameters
+    pub fn into_sparse_merkle_tree(
+        self,
+        leaf_param: LeafParam<P>,
+        two_to_one_param: TwoToOneParam<P>,
+    ) -> SparseMerkleTree<P> {
+        SparseMerkleTree {
+            leaf_param,
+            two_to_one_param,
+            height: self.height,
+            leaf_hashes: self.leaf_hashes,
+            inner_hashes: self.inner_hashes,
+            empty_hashes: self.empty_hashes,
+        }
+    }
 }
 
 impl<P> SparseMerkleTree<P>
@@ -152,6 +177,16 @@ where
     P: TreeConfig,
     TwoToOneDigest<P>: Eq,
 {
+    /// Converts this merkle tree to something that can be serialized
+    pub fn into_wire_format(&self) -> SparseMerkleTreeWireFormat<P> {
+        SparseMerkleTreeWireFormat {
+            height: self.height,
+            leaf_hashes: self.leaf_hashes.clone(),
+            inner_hashes: self.inner_hashes.clone(),
+            empty_hashes: self.empty_hashes.clone(),
+        }
+    }
+
     /// Obtain an empty tree of a given height. Height MUST be at least 2.
     pub fn empty<L: Default + ToBytes>(
         leaf_param: LeafParam<P>,
