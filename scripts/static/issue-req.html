@@ -10,15 +10,22 @@
 	}
 </style>
 </head>
-<div style="text-align: center;">
+<div style="text-align: center; padding: 0% 10% 0% 10%;">
 	<form method="POST">
 
 		<h1><tt>zkcreds</tt> Application</h1>
+		<h3>Issuance Request</h3>
 
-		<label for="attrs" class="attrs"><p><strong>Attributes (JSON):</strong></p></label>
+		<p>As a user, you likely already own some <em>credential</em> (e.g., a driver's license or passport) which not only contains information identifying who you are as the holder of that credential, but also various other permissions regarding what you are and are not allowed to access or otherwise interact with. This information can be arbitrarily encoded as fields, known as <em>attributes</em>. A credential issuer can then systematically analyze these attributes to determine whether you are allowed to have your credential issued. Our system, <tt>zkcreds</tt>, allows you to request issuance in zero-knowledge, without revealing anything about the attributes you have beyond what is used to satisfy the issuance criteria.</p>
+
+		<p>Please provide a JSON-encoded list of attributes for your credential.</p>
+
+		<!-- TODO: Give a hint to the user as for what criteria will eventually be proven (issuance and maybe show) -->
+
+		<label for="attrs" class="attrs"><p><strong>Attributes:</strong></p></label>
 		<textarea name="attrs" class="attrs" type="file" placeholder="{&NewLine;&Tab;&quot;foo&quot;: &quot;bar&quot;,&NewLine;&Tab;&quot;baz&quot;: 0&NewLine;}"></textarea>
 		<br /><br />
 
-		<input type="submit" />
+		<input type="submit" value="Generate Request"/>
 	</form>
 </div>
