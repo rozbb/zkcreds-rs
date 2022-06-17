@@ -7,3 +7,4 @@ michaels_isureq.txt
 /pkg
 
 .env
+__pycache__/
