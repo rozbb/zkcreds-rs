@@ -11,33 +11,18 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # Directories where various webpages are stored
 STATIC_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'static')
-CSS_PATH = os.path.join(STATIC_PATH, 'css')
-
 
 @route('/')
 def index():
     return 'This test application is using the <tt>zkcreds</tt> Rust library!'
 
-@route('/static/<filepath:path>')
-def serve_static(filepath):
-    return static_file(filepath, root=STATIC_PATH)
-
 @route('/issue-req')
 def issue_req():
-    return '''
-        <div style="text-align: center;">
-            <form method="POST">
+    return static_file('issue-req.html', root=STATIC_PATH)
 
-                <h1><tt>zkcreds</tt> Application</h1>
-
-                <label for="attrs" style="text-align: center;"><p><strong>Attributes (JSON):</strong></p></label>
-                <textarea id="attrs" style="height: 50%; width: 50%" name="attrs" type="file" placeholder="{\n\t&quot;foo&quot;: &quot;bar&quot;,\n\t&quot;baz&quot;: 0\n}"></textarea>
-                <br /><br />
-
-                <input type="submit" />
-            </form>
-        </div>
-    '''
+#@route('/static/<filename:path>')
+#def serve_stylesheet(filename):
+#    return static_file('{}.css'.format(filename), root=CSS_PATH)
 
 #app = bottle.default_app()
 

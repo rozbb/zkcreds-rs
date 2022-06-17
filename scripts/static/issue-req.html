@@ -1,0 +1,24 @@
+<head>
+<style>
+	label.attrs {
+		text-align: center;
+	}
+
+	textarea.attrs {
+		height: 50%;
+		width: 50%;
+	}
+</style>
+</head>
+<div style="text-align: center;">
+	<form method="POST">
+
+		<h1><tt>zkcreds</tt> Application</h1>
+
+		<label for="attrs" class="attrs"><p><strong>Attributes (JSON):</strong></p></label>
+		<textarea name="attrs" class="attrs" type="file" placeholder="{&NewLine;&Tab;&quot;foo&quot;: &quot;bar&quot;,&NewLine;&Tab;&quot;baz&quot;: 0&NewLine;}"></textarea>
+		<br /><br />
+
+		<input type="submit" />
+	</form>
+</div>
