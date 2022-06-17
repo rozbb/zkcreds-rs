@@ -5,3 +5,5 @@ michaels_passport.json
 michaels_isureq.txt
 
 /pkg
+
+.env
