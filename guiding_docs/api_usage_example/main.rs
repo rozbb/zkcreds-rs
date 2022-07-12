@@ -56,7 +56,7 @@ fn main() {
     // Start the issuer
     let mut issuer_state = load_issuer_state("issuer_state.json");
     // Check the issuance request
-    match issuer_state.issue(&crs_table, &isu_req) {
+    match issuer_state.issue(&isu_req, &crs_table) {
         Some(auth_path) => {
             // Issuance check succeeded. Return the auth path
             send_to_user(auth_path);
@@ -73,8 +73,7 @@ fn main() {
     // The user computes their membership proofs and saves them for later
     user.set_auth_path(auth_path);
     user.set_roots(forest_roots);
-    let tree_proof = user_state.prove_tree_memb(&mut rng, &crs_table);
-    let forest_proof = user_state.prove_forest_memb(&mut rng, &crs_table);
+    let memb_proof = user_state.prove_memb(&mut rng, &crs_table);
 
     //
     // A user walks into a bar
@@ -103,8 +102,7 @@ fn main() {
     let link_prover = LinkProver::new()
         .with_crs(&crs_table)
         .with_cred(cred)
-        .in_forest(forest_proof, &forest_roots)
-        .in_tree(tree_proof, &my_root)
+        .in_forest(memb_proof, (&forest_roots, &my_root))
         .add_pred("age", age_proof, age_pub_inputs)
         .add_pred("expiry", expiry_proof, expiry_pub_inputs)
         .add_pred("face", face_proof, face_pub_inputs);
@@ -182,18 +180,19 @@ impl UserState {
     }
 
     // Returns this user's credential
-    fn cred() -> Com {
+    fn cred(&self) -> Com {
         self.attrs.com()
     }
 
     // Returns the root of the tree that our cred resides in
-    fn tree_root() -> ComTreeRoot {
+    fn tree_root(&self) -> ComTreeRoot {
         self.auth_path.root()
     }
 
     /// Proves anything at all about this user. Returns the proof and any public inputs that the
     /// verifier will need
     fn prove_pred<R, P>(
+        &self,
         rng: &mut R,
         pred: &P,
         pred_name: &str,
@@ -213,24 +212,16 @@ impl UserState {
         (proof, pub_input)
     }
 
-    // Proves membership in the tree whose root is in self.auth_path
-    fn prove_tree_memb<R: Rng>(rng: &mut R, crs_table: &CrsTable) -> TreeProof {
+    // Proves membership of this cred in the Merkle forest
+    fn prove_memb<R: Rng>(&self, rng: &mut R, crs_table: &CrsTable) -> MembershipProof {
         let cred = self.attrs.com();
-        self.auth_path
-            .unwrap()
-            .prove_membership(rng, &crs_table, cred)
-    }
-
-    // Proves that self.auth_path's tree is in the forest described by `self.roots`
-    fn prove_forest_memb<R: Rng>(rng: &mut R, crs_table: &CrsTable) -> ForestProof {
-        let my_root = self.auth_path.root();
-        self.roots.prove_membership(rng, &my_root, &crs_table)
+        prove_merkle_membership(rng, crs_table, cred, &self.auth_path, self.roots)
     }
 }
 
 impl IssuerState {
     /// Checks an issuance request and, on success adds it to the tree
-    fn issue(&mut self, crs_table: &CrsTable, req: &IssuanceReq) -> Option<ComTreePath> {
+    fn issue(&mut self, req: &IssuanceReq, crs_table: &CrsTable) -> Option<ComTreePath> {
         // Get the verifying key for issuance
         let issuance_vk = crs_table.get("issuance", CrsType::VerifyingKey).unwrap();
 
