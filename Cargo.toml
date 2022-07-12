@@ -30,6 +30,9 @@ pyo3 = { version = "0.16.5", features = ["extension-module"], optional = true }
 git = "ssh://git@github.com/rozbb/linkg16"
 rev = "a405a8501c9fa1b69f6ec1c9e39fb6885dc74233"
 
+# We can't use the newer version of ark-crypto-primitives, or its new CRH traits because
+# arkworks-gadgets uses the old CRH traits:
+# https://github.com/webb-tools/arkworks-gadgets/blob/master/arkworks-native-gadgets/src/mimc.rs#L2=
 [patch.crates-io.ark-crypto-primitives]
 git = "https://github.com/arkworks-rs/crypto-primitives.git"
 rev = "3402a729b7104983c9779714ab8580de5187bbdd"

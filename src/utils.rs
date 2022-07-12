@@ -44,15 +44,16 @@ pub fn setup_poseidon_params<F: PrimeField>(
 // Pick global parameters for Poseidon over BLS12-381
 const POSEIDON_WIDTH: u8 = 5;
 const COM_DOMAIN_SEP: &[u8] = b"pcom";
+const CRH_DOMAIN_SEP: &[u8] = b"pcrh";
 lazy_static! {
-    static ref POSEIDON_COM_PARAM: PoseidonParameters<BlsFr> =
+    static ref BLS12_POSEIDON_PARAMS: PoseidonParameters<BlsFr> =
         setup_poseidon_params(Curve::Bls381, 3, POSEIDON_WIDTH);
 }
 
-/// A commitment scheme defined using the Poseidon hash function
-struct PoseidonCommitter;
+/// A commitment scheme defined using the Poseidon hash function over BLS12-381
+pub struct Bls12PoseidonCommitter;
 
-impl CommitmentScheme for PoseidonCommitter {
+impl CommitmentScheme for Bls12PoseidonCommitter {
     type Output = BlsFr;
     // We don't need parameters because they're set globally in the above lazy_static
     type Parameters = ();
@@ -75,12 +76,12 @@ impl CommitmentScheme for PoseidonCommitter {
             .expect("could not pack inputs");
 
         // Compute the hash
-        let hasher = Poseidon::new(POSEIDON_COM_PARAM.clone());
+        let hasher = Poseidon::new(BLS12_POSEIDON_PARAMS.clone());
         Ok(hasher.hash(&packed_input).unwrap())
     }
 }
 
-impl CommitmentGadget<PoseidonCommitter, BlsFr> for PoseidonCommitter {
+impl CommitmentGadget<Bls12PoseidonCommitter, BlsFr> for Bls12PoseidonCommitter {
     type OutputVar = FpVar<BlsFr>;
     type ParametersVar = UnitVar<BlsFr>;
     type RandomnessVar = FpVar<BlsFr>;
@@ -105,7 +106,80 @@ impl CommitmentGadget<PoseidonCommitter, BlsFr> for PoseidonCommitter {
             .expect("could not pack inputs");
 
         // Compute the hash
-        let hasher = Poseidon::new(POSEIDON_COM_PARAM.clone());
+        let hasher = Poseidon::new(BLS12_POSEIDON_PARAMS.clone());
+        let hasher_var = PoseidonGadget::from_native(&mut cs, hasher)?;
+        hasher_var.hash(&packed_input)
+    }
+}
+
+/// Represents the collision-resistant hashing functionality of Poseidon over BLS12-381
+pub struct Bls12PoseidonCrh;
+
+// TODO: Once arkworks-native-gadgets updates to the new Arkworks version, update this to use the
+// new Arkworks trait TwoToOneCRHScheme
+// https://github.com/webb-tools/arkworks-gadgets/blob/master/arkworks-native-gadgets/src/mimc.rs#L2=
+use ark_crypto_primitives::crh::{TwoToOneCRH, TwoToOneCRHGadget};
+
+impl TwoToOneCRH for Bls12PoseidonCrh {
+    // This doesn't matter. We only use it for Merkle tree stuff
+    const LEFT_INPUT_SIZE_BITS: usize = 0;
+    const RIGHT_INPUT_SIZE_BITS: usize = 0;
+
+    type Parameters = ();
+    type Output = BlsFr;
+
+    fn setup<R: Rng>(_: &mut R) -> Result<Self::Parameters, ArkError> {
+        Ok(())
+    }
+
+    // Evaluates H(left || right)
+    fn evaluate(_: &(), left_input: &[u8], right_input: &[u8]) -> Result<BlsFr, ArkError> {
+        // We only use this for Merkle tree hashing over BLS12-381, so just fix the input len to 32
+        assert_eq!(left_input.len(), 32);
+        assert_eq!(right_input.len(), 32);
+
+        // Concat all the inputs and pack them into field elements
+        let hash_input: Vec<u8> = [CRH_DOMAIN_SEP, left_input, right_input].concat();
+        let packed_input: Vec<BlsFr> = hash_input
+            .to_field_elements()
+            .expect("could not pack inputs");
+
+        // Compute the hash
+        let hasher = Poseidon::new(BLS12_POSEIDON_PARAMS.clone());
+        Ok(hasher.hash(&packed_input).unwrap())
+    }
+}
+
+// Do the same thing for ZK land
+impl TwoToOneCRHGadget<Bls12PoseidonCrh, BlsFr> for Bls12PoseidonCrh {
+    type ParametersVar = UnitVar<BlsFr>;
+    type OutputVar = FpVar<BlsFr>;
+
+    // Evaluates H(left || right)
+    fn evaluate(
+        _: &UnitVar<BlsFr>,
+        left_input: &[UInt8<BlsFr>],
+        right_input: &[UInt8<BlsFr>],
+    ) -> Result<FpVar<BlsFr>, SynthesisError> {
+        // We only use this for Merkle tree hashing over BLS12-381, so just fix the input len to 32
+        assert_eq!(left_input.len(), 32);
+        assert_eq!(right_input.len(), 32);
+
+        let mut cs = left_input.cs().or(right_input.cs());
+
+        // Concat all the inputs and pack them into field elements
+        let hash_input: Vec<UInt8<_>> = [
+            &UInt8::constant_vec(CRH_DOMAIN_SEP),
+            left_input,
+            right_input,
+        ]
+        .concat();
+        let packed_input: Vec<FpVar<BlsFr>> = hash_input
+            .to_constraint_field()
+            .expect("could not pack inputs");
+
+        // Compute the hash
+        let hasher = Poseidon::new(BLS12_POSEIDON_PARAMS.clone());
         let hasher_var = PoseidonGadget::from_native(&mut cs, hasher)?;
         hasher_var.hash(&packed_input)
     }
