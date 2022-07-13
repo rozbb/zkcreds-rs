@@ -186,7 +186,9 @@ mod test {
     use crate::{
         attrs::Attrs,
         pred::{gen_pred_crs, prove_birth, verify_birth},
-        test_util::{NameAndBirthYear, NameAndBirthYearVar, TestTreeH, TestTreeHG},
+        test_util::{
+            NameAndBirthYear, NameAndBirthYearVar, TestComSchemePedersen, TestTreeH, TestTreeHG,
+        },
         utils::setup_poseidon_params,
     };
 
@@ -228,7 +230,7 @@ mod test {
         // Now verify the predicate
         // Make the checker with only the public data
         let verifiers_checker = PseudonymousShowChecker { token, params };
-        let person_com = person.commit();
+        let person_com = Attrs::<_, TestComSchemePedersen>::commit(&person);
         let vk = pk.prepare_verifying_key();
         assert!(verify_birth(&vk, &proof, &verifiers_checker, &person_com).unwrap());
     }

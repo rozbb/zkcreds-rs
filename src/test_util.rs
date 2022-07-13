@@ -176,6 +176,23 @@ impl Attrs<Fr, TestComSchemePedersen> for NameAndBirthYear {
     }
 }
 
+impl Attrs<Fr, Bls12PoseidonCommitter> for NameAndBirthYear {
+    /// Serializes the attrs into bytes
+    fn to_bytes(&self) -> Vec<u8> {
+        let mut buf = self.first_name.to_vec();
+        self.birth_year.serialize(&mut buf).unwrap();
+        buf
+    }
+
+    fn get_com_param(&self) -> &() {
+        &()
+    }
+
+    fn get_com_nonce(&self) -> &ComNonce {
+        &self.nonce
+    }
+}
+
 impl AccountableAttrs<Fr, TestComSchemePedersen> for NameAndBirthYear {
     type Id = Vec<u8>;
     type Seed = Fr;

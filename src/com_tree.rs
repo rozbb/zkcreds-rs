@@ -478,7 +478,7 @@ mod test {
 
         // Make a attribute to put in the tree
         let person = NameAndBirthYear::new(&mut rng, b"Andrew", 1992);
-        let person_com = person.commit();
+        let person_com = Attrs::<_, TestComSchemePedersen>::commit(&person);
 
         // Generate the predicate circuit's CRS
         let pk = gen_tree_memb_crs::<
@@ -508,7 +508,6 @@ mod test {
         let vk = pk.prepare_verifying_key();
         assert!(verify_tree_memb(&vk, &proof, &person_com, &tree.root()).unwrap());
     }
-    /*
 
     // Tests correctness of tree membership proofs, using Poseidon hashing for the tree and
     // commitments
@@ -519,7 +518,7 @@ mod test {
 
         // Make a attribute to put in the tree
         let person = NameAndBirthYear::new(&mut rng, b"Andrew", 1992);
-        let person_com = person.commit();
+        let person_com = Attrs::<_, Bls12PoseidonCommitter>::commit(&person);
 
         // Generate the predicate circuit's CRS
         let pk = gen_tree_memb_crs::<
@@ -528,26 +527,23 @@ mod test {
             NameAndBirthYear,
             Bls12PoseidonCommitter,
             Bls12PoseidonCommitter,
-            TestTreeH,
-            TestTreeHG,
-        >(&mut rng, MERKLE_CRH_PARAM.clone(), tree_height)
+            Bls12PoseidonCrh,
+            Bls12PoseidonCrh,
+        >(&mut rng, (), tree_height)
         .unwrap();
 
         // Make a tree and "issue", i.e., put the person commitment in the tree at index 17
         let leaf_idx = 17;
-        let mut tree = ComTree::<_, TestTreeH, TestComSchemePedersen>::empty(
-            MERKLE_CRH_PARAM.clone(),
-            tree_height,
-        );
+        let mut tree =
+            ComTree::<_, Bls12PoseidonCrh, Bls12PoseidonCommitter>::empty((), tree_height);
         let auth_path = tree.insert(leaf_idx, &person_com);
 
         // The person can now prove membership in the tree
         let proof = auth_path
-            .prove_membership(&mut rng, &pk, &*MERKLE_CRH_PARAM, person_com)
+            .prove_membership(&mut rng, &pk, &(), person_com)
             .unwrap();
 
         let vk = pk.prepare_verifying_key();
         assert!(verify_tree_memb(&vk, &proof, &person_com, &tree.root()).unwrap());
     }
-    */
 }

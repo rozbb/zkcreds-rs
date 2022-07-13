@@ -231,7 +231,7 @@ mod test {
 
         // Make a attribute to put in the tree
         let person = NameAndBirthYear::new(&mut rng, b"Andrew", 1992);
-        let person_com = person.commit();
+        let person_com = Attrs::<_, TestComSchemePedersen>::commit(&person);
 
         // Make a tree and "issue", i.e., put the person commitment in the tree at index 17
         let leaf_idx = 17;

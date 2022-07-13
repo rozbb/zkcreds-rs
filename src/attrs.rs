@@ -2,7 +2,7 @@ use crate::utils::ComNonce;
 
 use ark_crypto_primitives::commitment::{constraints::CommitmentGadget, CommitmentScheme};
 use ark_ff::{PrimeField, ToConstraintField};
-use ark_r1cs_std::{alloc::AllocVar, bits::ToBytesGadget, R1CSVar, ToConstraintFieldGadget};
+use ark_r1cs_std::{alloc::AllocVar, bits::ToBytesGadget, ToConstraintFieldGadget};
 use ark_relations::{
     ns,
     r1cs::{ConstraintSystemRef, Namespace, SynthesisError},
@@ -27,6 +27,7 @@ where
     /// somewhere.
     fn get_com_param(&self) -> &AC::Parameters;
 
+    /// Gets the commitment nonce
     fn get_com_nonce(&self) -> &ComNonce;
 
     // Uses the nonce and commitment parameters to deterministically form a commitment to this
@@ -57,6 +58,7 @@ where
     AC::Output: ToConstraintField<ConstraintF>,
     ACG: CommitmentGadget<AC, ConstraintF>,
 {
+    /// Witnesses the secret attrributes for ZK usage
     fn witness_attrs(
         cs: impl Into<Namespace<ConstraintF>>,
         attrs: &A,
@@ -65,10 +67,17 @@ where
     /// Returns the constraint system used by this var
     fn cs(&self) -> ConstraintSystemRef<ConstraintF>;
 
+    /// Gets the parameters for the commitment scheme. In general, attributes shouldn't be holding
+    /// the parameters. Rather, this function should return a reference to some global value
+    /// somewhere.
     fn get_com_param(&self) -> Result<ACG::ParametersVar, SynthesisError>;
 
+    /// Gets the commitment nonce. Not a variable, but a native nonce. This is witnessed
+    /// automatically.
     fn get_com_nonce(&self) -> &ComNonce;
 
+    // Uses the nonce and commitment parameters to deterministically form a commitment to this
+    // attribute set
     fn commit(&self) -> Result<ACG::OutputVar, SynthesisError> {
         let cs = self.cs();
         let com_param = self.get_com_param()?;

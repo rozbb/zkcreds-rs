@@ -264,7 +264,9 @@ where
 #[cfg(test)]
 pub(crate) mod test {
     use super::*;
-    use crate::test_util::{AgeChecker, NameAndBirthYear, TestTreeH, TestTreeHG};
+    use crate::test_util::{
+        AgeChecker, NameAndBirthYear, TestComSchemePedersen, TestTreeH, TestTreeHG,
+    };
 
     use ark_bls12_381::{Bls12_381 as E, Fr};
 
@@ -296,7 +298,7 @@ pub(crate) mod test {
         // Ordinarily we wouldn't be able to verify a predicate proof, since it requires knowledge
         // of the attribute commitment. But this is testing mode and we know this value, so let's
         // make sure the predicate proof verifies.
-        let person_com = person.commit();
+        let person_com = Attrs::<_, TestComSchemePedersen>::commit(&person);
         let vk = pk.prepare_verifying_key();
         assert!(verify_pred(&vk, &proof, &checker, &person_com, &merkle_root).unwrap());
     }
