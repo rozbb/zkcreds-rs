@@ -10,7 +10,7 @@ use core::marker::PhantomData;
 use ark_crypto_primitives::commitment::{constraints::CommitmentGadget, CommitmentScheme};
 use ark_ec::PairingEngine;
 use ark_ff::{PrimeField, ToConstraintField};
-use ark_r1cs_std::{alloc::AllocVar, boolean::Boolean, eq::EqGadget};
+use ark_r1cs_std::{alloc::AllocVar, eq::EqGadget};
 use ark_relations::{
     ns,
     r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError},
@@ -152,7 +152,7 @@ where
             ACG::OutputVar::new_input(ns!(cs, "attrs com var"), || Ok(self.attrs.commit()))?;
 
         // Check that the attrs commitment is consistent
-        let attrs_var = AV::new_witness(ns!(cs, "attrs var"), || Ok(&self.attrs))?;
+        let attrs_var = AV::witness_attrs(ns!(cs, "attrs var"), &self.attrs)?;
         attrs_com_var.enforce_equal(&attrs_var.commit()?)?;
 
         // Finally assert the birth predicate is true

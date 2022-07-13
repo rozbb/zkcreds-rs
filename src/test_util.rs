@@ -3,7 +3,8 @@ use core::borrow::Borrow;
 use crate::{
     attrs::{AccountableAttrs, AccountableAttrsVar, Attrs, AttrsVar},
     pred::PredicateChecker,
-    Bytestring, Com, ComNonce, ComNonceVar, ComParam, ComParamVar,
+    utils::{Bls12PoseidonCommitter, ComNonce},
+    Bytestring, Com, ComNonceVar, ComParam, ComParamVar,
 };
 
 use ark_bls12_381::Bls12_381;
@@ -95,20 +96,20 @@ pub type TestTreeH = bowe_hopwood::CRH<EdwardsParameters, Window9x63>;
 pub type TestTreeHG = bowe_hopwood::constraints::CRHGadget<EdwardsParameters, FqVar>;
 
 // Pick a commitment scheme
-pub type TestComScheme = CompressedPedersenCom<Window8x128>;
-pub type TestComSchemeG = CompressedPedersenComG<Window8x128>;
+pub type TestComSchemePedersen = CompressedPedersenCom<Window8x128>;
+pub type TestComSchemePedersenG = CompressedPedersenComG<Window8x128>;
 //pub(crate) type TestComScheme = PedersenCom<Window8x128>;
 //pub(crate) type TestComSchemeG = PedersenComG<Window8x128>;
 
 lazy_static! {
-    static ref BIG_COM_PARAM: <TestComScheme as CommitmentScheme>::Parameters = {
+    static ref BIG_COM_PARAM: <TestComSchemePedersen as CommitmentScheme>::Parameters = {
         let mut rng = {
             let mut seed = [0u8; 32];
             let mut writer = &mut seed[..];
             writer.write_all(b"zkcreds-commitment-param").unwrap();
             StdRng::from_seed(seed)
         };
-        TestComScheme::setup(&mut rng).unwrap()
+        TestComSchemePedersen::setup(&mut rng).unwrap()
     };
     pub static ref MERKLE_CRH_PARAM: <TestTreeH as TwoToOneCRH>::Parameters = {
         let mut rng = {
@@ -123,9 +124,9 @@ lazy_static! {
 
 const NAME_MAXLEN: usize = 16;
 
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct NameAndBirthYear {
-    nonce: ComNonce<TestComScheme>,
+    nonce: ComNonce,
     seed: Fr,
     first_name: [u8; NAME_MAXLEN],
     birth_year: Fr,
@@ -133,7 +134,7 @@ pub struct NameAndBirthYear {
 
 #[derive(Clone)]
 pub struct NameAndBirthYearVar {
-    nonce: ComNonceVar<TestComScheme, TestComSchemeG, Fr>,
+    nonce: ComNonce,
     seed: FpVar<Fr>,
     first_name: Vec<UInt8<Fr>>,
     pub(crate) birth_year: FpVar<Fr>,
@@ -146,7 +147,7 @@ impl NameAndBirthYear {
         let mut name_buf = [0u8; 16];
         name_buf[..first_name.len()].copy_from_slice(first_name);
 
-        let nonce = <TestComScheme as CommitmentScheme>::Randomness::rand(rng);
+        let nonce = ComNonce::rand(rng);
         let seed = Fr::rand(rng);
 
         NameAndBirthYear {
@@ -158,7 +159,7 @@ impl NameAndBirthYear {
     }
 }
 
-impl Attrs<Fr, TestComScheme> for NameAndBirthYear {
+impl Attrs<Fr, TestComSchemePedersen> for NameAndBirthYear {
     /// Serializes the attrs into bytes
     fn to_bytes(&self) -> Vec<u8> {
         let mut buf = self.first_name.to_vec();
@@ -166,16 +167,16 @@ impl Attrs<Fr, TestComScheme> for NameAndBirthYear {
         buf
     }
 
-    fn get_com_param(&self) -> &ComParam<TestComScheme> {
+    fn get_com_param(&self) -> &ComParam<TestComSchemePedersen> {
         &*BIG_COM_PARAM
     }
 
-    fn get_com_nonce(&self) -> &ComNonce<TestComScheme> {
+    fn get_com_nonce(&self) -> &ComNonce {
         &self.nonce
     }
 }
 
-impl AccountableAttrs<Fr, TestComScheme> for NameAndBirthYear {
+impl AccountableAttrs<Fr, TestComSchemePedersen> for NameAndBirthYear {
     type Id = Vec<u8>;
     type Seed = Fr;
 
@@ -194,62 +195,33 @@ impl ToBytesGadget<Fr> for NameAndBirthYearVar {
     }
 }
 
-impl AllocVar<NameAndBirthYear, Fr> for NameAndBirthYearVar {
+impl AttrsVar<Fr, NameAndBirthYear, TestComSchemePedersen, TestComSchemePedersenG>
+    for NameAndBirthYearVar
+{
+    /// Returns the constraint system used by this var
+    fn cs(&self) -> ConstraintSystemRef<Fr> {
+        self.seed
+            .cs()
+            .or(self.first_name.cs())
+            .or(self.birth_year.cs())
+    }
+
     // Allocates a vector of UInt8s. This panics if `f()` is `Err`, since we don't know how many
     // bytes to allocate
-    fn new_variable<T: Borrow<NameAndBirthYear>>(
+    fn witness_attrs(
         cs: impl Into<Namespace<Fr>>,
-        f: impl FnOnce() -> Result<T, SynthesisError>,
-        mode: AllocationMode,
+        native_attr: &NameAndBirthYear,
     ) -> Result<Self, SynthesisError> {
         let cs = cs.into().cs();
-        let native_attr = f();
 
-        // Witness the nonce, seed, first name, and birth year
-        let nonce = ComNonceVar::<TestComScheme, TestComSchemeG, Fr>::new_variable(
-            ns!(cs, "nonce"),
-            || {
-                native_attr
-                    .as_ref()
-                    .map(|a| &a.borrow().nonce)
-                    .map_err(|e| *e)
-            },
-            mode,
-        )?;
-        let seed = FpVar::new_variable(
-            ns!(cs, "seed"),
-            || {
-                native_attr
-                    .as_ref()
-                    .map(|a| &a.borrow().seed)
-                    .map_err(|e| *e)
-            },
-            mode,
-        )?;
-        let first_name: Vec<UInt8<Fr>> = (0..NAME_MAXLEN)
-            .map(|i| {
-                UInt8::new_variable(
-                    ns!(cs, "name byte"),
-                    || {
-                        native_attr
-                            .as_ref()
-                            .map(|a| a.borrow().first_name[i])
-                            .map_err(|e| *e)
-                    },
-                    mode,
-                )
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let birth_year = FpVar::<Fr>::new_variable(
-            ns!(cs, "birth year"),
-            || {
-                native_attr
-                    .as_ref()
-                    .map(|a| a.borrow().birth_year)
-                    .map_err(|e| *e)
-            },
-            mode,
-        )?;
+        // Get the nonce normally. This is not a variable
+        let nonce: ComNonce = native_attr.nonce.clone();
+
+        // Witness the seed, first name, and birth year
+        let seed = FpVar::new_witness(ns!(cs, "seed"), || Ok(native_attr.seed))?;
+        let first_name = UInt8::new_witness_vec(ns!(cs, "first name"), &native_attr.first_name)?;
+        let birth_year =
+            FpVar::<Fr>::new_witness(ns!(cs, "birth year"), || Ok(native_attr.birth_year))?;
 
         // Return the witnessed values
         Ok(NameAndBirthYearVar {
@@ -259,24 +231,21 @@ impl AllocVar<NameAndBirthYear, Fr> for NameAndBirthYearVar {
             birth_year,
         })
     }
-}
 
-impl AttrsVar<Fr, NameAndBirthYear, TestComScheme, TestComSchemeG> for NameAndBirthYearVar {
     fn get_com_param(
         &self,
-    ) -> Result<ComParamVar<TestComScheme, TestComSchemeG, Fr>, SynthesisError> {
+    ) -> Result<ComParamVar<TestComSchemePedersen, TestComSchemePedersenG, Fr>, SynthesisError>
+    {
         let cs = self.first_name[0].cs().or(self.birth_year.cs());
-        ComParamVar::<_, TestComSchemeG, _>::new_constant(cs, &*BIG_COM_PARAM)
+        ComParamVar::<_, TestComSchemePedersenG, _>::new_constant(cs, &*BIG_COM_PARAM)
     }
 
-    fn get_com_nonce(
-        &self,
-    ) -> Result<ComNonceVar<TestComScheme, TestComSchemeG, Fr>, SynthesisError> {
-        Ok(self.nonce.clone())
+    fn get_com_nonce(&self) -> &ComNonce {
+        &self.nonce
     }
 }
 
-impl AccountableAttrsVar<Fr, NameAndBirthYear, TestComScheme, TestComSchemeG>
+impl AccountableAttrsVar<Fr, NameAndBirthYear, TestComSchemePedersen, TestComSchemePedersenG>
     for NameAndBirthYearVar
 {
     type Id = Bytestring<Fr>;
@@ -298,8 +267,14 @@ pub struct AgeChecker {
     pub threshold_birth_year: Fr,
 }
 
-impl PredicateChecker<Fr, NameAndBirthYear, NameAndBirthYearVar, TestComScheme, TestComSchemeG>
-    for AgeChecker
+impl
+    PredicateChecker<
+        Fr,
+        NameAndBirthYear,
+        NameAndBirthYearVar,
+        TestComSchemePedersen,
+        TestComSchemePedersenG,
+    > for AgeChecker
 {
     /// Returns whether or not the predicate was satisfied
     fn pred(

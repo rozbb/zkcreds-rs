@@ -204,8 +204,8 @@ mod test {
         com_tree::{gen_tree_memb_crs, verify_tree_memb, ComTree},
         pred::{gen_pred_crs, prove_pred, verify_pred},
         test_util::{
-            AgeChecker, NameAndBirthYear, TestComScheme, TestComSchemeG, TestTreeH, TestTreeHG,
-            MERKLE_CRH_PARAM,
+            AgeChecker, NameAndBirthYear, TestComSchemePedersen, TestComSchemePedersenG, TestTreeH,
+            TestTreeHG, MERKLE_CRH_PARAM,
         },
     };
 
@@ -222,8 +222,8 @@ mod test {
             _,
             E,
             NameAndBirthYear,
-            TestComScheme,
-            TestComSchemeG,
+            TestComSchemePedersen,
+            TestComSchemePedersenG,
             TestTreeH,
             TestTreeHG,
         >(&mut rng, MERKLE_CRH_PARAM.clone(), tree_height)
@@ -302,8 +302,8 @@ mod test {
             _,
             E,
             NameAndBirthYear,
-            TestComScheme,
-            TestComSchemeG,
+            TestComSchemePedersen,
+            TestComSchemePedersenG,
             TestTreeH,
             TestTreeHG,
         >(&mut rng, num_trees)

@@ -253,7 +253,7 @@ where
         let _root_var = HG::OutputVar::new_input(ns!(cs, "root var"), || Ok(self.merkle_root))?;
 
         // Check that the attrs commitment is consistent
-        let attrs_var = AV::new_witness(ns!(cs, "attrs var"), || Ok(&self.attrs))?;
+        let attrs_var = AV::witness_attrs(ns!(cs, "attrs var"), &self.attrs)?;
         attrs_com_var.enforce_equal(&attrs_var.commit()?)?;
 
         // Finally assert the predicate is true

@@ -5,8 +5,8 @@ use zkcreds::{
     link::{link_proofs, verif_link_proof, LinkProofCtx, LinkVerifyingKey, PredPublicInputs},
     pred::{gen_pred_crs, prove_pred},
     test_util::{
-        AgeChecker, NameAndBirthYear, TestComScheme, TestComSchemeG, TestTreeH, TestTreeHG,
-        MERKLE_CRH_PARAM,
+        AgeChecker, NameAndBirthYear, TestComSchemePedersen, TestComSchemePedersenG, TestTreeH,
+        TestTreeHG, MERKLE_CRH_PARAM,
     },
 };
 
@@ -32,8 +32,8 @@ pub fn bench_linkage(c: &mut Criterion) {
         _,
         E,
         NameAndBirthYear,
-        TestComScheme,
-        TestComSchemeG,
+        TestComSchemePedersen,
+        TestComSchemePedersenG,
         TestTreeH,
         TestTreeHG,
     >(&mut rng, NUM_TREES)
@@ -45,8 +45,8 @@ pub fn bench_linkage(c: &mut Criterion) {
         _,
         E,
         NameAndBirthYear,
-        TestComScheme,
-        TestComSchemeG,
+        TestComSchemePedersen,
+        TestComSchemePedersenG,
         TestTreeH,
         TestTreeHG,
     >(&mut rng, MERKLE_CRH_PARAM.clone(), TREE_HEIGHT)

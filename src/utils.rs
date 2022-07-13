@@ -1,11 +1,13 @@
 use crate::identity_crh::UnitVar;
 
+use core::fmt;
+
 use ark_bls12_381::Fr as BlsFr;
 use ark_crypto_primitives::{
     commitment::{constraints::CommitmentGadget, CommitmentScheme},
     Error as ArkError,
 };
-use ark_ff::{to_bytes, PrimeField, ToConstraintField};
+use ark_ff::{to_bytes, PrimeField, ToConstraintField, UniformRand};
 use ark_r1cs_std::{
     bits::{uint8::UInt8, ToBytesGadget},
     fields::fp::FpVar,
@@ -19,6 +21,29 @@ use arkworks_r1cs_gadgets::poseidon::{FieldHasherGadget, PoseidonGadget};
 use arkworks_utils::{bytes_matrix_to_f, bytes_vec_to_f, Curve};
 use lazy_static::lazy_static;
 use rand::Rng;
+
+/// A commitment nonce is always just a 256 bit value
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct ComNonce(pub [u8; 32]);
+
+impl fmt::Debug for ComNonce {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        f.write_str("[omitted]")
+    }
+}
+
+impl UniformRand for ComNonce {
+    #[inline]
+    fn rand<R: Rng + ?Sized>(rng: &mut R) -> Self {
+        ComNonce(UniformRand::rand(rng))
+    }
+}
+
+impl ComNonce {
+    pub fn to_bytes(&self) -> &[u8] {
+        &self.0
+    }
+}
 
 pub fn setup_poseidon_params<F: PrimeField>(
     curve: Curve,

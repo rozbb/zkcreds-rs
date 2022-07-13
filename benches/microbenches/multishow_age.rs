@@ -6,8 +6,8 @@ use zkcreds::{
     pred::{gen_pred_crs, prove_pred},
     revealing_multishow::{MultishowableAttrs, RevealingMultishowChecker},
     test_util::{
-        AgeChecker, NameAndBirthYear, NameAndBirthYearVar, TestComScheme, TestComSchemeG,
-        TestTreeH, TestTreeHG, MERKLE_CRH_PARAM,
+        AgeChecker, NameAndBirthYear, NameAndBirthYearVar, TestComSchemePedersen,
+        TestComSchemePedersenG, TestTreeH, TestTreeHG, MERKLE_CRH_PARAM,
     },
     utils::setup_poseidon_params,
 };
@@ -36,8 +36,8 @@ pub fn bench_multishow_age(c: &mut Criterion) {
         _,
         E,
         NameAndBirthYear,
-        TestComScheme,
-        TestComSchemeG,
+        TestComSchemePedersen,
+        TestComSchemePedersenG,
         TestTreeH,
         TestTreeHG,
     >(&mut rng, NUM_TREES)
@@ -49,8 +49,8 @@ pub fn bench_multishow_age(c: &mut Criterion) {
         _,
         E,
         NameAndBirthYear,
-        TestComScheme,
-        TestComSchemeG,
+        TestComSchemePedersen,
+        TestComSchemePedersenG,
         TestTreeH,
         TestTreeHG,
     >(&mut rng, MERKLE_CRH_PARAM.clone(), TREE_HEIGHT)

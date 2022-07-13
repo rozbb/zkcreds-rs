@@ -283,16 +283,19 @@ where
 pub(crate) mod test {
     use super::*;
     use crate::test_util::{
-        NameAndBirthYear, TestComScheme, TestComSchemeG, TestTreeH, TestTreeHG, MERKLE_CRH_PARAM,
+        NameAndBirthYear, TestComSchemePedersen, TestComSchemePedersenG, TestTreeH, TestTreeHG,
+        MERKLE_CRH_PARAM,
     };
 
     use ark_bls12_381::{Bls12_381 as E, Fr};
     use ark_ff::UniformRand;
 
-    pub(crate) fn random_tree<R: Rng>(rng: &mut R) -> ComTree<Fr, TestTreeH, TestComScheme> {
+    pub(crate) fn random_tree<R: Rng>(
+        rng: &mut R,
+    ) -> ComTree<Fr, TestTreeH, TestComSchemePedersen> {
         let mut tree = ComTree::empty(MERKLE_CRH_PARAM.clone(), 32);
         let idx: u16 = rng.gen();
-        let leaf = <<TestComScheme as CommitmentScheme>::Output as UniformRand>::rand(rng);
+        let leaf = <<TestComSchemePedersen as CommitmentScheme>::Output as UniformRand>::rand(rng);
         tree.insert(idx as u64, &leaf);
         tree
     }
@@ -305,15 +308,15 @@ pub(crate) mod test {
 
         // Make a random commitment. This value doens't matter
         let attrs_com =
-            <<TestComScheme as CommitmentScheme>::Output as UniformRand>::rand(&mut rng);
+            <<TestComSchemePedersen as CommitmentScheme>::Output as UniformRand>::rand(&mut rng);
 
         // Generate the predicate circuit's CRS
         let pk = gen_forest_memb_crs::<
             _,
             E,
             NameAndBirthYear,
-            TestComScheme,
-            TestComSchemeG,
+            TestComSchemePedersen,
+            TestComSchemePedersenG,
             TestTreeH,
             TestTreeHG,
         >(&mut rng, num_trees)

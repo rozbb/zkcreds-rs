@@ -6,7 +6,8 @@ use zkcreds::{
     com_forest::{gen_forest_memb_crs, ComForestRoots},
     com_tree::{gen_tree_memb_crs, ComTree},
     test_util::{
-        NameAndBirthYear, TestComScheme, TestComSchemeG, TestTreeH, TestTreeHG, MERKLE_CRH_PARAM,
+        NameAndBirthYear, TestComSchemePedersen, TestComSchemePedersenG, TestTreeH, TestTreeHG,
+        MERKLE_CRH_PARAM,
     },
     Com,
 };
@@ -38,8 +39,8 @@ pub fn bench_tree_forest(c: &mut Criterion) {
                 _,
                 E,
                 NameAndBirthYear,
-                TestComScheme,
-                TestComSchemeG,
+                TestComSchemePedersen,
+                TestComSchemePedersenG,
                 TestTreeH,
                 TestTreeHG,
             >(&mut rng, MERKLE_CRH_PARAM.clone(), tree_height)
@@ -48,8 +49,8 @@ pub fn bench_tree_forest(c: &mut Criterion) {
                 _,
                 E,
                 NameAndBirthYear,
-                TestComScheme,
-                TestComSchemeG,
+                TestComSchemePedersen,
+                TestComSchemePedersenG,
                 TestTreeH,
                 TestTreeHG,
             >(&mut rng, num_trees)
@@ -58,7 +59,7 @@ pub fn bench_tree_forest(c: &mut Criterion) {
             // Set up an auth path for tree membership
             let auth_path = {
                 let leaf_idx = 0;
-                let mut tree = ComTree::<_, TestTreeH, TestComScheme>::empty(
+                let mut tree = ComTree::<_, TestTreeH, TestComSchemePedersen>::empty(
                     MERKLE_CRH_PARAM.clone(),
                     tree_height,
                 );
@@ -83,7 +84,7 @@ pub fn bench_tree_forest(c: &mut Criterion) {
                                 &mut rng,
                                 &tree_pk,
                                 &*MERKLE_CRH_PARAM,
-                                Com::<TestComScheme>::default(),
+                                Com::<TestComSchemePedersen>::default(),
                             )
                             .unwrap();
                         roots
@@ -94,12 +95,14 @@ pub fn bench_tree_forest(c: &mut Criterion) {
             );
 
             let tf_pk: groth16::ProvingKey<E> =
-                gen_tf_crs::<_, E, TestComScheme, TestComSchemeG, TestTreeH, TestTreeHG>(
-                    &mut rng,
-                    MERKLE_CRH_PARAM.clone(),
-                    tree_height,
-                    num_trees,
-                )
+                gen_tf_crs::<
+                    _,
+                    E,
+                    TestComSchemePedersen,
+                    TestComSchemePedersenG,
+                    TestTreeH,
+                    TestTreeHG,
+                >(&mut rng, MERKLE_CRH_PARAM.clone(), tree_height, num_trees)
                 .unwrap();
             let tf_vk = tf_pk.verifying_key();
             c.bench_function(
@@ -109,7 +112,14 @@ pub fn bench_tree_forest(c: &mut Criterion) {
                 ),
                 |b| {
                     b.iter(|| {
-                        prove_tf::<_, E, TestComScheme, TestComSchemeG, TestTreeH, TestTreeHG>(
+                        prove_tf::<
+                            _,
+                            E,
+                            TestComSchemePedersen,
+                            TestComSchemePedersenG,
+                            TestTreeH,
+                            TestTreeHG,
+                        >(
                             &mut rng,
                             &tf_pk,
                             &*MERKLE_CRH_PARAM,
@@ -121,7 +131,14 @@ pub fn bench_tree_forest(c: &mut Criterion) {
                     })
                 },
             );
-            let proof = prove_tf::<_, E, TestComScheme, TestComSchemeG, TestTreeH, TestTreeHG>(
+            let proof = prove_tf::<
+                _,
+                E,
+                TestComSchemePedersen,
+                TestComSchemePedersenG,
+                TestTreeH,
+                TestTreeHG,
+            >(
                 &mut rng,
                 &tf_pk,
                 &*MERKLE_CRH_PARAM,
@@ -137,12 +154,14 @@ pub fn bench_tree_forest(c: &mut Criterion) {
                 ),
                 |b| {
                     b.iter(|| {
-                        assert!(
-                            verify_tf::<E, TestComScheme, TestComSchemeG, TestTreeH, TestTreeHG>(
-                                &tf_vk, &roots, &proof,
-                            )
-                            .unwrap()
-                        )
+                        assert!(verify_tf::<
+                            E,
+                            TestComSchemePedersen,
+                            TestComSchemePedersenG,
+                            TestTreeH,
+                            TestTreeHG,
+                        >(&tf_vk, &roots, &proof,)
+                        .unwrap())
                     })
                 },
             );

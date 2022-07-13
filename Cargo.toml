@@ -25,6 +25,7 @@ lazy_static = "1.4"
 rand = "0.8"
 rand_core = "0.6"
 pyo3 = { version = "0.16.5", features = ["extension-module"], optional = true }
+rand_chacha = "0.3.1"
 
 [dependencies.linkg16]
 git = "ssh://git@github.com/rozbb/linkg16"

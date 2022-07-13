@@ -459,15 +459,20 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::test_util::{
-        NameAndBirthYear, TestComScheme, TestComSchemeG, TestTreeH, TestTreeHG, MERKLE_CRH_PARAM,
+    use crate::{
+        test_util::{
+            NameAndBirthYear, TestComSchemePedersen, TestComSchemePedersenG, TestTreeH, TestTreeHG,
+            MERKLE_CRH_PARAM,
+        },
+        utils::{Bls12PoseidonCommitter, Bls12PoseidonCrh},
     };
 
     use ark_bls12_381::Bls12_381 as E;
 
-    /// Tests a predicate that returns true iff the given `NameAndBirthYear` is at least 21
+    // Tests correctness of tree membership proofs, using Pedersen hashing for the tree and
+    // commitments
     #[test]
-    fn test_com_tree_proof() {
+    fn test_com_tree_proof_pedersen() {
         let mut rng = ark_std::test_rng();
         let tree_height = 32;
 
@@ -480,8 +485,8 @@ mod test {
             _,
             E,
             NameAndBirthYear,
-            TestComScheme,
-            TestComSchemeG,
+            TestComSchemePedersen,
+            TestComSchemePedersenG,
             TestTreeH,
             TestTreeHG,
         >(&mut rng, MERKLE_CRH_PARAM.clone(), tree_height)
@@ -489,8 +494,10 @@ mod test {
 
         // Make a tree and "issue", i.e., put the person commitment in the tree at index 17
         let leaf_idx = 17;
-        let mut tree =
-            ComTree::<_, TestTreeH, TestComScheme>::empty(MERKLE_CRH_PARAM.clone(), tree_height);
+        let mut tree = ComTree::<_, TestTreeH, TestComSchemePedersen>::empty(
+            MERKLE_CRH_PARAM.clone(),
+            tree_height,
+        );
         let auth_path = tree.insert(leaf_idx, &person_com);
 
         // The person can now prove membership in the tree
@@ -501,4 +508,46 @@ mod test {
         let vk = pk.prepare_verifying_key();
         assert!(verify_tree_memb(&vk, &proof, &person_com, &tree.root()).unwrap());
     }
+    /*
+
+    // Tests correctness of tree membership proofs, using Poseidon hashing for the tree and
+    // commitments
+    #[test]
+    fn test_com_tree_proof_poseidon() {
+        let mut rng = ark_std::test_rng();
+        let tree_height = 32;
+
+        // Make a attribute to put in the tree
+        let person = NameAndBirthYear::new(&mut rng, b"Andrew", 1992);
+        let person_com = person.commit();
+
+        // Generate the predicate circuit's CRS
+        let pk = gen_tree_memb_crs::<
+            _,
+            E,
+            NameAndBirthYear,
+            Bls12PoseidonCommitter,
+            Bls12PoseidonCommitter,
+            TestTreeH,
+            TestTreeHG,
+        >(&mut rng, MERKLE_CRH_PARAM.clone(), tree_height)
+        .unwrap();
+
+        // Make a tree and "issue", i.e., put the person commitment in the tree at index 17
+        let leaf_idx = 17;
+        let mut tree = ComTree::<_, TestTreeH, TestComSchemePedersen>::empty(
+            MERKLE_CRH_PARAM.clone(),
+            tree_height,
+        );
+        let auth_path = tree.insert(leaf_idx, &person_com);
+
+        // The person can now prove membership in the tree
+        let proof = auth_path
+            .prove_membership(&mut rng, &pk, &*MERKLE_CRH_PARAM, person_com)
+            .unwrap();
+
+        let vk = pk.prepare_verifying_key();
+        assert!(verify_tree_memb(&vk, &proof, &person_com, &tree.root()).unwrap());
+    }
+    */
 }

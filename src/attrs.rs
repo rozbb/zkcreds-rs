@@ -1,7 +1,15 @@
+use crate::utils::ComNonce;
+
 use ark_crypto_primitives::commitment::{constraints::CommitmentGadget, CommitmentScheme};
 use ark_ff::{PrimeField, ToConstraintField};
-use ark_r1cs_std::{alloc::AllocVar, bits::ToBytesGadget, ToConstraintFieldGadget};
-use ark_relations::r1cs::SynthesisError;
+use ark_r1cs_std::{alloc::AllocVar, bits::ToBytesGadget, R1CSVar, ToConstraintFieldGadget};
+use ark_relations::{
+    ns,
+    r1cs::{ConstraintSystemRef, Namespace, SynthesisError},
+};
+use ark_std::UniformRand;
+use rand::SeedableRng;
+use rand_chacha::ChaCha12Rng;
 
 /// This describes any object which holds attributes. The requirement is that it holds a commitment
 /// nonce and defines a way to commit to itself.
@@ -14,22 +22,34 @@ where
     /// Serializes EVERYTHING BUT the nonce and param
     fn to_bytes(&self) -> Vec<u8>;
 
+    /// Gets the parameters for the commitment scheme. In general, attributes shouldn't be holding
+    /// the parameters. Rather, this function should return a reference to some global value
+    /// somewhere.
     fn get_com_param(&self) -> &AC::Parameters;
 
-    fn get_com_nonce(&self) -> &AC::Randomness;
+    fn get_com_nonce(&self) -> &ComNonce;
 
+    // Uses the nonce and commitment parameters to deterministically form a commitment to this
+    // attribute set
     fn commit(&self) -> AC::Output {
         let param = self.get_com_param();
-        let nonce = self.get_com_nonce();
-        AC::commit(param, &self.to_bytes(), nonce).unwrap()
+
+        // Generate a nonce of the appropriate type using the given nonce as a seed
+        let nonce = {
+            let nonce_seed = self.get_com_nonce();
+            let mut rng = ChaCha12Rng::from_seed(nonce_seed.0);
+            AC::Randomness::rand(&mut rng)
+        };
+
+        // Commit to the serialized attributes
+        AC::commit(param, &self.to_bytes(), &nonce).unwrap()
     }
 }
 
 /// This describes the ZK-circuit version of `Attrs`. The only requirement is that it holds a
 /// commitment nonce, defines a way to commit to itself, and can be constructed from its
 /// corresponding `Attrs` object.
-pub trait AttrsVar<ConstraintF, A, AC, ACG>:
-    AllocVar<A, ConstraintF> + ToBytesGadget<ConstraintF>
+pub trait AttrsVar<ConstraintF, A, AC, ACG>: ToBytesGadget<ConstraintF> + Sized
 where
     ConstraintF: PrimeField,
     A: Attrs<ConstraintF, AC>,
@@ -37,14 +57,32 @@ where
     AC::Output: ToConstraintField<ConstraintF>,
     ACG: CommitmentGadget<AC, ConstraintF>,
 {
+    fn witness_attrs(
+        cs: impl Into<Namespace<ConstraintF>>,
+        attrs: &A,
+    ) -> Result<Self, SynthesisError>;
+
+    /// Returns the constraint system used by this var
+    fn cs(&self) -> ConstraintSystemRef<ConstraintF>;
+
     fn get_com_param(&self) -> Result<ACG::ParametersVar, SynthesisError>;
 
-    fn get_com_nonce(&self) -> Result<ACG::RandomnessVar, SynthesisError>;
+    fn get_com_nonce(&self) -> &ComNonce;
 
     fn commit(&self) -> Result<ACG::OutputVar, SynthesisError> {
+        let cs = self.cs();
         let com_param = self.get_com_param()?;
-        let nonce = self.get_com_nonce()?;
-        ACG::commit(&com_param, &self.to_bytes()?, &nonce)
+
+        // Generate a nonce of the appropriate type using the given nonce as a seed
+        let nonce_var = {
+            let nonce_seed = self.get_com_nonce();
+            let mut rng = ChaCha12Rng::from_seed(nonce_seed.0);
+            let nonce = AC::Randomness::rand(&mut rng);
+            ACG::RandomnessVar::new_witness(ns!(cs, "nonce_var"), || Ok(nonce))?
+        };
+
+        // Commit to the serialized attributes
+        ACG::commit(&com_param, &self.to_bytes()?, &nonce_var)
     }
 }
 
