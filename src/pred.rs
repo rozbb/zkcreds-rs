@@ -265,7 +265,8 @@ where
 pub(crate) mod test {
     use super::*;
     use crate::test_util::{
-        AgeChecker, NameAndBirthYear, TestComSchemePedersen, TestTreeH, TestTreeHG,
+        AgeChecker, NameAndBirthYear, TestComSchemePedersen, TestComSchemePedersenG, TestTreeH,
+        TestTreeHG,
     };
 
     use ark_bls12_381::{Bls12_381 as E, Fr};
@@ -281,9 +282,18 @@ pub(crate) mod test {
         };
 
         // Generate the predicate circuit's CRS
-        let pk =
-            gen_pred_crs::<_, _, E, _, _, _, _, TestTreeH, TestTreeHG>(&mut rng, checker.clone())
-                .unwrap();
+        let pk = gen_pred_crs::<
+            _,
+            _,
+            E,
+            _,
+            _,
+            TestComSchemePedersen,
+            TestComSchemePedersenG,
+            TestTreeH,
+            TestTreeHG,
+        >(&mut rng, checker.clone())
+        .unwrap();
 
         // First name is UTF-8 encoded, padded at the end with null bytes
         let person = NameAndBirthYear::new(&mut rng, b"Andrew", 1992);

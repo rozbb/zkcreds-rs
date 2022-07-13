@@ -2,6 +2,7 @@ use core::borrow::Borrow;
 
 use crate::{
     attrs::{AccountableAttrs, AccountableAttrsVar, Attrs, AttrsVar},
+    identity_crh::UnitVar,
     pred::PredicateChecker,
     utils::{Bls12PoseidonCommitter, ComNonce},
     Bytestring, Com, ComNonceVar, ComParam, ComParamVar,
@@ -277,6 +278,80 @@ impl AccountableAttrsVar<Fr, NameAndBirthYear, TestComSchemePedersen, TestComSch
     }
 }
 
+impl AttrsVar<Fr, NameAndBirthYear, Bls12PoseidonCommitter, Bls12PoseidonCommitter>
+    for NameAndBirthYearVar
+{
+    /// Returns the constraint system used by this var
+    fn cs(&self) -> ConstraintSystemRef<Fr> {
+        self.seed
+            .cs()
+            .or(self.first_name.cs())
+            .or(self.birth_year.cs())
+    }
+
+    // Allocates a vector of UInt8s. This panics if `f()` is `Err`, since we don't know how many
+    // bytes to allocate
+    fn witness_attrs(
+        cs: impl Into<Namespace<Fr>>,
+        native_attr: &NameAndBirthYear,
+    ) -> Result<Self, SynthesisError> {
+        let cs = cs.into().cs();
+
+        // Get the nonce normally. This is not a variable
+        let nonce: ComNonce = native_attr.nonce.clone();
+
+        // Witness the seed, first name, and birth year
+        let seed = FpVar::new_witness(ns!(cs, "seed"), || Ok(native_attr.seed))?;
+        let first_name = UInt8::new_witness_vec(ns!(cs, "first name"), &native_attr.first_name)?;
+        let birth_year =
+            FpVar::<Fr>::new_witness(ns!(cs, "birth year"), || Ok(native_attr.birth_year))?;
+
+        // Return the witnessed values
+        Ok(NameAndBirthYearVar {
+            nonce,
+            seed,
+            first_name,
+            birth_year,
+        })
+    }
+
+    fn get_com_param(&self) -> Result<UnitVar<Fr>, SynthesisError> {
+        Ok(UnitVar::default())
+    }
+
+    fn get_com_nonce(&self) -> &ComNonce {
+        &self.nonce
+    }
+}
+
+impl AccountableAttrs<Fr, Bls12PoseidonCommitter> for NameAndBirthYear {
+    type Id = Vec<u8>;
+    type Seed = Fr;
+
+    fn get_id(&self) -> Vec<u8> {
+        self.first_name.to_vec()
+    }
+
+    fn get_seed(&self) -> Fr {
+        self.seed
+    }
+}
+
+impl AccountableAttrsVar<Fr, NameAndBirthYear, Bls12PoseidonCommitter, Bls12PoseidonCommitter>
+    for NameAndBirthYearVar
+{
+    type Id = Bytestring<Fr>;
+    type Seed = FpVar<Fr>;
+
+    fn get_id(&self) -> Result<Bytestring<Fr>, SynthesisError> {
+        Ok(Bytestring(self.first_name.clone()))
+    }
+
+    fn get_seed(&self) -> Result<FpVar<Fr>, SynthesisError> {
+        Ok(self.seed.clone())
+    }
+}
+
 // Define a predicate that will tell whether the given `NameAndBirthYear` is at least X years
 // old. The predicate is: attrs.birth_year ≤ self.threshold_birth_year
 #[derive(Clone)]
@@ -291,6 +366,37 @@ impl
         NameAndBirthYearVar,
         TestComSchemePedersen,
         TestComSchemePedersenG,
+    > for AgeChecker
+{
+    /// Returns whether or not the predicate was satisfied
+    fn pred(
+        self,
+        cs: ConstraintSystemRef<Fr>,
+        attrs: &NameAndBirthYearVar,
+    ) -> Result<(), SynthesisError> {
+        // Witness the threshold year as a public input
+        let threshold_birth_year =
+            FpVar::<Fr>::new_input(ns!(cs, "threshold year"), || Ok(self.threshold_birth_year))?;
+        // Assert that attrs.birth_year ≤ threshold_birth_year
+        attrs
+            .birth_year
+            .enforce_cmp(&threshold_birth_year, core::cmp::Ordering::Less, true)
+    }
+
+    /// This outputs the field elements corresponding to the public inputs of this predicate.
+    /// This DOES NOT include `attrs`.
+    fn public_inputs(&self) -> Vec<Fr> {
+        vec![self.threshold_birth_year]
+    }
+}
+
+impl
+    PredicateChecker<
+        Fr,
+        NameAndBirthYear,
+        NameAndBirthYearVar,
+        Bls12PoseidonCommitter,
+        Bls12PoseidonCommitter,
     > for AgeChecker
 {
     /// Returns whether or not the predicate was satisfied

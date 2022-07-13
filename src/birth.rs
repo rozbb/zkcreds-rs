@@ -163,7 +163,9 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::test_util::{AgeChecker, NameAndBirthYear, TestComSchemePedersen};
+    use crate::test_util::{
+        AgeChecker, NameAndBirthYear, TestComSchemePedersen, TestComSchemePedersenG,
+    };
 
     use ark_bls12_381::{Bls12_381 as E, Fr};
 
@@ -177,7 +179,11 @@ mod test {
         };
 
         // Generate the birth circuit's CRS
-        let pk = gen_birth_crs::<_, _, E, _, _, _, _>(&mut rng, birth_checker.clone()).unwrap();
+        let pk = gen_birth_crs::<_, _, E, _, _, TestComSchemePedersen, TestComSchemePedersenG>(
+            &mut rng,
+            birth_checker.clone(),
+        )
+        .unwrap();
 
         // First name is UTF-8 encoded, padded at the end with null bytes
         let person = NameAndBirthYear::new(&mut rng, b"Andrew", 1992);

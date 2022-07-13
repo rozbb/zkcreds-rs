@@ -225,7 +225,8 @@ mod test {
         attrs::Attrs,
         pred::{gen_pred_crs, prove_birth, verify_birth},
         test_util::{
-            NameAndBirthYear, NameAndBirthYearVar, TestComSchemePedersen, TestTreeH, TestTreeHG,
+            NameAndBirthYear, NameAndBirthYearVar, TestComSchemePedersen, TestComSchemePedersenG,
+            TestTreeH, TestTreeHG,
         },
         utils::setup_poseidon_params,
     };
@@ -247,19 +248,30 @@ mod test {
             params: params.clone(),
             ..Default::default()
         };
-        let pk = gen_pred_crs::<_, _, E, _, NameAndBirthYearVar, _, _, TestTreeH, TestTreeHG>(
-            &mut rng,
-            placeholder_checker,
-        )
+        let pk = gen_pred_crs::<
+            _,
+            _,
+            E,
+            _,
+            NameAndBirthYearVar,
+            TestComSchemePedersen,
+            TestComSchemePedersenG,
+            TestTreeH,
+            TestTreeHG,
+        >(&mut rng, placeholder_checker)
         .unwrap();
 
         let person = NameAndBirthYear::new(&mut rng, b"Andrew", 1992);
 
         // User computes a multishow token
         let ctr: u16 = 1;
-        let token = person
-            .compute_presentation_token(params.clone(), epoch, ctr)
-            .unwrap();
+        let token = MultishowableAttrs::<_, TestComSchemePedersen>::compute_presentation_token(
+            &person,
+            params.clone(),
+            epoch,
+            ctr,
+        )
+        .unwrap();
 
         // User constructs a checker for their predicate
         let users_checker = MultishowChecker {
