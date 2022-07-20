@@ -310,6 +310,9 @@ make AttrsVar, AccountableAttrsVar, not parameterized by the underlying Attr
 Make PredicateChecker parameterized over A, and give it an associated type AttrsVar: AllocVar<A>.
 Make MembershipProof = (TreeProof, ForestProof);
 Make a prove_merkle_membership function
+remove nonce from attrsvar?
+remove poseidon params from multishow?
+remove root comnonce and comnoncevar
 
 define link prover and verifier like this. Also make a set_pred function to override previous pred values. Order should be defined by the given string, not by order of add_pred
 
