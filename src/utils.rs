@@ -13,7 +13,7 @@ use ark_r1cs_std::{
     fields::fp::FpVar,
     R1CSVar, ToConstraintFieldGadget,
 };
-use ark_relations::r1cs::SynthesisError;
+use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
 use arkworks_native_gadgets::poseidon::{
     sbox::PoseidonSbox, FieldHasher, Poseidon, PoseidonParameters,
 };
@@ -78,6 +78,37 @@ lazy_static! {
 /// A commitment scheme defined using the Poseidon hash function over BLS12-381
 pub struct Bls12PoseidonCommitter;
 
+fn poseidon_iterated_hash(input: &[BlsFr]) -> BlsFr {
+    let hasher = Poseidon::new(BLS12_POSEIDON_PARAMS.clone());
+    let first_block_len = core::cmp::min(input.len(), (POSEIDON_WIDTH - 1) as usize);
+
+    let first_block = &input[..first_block_len];
+    let mut running_hash = hasher.hash(first_block).unwrap();
+    for block in input[first_block_len..].chunks((POSEIDON_WIDTH - 2) as usize) {
+        let next_input = &[&[running_hash], block].concat();
+        running_hash = hasher.hash(next_input).unwrap();
+    }
+    running_hash
+}
+
+fn poseidon_iterated_hash_gadget(
+    cs: &mut ConstraintSystemRef<BlsFr>,
+    input: &[FpVar<BlsFr>],
+) -> Result<FpVar<BlsFr>, SynthesisError> {
+    let hasher = Poseidon::new(BLS12_POSEIDON_PARAMS.clone());
+    let hasher_var = PoseidonGadget::from_native(cs, hasher)?;
+    let first_block_len = core::cmp::min(input.len(), (POSEIDON_WIDTH - 1) as usize);
+
+    let first_block = &input[..first_block_len];
+    let mut running_hash = hasher_var.hash(first_block)?;
+    for block in input[first_block_len..].chunks((POSEIDON_WIDTH - 2) as usize) {
+        let next_input = &[&[running_hash], block].concat();
+        running_hash = hasher_var.hash(next_input)?;
+    }
+
+    Ok(running_hash)
+}
+
 impl CommitmentScheme for Bls12PoseidonCommitter {
     type Output = BlsFr;
     // We don't need parameters because they're set globally in the above lazy_static
@@ -101,8 +132,7 @@ impl CommitmentScheme for Bls12PoseidonCommitter {
             .expect("could not pack inputs");
 
         // Compute the hash
-        let hasher = Poseidon::new(BLS12_POSEIDON_PARAMS.clone());
-        Ok(hasher.hash(&packed_input).unwrap())
+        Ok(poseidon_iterated_hash(&packed_input))
     }
 }
 
@@ -131,9 +161,7 @@ impl CommitmentGadget<Bls12PoseidonCommitter, BlsFr> for Bls12PoseidonCommitter 
             .expect("could not pack inputs");
 
         // Compute the hash
-        let hasher = Poseidon::new(BLS12_POSEIDON_PARAMS.clone());
-        let hasher_var = PoseidonGadget::from_native(&mut cs, hasher)?;
-        hasher_var.hash(&packed_input)
+        poseidon_iterated_hash_gadget(&mut cs, &packed_input)
     }
 }
 
@@ -170,8 +198,7 @@ impl TwoToOneCRH for Bls12PoseidonCrh {
             .expect("could not pack inputs");
 
         // Compute the hash
-        let hasher = Poseidon::new(BLS12_POSEIDON_PARAMS.clone());
-        Ok(hasher.hash(&packed_input).unwrap())
+        Ok(poseidon_iterated_hash(&packed_input))
     }
 }
 
@@ -204,8 +231,6 @@ impl TwoToOneCRHGadget<Bls12PoseidonCrh, BlsFr> for Bls12PoseidonCrh {
             .expect("could not pack inputs");
 
         // Compute the hash
-        let hasher = Poseidon::new(BLS12_POSEIDON_PARAMS.clone());
-        let hasher_var = PoseidonGadget::from_native(&mut cs, hasher)?;
-        hasher_var.hash(&packed_input)
+        poseidon_iterated_hash_gadget(&mut cs, &packed_input)
     }
 }
