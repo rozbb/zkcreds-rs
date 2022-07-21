@@ -1,13 +1,11 @@
 use zkcreds::{
     attrs::Attrs,
     com_forest::{gen_forest_memb_crs, ComForestRoots},
-    com_tree::{gen_tree_memb_crs, ComTree},
+    com_tree::{gen_tree_memb_crs, ComTree, ComTreePath},
     link::{link_proofs, verif_link_proof, LinkProofCtx, LinkVerifyingKey, PredPublicInputs},
     pred::{gen_pred_crs, prove_pred},
-    test_util::{
-        AgeChecker, NameAndBirthYear, TestComSchemePedersen, TestComSchemePedersenG, TestTreeH,
-        TestTreeHG, MERKLE_CRH_PARAM,
-    },
+    test_util::{AgeChecker, NameAndBirthYear},
+    utils::{Bls12PoseidonCommitter, Bls12PoseidonCrh},
 };
 
 use ark_bls12_381::{Bls12_381 as E, Fr};
@@ -32,10 +30,10 @@ pub fn bench_linkage(c: &mut Criterion) {
         _,
         E,
         NameAndBirthYear,
-        TestComSchemePedersen,
-        TestComSchemePedersenG,
-        TestTreeH,
-        TestTreeHG,
+        Bls12PoseidonCommitter,
+        Bls12PoseidonCommitter,
+        Bls12PoseidonCrh,
+        Bls12PoseidonCrh,
     >(&mut rng, NUM_TREES)
     .unwrap();
     let forest_vk = forest_pk.prepare_verifying_key();
@@ -45,11 +43,11 @@ pub fn bench_linkage(c: &mut Criterion) {
         _,
         E,
         NameAndBirthYear,
-        TestComSchemePedersen,
-        TestComSchemePedersenG,
-        TestTreeH,
-        TestTreeHG,
-    >(&mut rng, MERKLE_CRH_PARAM.clone(), TREE_HEIGHT)
+        Bls12PoseidonCommitter,
+        Bls12PoseidonCommitter,
+        Bls12PoseidonCrh,
+        Bls12PoseidonCrh,
+    >(&mut rng, (), TREE_HEIGHT)
     .unwrap();
     let tree_vk = tree_pk.prepare_verifying_key();
 
@@ -58,9 +56,11 @@ pub fn bench_linkage(c: &mut Criterion) {
     let age_checker = AgeChecker {
         threshold_birth_year: Fr::from(EIGHTEEN_YEARS_AGO),
     };
-    let age_pk =
-        gen_pred_crs::<_, _, E, _, _, _, _, TestTreeH, TestTreeHG>(&mut rng, age_checker.clone())
-            .unwrap();
+    let age_pk = gen_pred_crs::<_, _, E, _, _, _, _, Bls12PoseidonCrh, Bls12PoseidonCrh>(
+        &mut rng,
+        age_checker.clone(),
+    )
+    .unwrap();
     let age_vk = age_pk.prepare_verifying_key();
 
     //
@@ -69,18 +69,19 @@ pub fn bench_linkage(c: &mut Criterion) {
 
     // Make a attribute to put in the tree
     let person = NameAndBirthYear::new(&mut rng, b"Andrew", 1992);
-    let person_com = person.commit();
+    let person_com = Attrs::<_, Bls12PoseidonCommitter>::commit(&person);
 
     // Make a tree and "issue", i.e., put the person commitment in the tree at index 17
     let leaf_idx = 17;
-    let mut tree = ComTree::empty(MERKLE_CRH_PARAM.clone(), TREE_HEIGHT);
-    let auth_path = tree.insert(leaf_idx, &person_com);
+    let mut tree = ComTree::<_, Bls12PoseidonCrh, Bls12PoseidonCommitter>::empty((), TREE_HEIGHT);
+    let auth_path: ComTreePath<_, Bls12PoseidonCrh, Bls12PoseidonCommitter> =
+        tree.insert(leaf_idx, &person_com);
 
     // The person can now prove membership in the tree. Calculate the root and prove wrt that
     // root.
     let merkle_root = tree.root();
     let tree_proof = auth_path
-        .prove_membership(&mut rng, &tree_pk, &*MERKLE_CRH_PARAM, person_com)
+        .prove_membership(&mut rng, &tree_pk, &(), person_com)
         .unwrap();
 
     // Prove that the tree is in the forest

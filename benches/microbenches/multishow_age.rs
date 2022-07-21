@@ -1,15 +1,12 @@
 use zkcreds::{
-    attrs::Attrs,
+    attrs::{AccountableAttrs, Attrs},
     com_forest::{gen_forest_memb_crs, ComForestRoots},
     com_tree::{gen_tree_memb_crs, ComTree},
     link::{link_proofs, verif_link_proof, LinkProofCtx, LinkVerifyingKey, PredPublicInputs},
     pred::{gen_pred_crs, prove_pred},
     revealing_multishow::{MultishowableAttrs, RevealingMultishowChecker},
-    test_util::{
-        AgeChecker, NameAndBirthYear, NameAndBirthYearVar, TestComSchemePedersen,
-        TestComSchemePedersenG, TestTreeH, TestTreeHG, MERKLE_CRH_PARAM,
-    },
-    utils::setup_poseidon_params,
+    test_util::{AgeChecker, NameAndBirthYear, NameAndBirthYearVar},
+    utils::{setup_poseidon_params, Bls12PoseidonCommitter, Bls12PoseidonCrh},
 };
 
 use ark_bls12_381::{Bls12_381 as E, Fr};
@@ -24,6 +21,9 @@ const LOG2_NUM_TREES: u32 = 8;
 const TREE_HEIGHT: u32 = LOG2_NUM_LEAVES + 1 - LOG2_NUM_TREES;
 const NUM_TREES: usize = 2usize.pow(LOG2_NUM_TREES);
 
+type TestTreeH = Bls12PoseidonCrh;
+type TestTreeHG = Bls12PoseidonCrh;
+
 pub fn bench_multishow_age(c: &mut Criterion) {
     let mut rng = ark_std::test_rng();
 
@@ -36,10 +36,10 @@ pub fn bench_multishow_age(c: &mut Criterion) {
         _,
         E,
         NameAndBirthYear,
-        TestComSchemePedersen,
-        TestComSchemePedersenG,
-        TestTreeH,
-        TestTreeHG,
+        Bls12PoseidonCommitter,
+        Bls12PoseidonCommitter,
+        Bls12PoseidonCrh,
+        Bls12PoseidonCrh,
     >(&mut rng, NUM_TREES)
     .unwrap();
     let forest_vk = forest_pk.prepare_verifying_key();
@@ -49,11 +49,11 @@ pub fn bench_multishow_age(c: &mut Criterion) {
         _,
         E,
         NameAndBirthYear,
-        TestComSchemePedersen,
-        TestComSchemePedersenG,
-        TestTreeH,
-        TestTreeHG,
-    >(&mut rng, MERKLE_CRH_PARAM.clone(), TREE_HEIGHT)
+        Bls12PoseidonCommitter,
+        Bls12PoseidonCommitter,
+        Bls12PoseidonCrh,
+        Bls12PoseidonCrh,
+    >(&mut rng, (), TREE_HEIGHT)
     .unwrap();
     let tree_vk = tree_pk.prepare_verifying_key();
 
@@ -89,11 +89,11 @@ pub fn bench_multishow_age(c: &mut Criterion) {
 
     // Make a attribute to put in the tree
     let person = NameAndBirthYear::new(&mut rng, b"Andrew", 1992);
-    let person_com = person.commit();
+    let person_com = Attrs::<_, Bls12PoseidonCommitter>::commit(&person);
 
     // Make a tree and "issue", i.e., put the person commitment in the tree at index 17
     let leaf_idx = 17;
-    let mut tree = ComTree::empty(MERKLE_CRH_PARAM.clone(), TREE_HEIGHT);
+    let mut tree = ComTree::empty((), TREE_HEIGHT);
     let auth_path = tree.insert(leaf_idx, &person_com);
 
     // The person can now prove membership in the tree. Calculate the root and prove wrt that
@@ -102,12 +102,12 @@ pub fn bench_multishow_age(c: &mut Criterion) {
     c.bench_function("Age+Multishow: proving tree membership", |b| {
         b.iter(|| {
             auth_path
-                .prove_membership(&mut rng, &tree_pk, &*MERKLE_CRH_PARAM, person_com)
+                .prove_membership(&mut rng, &tree_pk, &(), person_com)
                 .unwrap()
         })
     });
     let tree_proof = auth_path
-        .prove_membership(&mut rng, &tree_pk, &*MERKLE_CRH_PARAM, person_com)
+        .prove_membership(&mut rng, &tree_pk, &(), person_com)
         .unwrap();
 
     // Prove that the tree is in the forest
@@ -129,9 +129,14 @@ pub fn bench_multishow_age(c: &mut Criterion) {
     // User computes a multishow token
     let nonce = Fr::rand(&mut rng);
     let ctr: u16 = 1;
-    let token = person
-        .compute_presentation_token(poseidon_params.clone(), epoch, ctr, nonce)
-        .unwrap();
+    let token = MultishowableAttrs::<_, Bls12PoseidonCommitter>::compute_presentation_token(
+        &person,
+        poseidon_params.clone(),
+        epoch,
+        ctr,
+        nonce,
+    )
+    .unwrap();
     // Prove the multishow predicate
     // User constructs a checker for their predicate
     let multishow_checker = RevealingMultishowChecker {

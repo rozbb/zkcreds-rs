@@ -5,19 +5,23 @@ use crate::microbenches::monolithic_proof::{
 use core::borrow::Borrow;
 
 use zkcreds::{
-    attrs::{Attrs, AttrsVar},
+    attrs::{
+        AccountableAttrs as AccountableAttrsTrait, AccountableAttrsVar as AccountableAttrsVarTrait,
+        Attrs, AttrsVar,
+    },
     com_forest::{gen_forest_memb_crs, ComForestRoots},
     com_tree::{gen_tree_memb_crs, ComTree},
+    identity_crh::UnitVar,
     link::{link_proofs, verif_link_proof, LinkProofCtx, LinkVerifyingKey, PredPublicInputs},
-    pred::{gen_pred_crs, prove_pred, PredicateChecker},
-    ComNonce, ComNonceVar, ComParam, ComParamVar,
+    pred::PredicateChecker,
+    pred::{gen_pred_crs, prove_pred},
+    revealing_multishow::{MultishowableAttrs, RevealingMultishowChecker},
+    utils::{setup_poseidon_params, Bls12PoseidonCommitter, Bls12PoseidonCrh, ComNonce},
+    ComNonceVar, ComParam, ComParamVar,
 };
 
 use ark_bls12_381::Bls12_381;
-use ark_crypto_primitives::{
-    commitment::CommitmentScheme,
-    crh::{bowe_hopwood, pedersen, TwoToOneCRH},
-};
+use ark_crypto_primitives::{commitment::CommitmentScheme, crh::TwoToOneCRH};
 use ark_ec::PairingEngine;
 use ark_ed_on_bls12_381::{constraints::FqVar, EdwardsParameters};
 use ark_ff::{to_bytes, UniformRand};
@@ -36,6 +40,7 @@ use ark_std::{
     io::Write,
     rand::{rngs::StdRng, Rng, SeedableRng},
 };
+use arkworks_utils::Curve;
 use criterion::Criterion;
 use lazy_static::lazy_static;
 use linkg16::groth16;
@@ -48,65 +53,26 @@ const NUM_TREES: usize = 2usize.pow(LOG2_NUM_TREES);
 type E = Bls12_381;
 type Fr = <E as PairingEngine>::Fr;
 
-type CompressedPedersenCom<W> = zkcreds::compressed_pedersen::Commitment<EdwardsParameters, W>;
-type CompressedPedersenComG<W> =
-    zkcreds::compressed_pedersen::constraints::CommGadget<EdwardsParameters, FqVar, W>;
-
-#[derive(Clone)]
-struct Window9x63;
-impl pedersen::Window for Window9x63 {
-    const WINDOW_SIZE: usize = 63;
-    const NUM_WINDOWS: usize = 9;
-}
-type TreeH = bowe_hopwood::CRH<EdwardsParameters, Window9x63>;
-type TreeHG = bowe_hopwood::constraints::CRHGadget<EdwardsParameters, FqVar>;
-
-#[derive(Clone)]
-struct CustomWindow;
-impl pedersen::Window for CustomWindow {
-    const WINDOW_SIZE: usize = 128;
-    const NUM_WINDOWS: usize = 2;
-}
-
-type ComScheme = CompressedPedersenCom<CustomWindow>;
-type ComSchemeG = CompressedPedersenComG<CustomWindow>;
-
-lazy_static! {
-    static ref COM_PARAM: <ComScheme as CommitmentScheme>::Parameters = {
-        let mut rng = {
-            let mut seed = [0u8; 32];
-            let mut writer = &mut seed[..];
-            writer.write_all(b"zkcreds-commitment-param").unwrap();
-            StdRng::from_seed(seed)
-        };
-        ComScheme::setup(&mut rng).unwrap()
-    };
-    static ref MERKLE_CRH_PARAM: <TreeH as TwoToOneCRH>::Parameters = {
-        let mut rng = {
-            let mut seed = [0u8; 32];
-            let mut writer = &mut seed[..];
-            writer.write_all(b"zkcreds-merkle-param").unwrap();
-            StdRng::from_seed(seed)
-        };
-        <TreeH as TwoToOneCRH>::setup(&mut rng).unwrap()
-    };
-}
+type ComScheme = Bls12PoseidonCommitter;
+type ComSchemeG = Bls12PoseidonCommitter;
+type TreeH = Bls12PoseidonCrh;
+type TreeHG = Bls12PoseidonCrh;
 
 #[derive(Clone, Default)]
 struct ExpiryAttrs {
-    nonce: ComNonce<ComScheme>,
+    nonce: ComNonce,
     expiry: Fr,
 }
 
 #[derive(Clone)]
 struct ExpiryAttrsVar {
-    nonce: ComNonceVar<ComScheme, ComSchemeG, Fr>,
+    nonce: ComNonce,
     expiry: FpVar<Fr>,
 }
 
 impl ExpiryAttrs {
     fn new<R: Rng>(rng: &mut R, expiry: u32) -> ExpiryAttrs {
-        let nonce = <ComScheme as CommitmentScheme>::Randomness::rand(rng);
+        let nonce = ComNonce::rand(rng);
         ExpiryAttrs {
             nonce,
             expiry: Fr::from(expiry),
@@ -121,10 +87,10 @@ impl Attrs<Fr, ComScheme> for ExpiryAttrs {
     }
 
     fn get_com_param(&self) -> &ComParam<ComScheme> {
-        &*COM_PARAM
+        &()
     }
 
-    fn get_com_nonce(&self) -> &ComNonce<ComScheme> {
+    fn get_com_nonce(&self) -> &ComNonce {
         &self.nonce
     }
 }
@@ -135,45 +101,28 @@ impl ToBytesGadget<Fr> for ExpiryAttrsVar {
     }
 }
 
-impl AllocVar<ExpiryAttrs, Fr> for ExpiryAttrsVar {
-    fn new_variable<T: Borrow<ExpiryAttrs>>(
+impl AttrsVar<Fr, ExpiryAttrs, ComScheme, ComSchemeG> for ExpiryAttrsVar {
+    fn cs(&self) -> ConstraintSystemRef<Fr> {
+        self.expiry.cs()
+    }
+
+    fn witness_attrs(
         cs: impl Into<Namespace<Fr>>,
-        f: impl FnOnce() -> Result<T, SynthesisError>,
-        mode: AllocationMode,
+        attrs: &ExpiryAttrs,
     ) -> Result<Self, SynthesisError> {
         let cs = cs.into().cs();
-        let native_attrs = f();
-
-        let default_info = ExpiryAttrs::default();
-
-        // Unpack the given attributes
-        let ExpiryAttrs {
-            ref nonce,
-            ref expiry,
-        } = native_attrs
-            .as_ref()
-            .map(Borrow::borrow)
-            .unwrap_or(&default_info);
-
-        let nonce = ComNonceVar::<ComScheme, ComSchemeG, Fr>::new_variable(
-            ns!(cs, "nonce"),
-            || Ok(nonce),
-            mode,
-        )?;
-        let expiry = FpVar::<Fr>::new_variable(ns!(cs, "expiry"), || Ok(*expiry), mode)?;
+        let nonce = attrs.nonce.clone();
+        let expiry = FpVar::<Fr>::new_witness(ns!(cs, "expiry"), || Ok(attrs.expiry))?;
 
         Ok(ExpiryAttrsVar { nonce, expiry })
     }
-}
 
-impl AttrsVar<Fr, ExpiryAttrs, ComScheme, ComSchemeG> for ExpiryAttrsVar {
     fn get_com_param(&self) -> Result<ComParamVar<ComScheme, ComSchemeG, Fr>, SynthesisError> {
-        let cs = self.nonce.cs();
-        ComParamVar::<_, ComSchemeG, _>::new_constant(cs, &*COM_PARAM)
+        Ok(UnitVar::default())
     }
 
-    fn get_com_nonce(&self) -> Result<ComNonceVar<ComScheme, ComSchemeG, Fr>, SynthesisError> {
-        Ok(self.nonce.clone())
+    fn get_com_nonce(&self) -> &ComNonce {
+        &self.nonce
     }
 }
 
@@ -219,7 +168,7 @@ pub fn bench_expiry(c: &mut Criterion) {
     let expiry_vk = expiry_pk.prepare_verifying_key();
     let tree_pk = gen_tree_memb_crs::<_, E, ExpiryAttrs, ComScheme, ComSchemeG, TreeH, TreeHG>(
         &mut rng,
-        MERKLE_CRH_PARAM.clone(),
+        (),
         TREE_HEIGHT,
     )
     .unwrap();
@@ -235,17 +184,17 @@ pub fn bench_expiry(c: &mut Criterion) {
     let cred = attrs.commit();
 
     // Create the tree proof
-    let mut tree = ComTree::empty(MERKLE_CRH_PARAM.clone(), TREE_HEIGHT);
+    let mut tree = ComTree::empty((), TREE_HEIGHT);
     let auth_path = tree.insert(0, &cred);
     c.bench_function("Expiry show: proving tree", |b| {
         b.iter(|| {
             auth_path
-                .prove_membership(&mut rng, &tree_pk, &*MERKLE_CRH_PARAM, cred)
+                .prove_membership(&mut rng, &tree_pk, &(), cred)
                 .unwrap()
         })
     });
     let tree_proof = auth_path
-        .prove_membership(&mut rng, &tree_pk, &*MERKLE_CRH_PARAM, cred)
+        .prove_membership(&mut rng, &tree_pk, &(), cred)
         .unwrap();
 
     // Create forest proof
@@ -285,31 +234,26 @@ pub fn bench_expiry(c: &mut Criterion) {
     )
     .unwrap();
 
-    let monolithic_pk: groth16::ProvingKey<E> = gen_monolithic_crs::<
-        _,
-        E,
-        ExpiryAttrs,
-        ExpiryAttrsVar,
-        ComScheme,
-        ComSchemeG,
-        TreeH,
-        TreeHG,
-        _,
-    >(
-        &mut rng,
-        MERKLE_CRH_PARAM.clone(),
-        TREE_HEIGHT,
-        NUM_TREES,
-        expiry_checker.clone(),
-    )
-    .unwrap();
+    let monolithic_pk: groth16::ProvingKey<E> =
+        gen_monolithic_crs::<
+            _,
+            E,
+            ExpiryAttrs,
+            ExpiryAttrsVar,
+            ComScheme,
+            ComSchemeG,
+            TreeH,
+            TreeHG,
+            _,
+        >(&mut rng, (), TREE_HEIGHT, NUM_TREES, expiry_checker.clone())
+        .unwrap();
     let monolithic_vk = monolithic_pk.verifying_key();
     c.bench_function("Expiry show: proving monolithic", |b| {
         b.iter(|| {
             prove_monolithic::<_, _, _, ExpiryAttrsVar, _, ComSchemeG, _, TreeHG, _>(
                 &mut rng,
                 &monolithic_pk,
-                &*MERKLE_CRH_PARAM,
+                &(),
                 &roots,
                 &auth_path,
                 attrs.clone(),
@@ -321,7 +265,7 @@ pub fn bench_expiry(c: &mut Criterion) {
     let proof = prove_monolithic::<_, _, _, ExpiryAttrsVar, _, ComSchemeG, _, TreeHG, _>(
         &mut rng,
         &monolithic_pk,
-        &*MERKLE_CRH_PARAM,
+        &(),
         &roots,
         &auth_path,
         attrs.clone(),

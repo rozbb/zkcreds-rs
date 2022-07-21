@@ -9,12 +9,8 @@ use zkcreds::proof_data_structures::{
 };
 
 use ark_bls12_381::Bls12_381;
-use ark_crypto_primitives::{
-    commitment::CommitmentScheme,
-    crh::{bowe_hopwood, pedersen, TwoToOneCRH},
-};
+use ark_crypto_primitives::{commitment::CommitmentScheme, crh::TwoToOneCRH};
 use ark_ec::PairingEngine;
-use ark_ed_on_bls12_381::{constraints::FqVar, EdwardsParameters};
 use ark_std::{
     io::Write,
     rand::{rngs::StdRng, SeedableRng},
@@ -55,33 +51,17 @@ pub(crate) const DG2_HASH_OFFSET: usize = 70;
 // The location of the pre-econtent hash inside econtent
 pub(crate) const PRE_ECONTENT_HASH_OFFSET: usize = 72;
 
-#[derive(Clone)]
-pub(crate) struct Window9x128;
-impl pedersen::Window for Window9x128 {
-    const WINDOW_SIZE: usize = 128;
-    const NUM_WINDOWS: usize = 11;
-}
-
-#[derive(Clone)]
-pub(crate) struct Window9x63;
-impl pedersen::Window for Window9x63 {
-    const WINDOW_SIZE: usize = 63;
-    const NUM_WINDOWS: usize = 9;
-}
-
 // Pick a pairing engine and a curve defined over E::Fr
 pub(crate) type E = Bls12_381;
 pub(crate) type Fr = <E as PairingEngine>::Fr;
 
 // Pick a two-to-one CRH
-pub(crate) type H = bowe_hopwood::CRH<EdwardsParameters, Window9x63>;
-pub(crate) type HG = bowe_hopwood::constraints::CRHGadget<EdwardsParameters, FqVar>;
+pub(crate) type H = zkcreds::utils::Bls12PoseidonCrh;
+pub(crate) type HG = zkcreds::utils::Bls12PoseidonCrh;
 
 // Pick a commitment scheme
-pub(crate) type PassportComScheme =
-    zkcreds::compressed_pedersen::Commitment<EdwardsParameters, Window9x128>;
-pub(crate) type PassportComSchemeG =
-    zkcreds::compressed_pedersen::constraints::CommGadget<EdwardsParameters, FqVar, Window9x128>;
+pub(crate) type PassportComScheme = zkcreds::utils::Bls12PoseidonCommitter;
+pub(crate) type PassportComSchemeG = zkcreds::utils::Bls12PoseidonCommitter;
 
 pub(crate) type ComTree = zkcreds::com_tree::ComTree<Fr, H, PassportComScheme>;
 pub(crate) type ComForest = zkcreds::com_forest::ComForest<Fr, H, PassportComScheme>;

@@ -58,14 +58,14 @@ where
     AC::Output: ToConstraintField<ConstraintF>,
     ACG: CommitmentGadget<AC, ConstraintF>,
 {
+    /// Returns the constraint system used by this var
+    fn cs(&self) -> ConstraintSystemRef<ConstraintF>;
+
     /// Witnesses the secret attrributes for ZK usage
     fn witness_attrs(
         cs: impl Into<Namespace<ConstraintF>>,
         attrs: &A,
     ) -> Result<Self, SynthesisError>;
-
-    /// Returns the constraint system used by this var
-    fn cs(&self) -> ConstraintSystemRef<ConstraintF>;
 
     /// Gets the parameters for the commitment scheme. In general, attributes shouldn't be holding
     /// the parameters. Rather, this function should return a reference to some global value

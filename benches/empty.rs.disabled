@@ -48,7 +48,8 @@ const NUM_TREES: usize = 2usize.pow(LOG2_NUM_TREES);
 type E = Bls12_381;
 type Fr = <E as PairingEngine>::Fr;
 
-type CompressedPedersenCom<W> = zkcreds::compressed_pedersen::Commitment<EdwardsParameters, W>;
+type CompressedPedersenCom<W> =
+    zkcreds::compressed_pedersen::PedersenCommitter<EdwardsParameters, W>;
 type CompressedPedersenComG<W> =
     zkcreds::compressed_pedersen::constraints::CommGadget<EdwardsParameters, FqVar, W>;
 

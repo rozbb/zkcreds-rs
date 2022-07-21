@@ -5,15 +5,18 @@ use zkcreds::{
     attrs::Attrs,
     com_forest::{gen_forest_memb_crs, ComForestRoots},
     com_tree::{gen_tree_memb_crs, ComTree},
-    test_util::{
-        NameAndBirthYear, TestComSchemePedersen, TestComSchemePedersenG, TestTreeH, TestTreeHG,
-        MERKLE_CRH_PARAM,
-    },
+    test_util::{NameAndBirthYear, MERKLE_CRH_PARAM},
+    utils::{Bls12PoseidonCommitter, Bls12PoseidonCrh},
     Com,
 };
 
 use ark_bls12_381::{Bls12_381 as E, Fr};
 use criterion::Criterion;
+
+type TestCom = Bls12PoseidonCommitter;
+type TestComG = Bls12PoseidonCommitter;
+type TestTreeH = Bls12PoseidonCrh;
+type TestTreeHG = Bls12PoseidonCrh;
 
 /// Tests a predicate that returns true iff the given `NameAndBirthYear` is at least 21
 pub fn bench_tree_forest(c: &mut Criterion) {
@@ -21,7 +24,7 @@ pub fn bench_tree_forest(c: &mut Criterion) {
 
     // Make a attribute to put in the tree
     let person = NameAndBirthYear::new(&mut rng, b"Andrew", 1992);
-    let person_com = person.commit();
+    let person_com = Attrs::<_, TestCom>::commit(&person);
 
     for log2_num_leaves in [15, 31, 47, 63] {
         for log2_num_trees in 0..16 {
@@ -39,18 +42,18 @@ pub fn bench_tree_forest(c: &mut Criterion) {
                 _,
                 E,
                 NameAndBirthYear,
-                TestComSchemePedersen,
-                TestComSchemePedersenG,
+                TestCom,
+                TestComG,
                 TestTreeH,
                 TestTreeHG,
-            >(&mut rng, MERKLE_CRH_PARAM.clone(), tree_height)
+            >(&mut rng, (), tree_height)
             .unwrap();
             let forest_pk = gen_forest_memb_crs::<
                 _,
                 E,
                 NameAndBirthYear,
-                TestComSchemePedersen,
-                TestComSchemePedersenG,
+                TestCom,
+                TestComG,
                 TestTreeH,
                 TestTreeHG,
             >(&mut rng, num_trees)
@@ -59,10 +62,7 @@ pub fn bench_tree_forest(c: &mut Criterion) {
             // Set up an auth path for tree membership
             let auth_path = {
                 let leaf_idx = 0;
-                let mut tree = ComTree::<_, TestTreeH, TestComSchemePedersen>::empty(
-                    MERKLE_CRH_PARAM.clone(),
-                    tree_height,
-                );
+                let mut tree = ComTree::<_, TestTreeH, TestCom>::empty((), tree_height);
                 tree.insert(leaf_idx, &person_com)
             };
             let member_root = auth_path.root();
@@ -80,12 +80,7 @@ pub fn bench_tree_forest(c: &mut Criterion) {
                 |b| {
                     b.iter(|| {
                         auth_path
-                            .prove_membership(
-                                &mut rng,
-                                &tree_pk,
-                                &*MERKLE_CRH_PARAM,
-                                Com::<TestComSchemePedersen>::default(),
-                            )
+                            .prove_membership(&mut rng, &tree_pk, &(), Com::<TestCom>::default())
                             .unwrap();
                         roots
                             .prove_membership(&mut rng, &forest_pk, member_root, person_com)
@@ -95,14 +90,12 @@ pub fn bench_tree_forest(c: &mut Criterion) {
             );
 
             let tf_pk: groth16::ProvingKey<E> =
-                gen_tf_crs::<
-                    _,
-                    E,
-                    TestComSchemePedersen,
-                    TestComSchemePedersenG,
-                    TestTreeH,
-                    TestTreeHG,
-                >(&mut rng, MERKLE_CRH_PARAM.clone(), tree_height, num_trees)
+                gen_tf_crs::<_, E, TestCom, TestComG, TestTreeH, TestTreeHG>(
+                    &mut rng,
+                    (),
+                    tree_height,
+                    num_trees,
+                )
                 .unwrap();
             let tf_vk = tf_pk.verifying_key();
             c.bench_function(
@@ -112,17 +105,10 @@ pub fn bench_tree_forest(c: &mut Criterion) {
                 ),
                 |b| {
                     b.iter(|| {
-                        prove_tf::<
-                            _,
-                            E,
-                            TestComSchemePedersen,
-                            TestComSchemePedersenG,
-                            TestTreeH,
-                            TestTreeHG,
-                        >(
+                        prove_tf::<_, E, TestCom, TestComG, TestTreeH, TestTreeHG>(
                             &mut rng,
                             &tf_pk,
-                            &*MERKLE_CRH_PARAM,
+                            &(),
                             &roots,
                             &auth_path,
                             person_com,
@@ -131,17 +117,10 @@ pub fn bench_tree_forest(c: &mut Criterion) {
                     })
                 },
             );
-            let proof = prove_tf::<
-                _,
-                E,
-                TestComSchemePedersen,
-                TestComSchemePedersenG,
-                TestTreeH,
-                TestTreeHG,
-            >(
+            let proof = prove_tf::<_, E, TestCom, TestComG, TestTreeH, TestTreeHG>(
                 &mut rng,
                 &tf_pk,
-                &*MERKLE_CRH_PARAM,
+                &(),
                 &roots,
                 &auth_path,
                 person_com,
@@ -154,13 +133,9 @@ pub fn bench_tree_forest(c: &mut Criterion) {
                 ),
                 |b| {
                     b.iter(|| {
-                        assert!(verify_tf::<
-                            E,
-                            TestComSchemePedersen,
-                            TestComSchemePedersenG,
-                            TestTreeH,
-                            TestTreeHG,
-                        >(&tf_vk, &roots, &proof,)
+                        assert!(verify_tf::<E, TestCom, TestComG, TestTreeH, TestTreeHG>(
+                            &tf_vk, &roots, &proof,
+                        )
                         .unwrap())
                     })
                 },

@@ -11,7 +11,8 @@ use core::borrow::Borrow;
 use sha2::{Digest, Sha256};
 use zkcreds::{
     attrs::{AccountableAttrs, AccountableAttrsVar, Attrs, AttrsVar},
-    Bytestring, ComNonce, ComNonceVar, ComParam, ComParamVar,
+    utils::ComNonce,
+    Bytestring, ComParam, ComParamVar,
 };
 
 use ark_ff::{to_bytes, UniformRand};
@@ -24,7 +25,7 @@ use ark_r1cs_std::{
 };
 use ark_relations::{
     ns,
-    r1cs::{Namespace, SynthesisError},
+    r1cs::{ConstraintSystemRef, Namespace, SynthesisError},
 };
 use ark_std::rand::Rng;
 
@@ -41,7 +42,7 @@ impl Biometrics {
 /// Stores a subset of the info found in data groups 1 and 2 of a passport
 #[derive(Clone)]
 pub(crate) struct PersonalInfo {
-    nonce: ComNonce<PassportComScheme>,
+    nonce: ComNonce,
     pub(crate) seed: Fr,
     pub(crate) nationality: [u8; STATE_ID_LEN],
     pub(crate) name: [u8; NAME_LEN],
@@ -53,7 +54,7 @@ pub(crate) struct PersonalInfo {
 impl Default for PersonalInfo {
     fn default() -> PersonalInfo {
         PersonalInfo {
-            nonce: ComNonce::<PassportComScheme>::default(),
+            nonce: ComNonce::default(),
             seed: Fr::default(),
             nationality: [0u8; STATE_ID_LEN],
             name: [0u8; NAME_LEN],
@@ -67,7 +68,7 @@ impl Default for PersonalInfo {
 /// Stores a subset of the info found in data groups 1 and 2 of a passport
 #[derive(Clone)]
 pub(crate) struct PersonalInfoVar {
-    nonce: ComNonceVar<PassportComScheme, PassportComSchemeG, Fr>,
+    nonce: ComNonce,
     pub(crate) seed: FpVar<Fr>,
     pub(crate) nationality: Bytestring<Fr>,
     pub(crate) name: Bytestring<Fr>,
@@ -120,7 +121,7 @@ impl PersonalInfo {
         passport_expiry: u32,
         biometrics: Biometrics,
     ) -> PersonalInfo {
-        let nonce = ComNonce::<PassportComScheme>::rand(rng);
+        let nonce = ComNonce::rand(rng);
         let seed = Fr::rand(rng);
 
         PersonalInfo {
@@ -145,7 +146,7 @@ impl PersonalInfo {
     ) -> PersonalInfo {
         // Create an empty info struct that we'll fill with data
         let mut info = PersonalInfo {
-            nonce: ComNonce::<PassportComScheme>::rand(rng),
+            nonce: ComNonce::rand(rng),
             seed: Fr::rand(rng),
             ..Default::default()
         };
@@ -198,7 +199,7 @@ impl Attrs<Fr, PassportComScheme> for PersonalInfo {
         &*PASSPORT_COM_PARAM
     }
 
-    fn get_com_nonce(&self) -> &ComNonce<PassportComScheme> {
+    fn get_com_nonce(&self) -> &ComNonce {
         &self.nonce
     }
 }
@@ -230,56 +231,35 @@ impl ToBytesGadget<Fr> for PersonalInfoVar {
     }
 }
 
-impl AllocVar<PersonalInfo, Fr> for PersonalInfoVar {
-    // Allocates a vector of UInt8s. This panics if `f()` is `Err`, since we don't know how many
-    // bytes to allocate
-    fn new_variable<T: Borrow<PersonalInfo>>(
+impl AttrsVar<Fr, PersonalInfo, PassportComScheme, PassportComSchemeG> for PersonalInfoVar {
+    fn cs(&self) -> ConstraintSystemRef<Fr> {
+        self.seed
+            .cs()
+            .or(self.nationality.cs())
+            .or(self.name.cs())
+            .or(self.dob.cs())
+            .or(self.passport_expiry.cs())
+    }
+
+    fn witness_attrs(
         cs: impl Into<Namespace<Fr>>,
-        f: impl FnOnce() -> Result<T, SynthesisError>,
-        mode: AllocationMode,
+        attrs: &PersonalInfo,
     ) -> Result<Self, SynthesisError> {
         let cs = cs.into().cs();
-        let native_attrs = f();
+        let nonce = attrs.nonce.clone();
 
-        // Make placeholder content if native_attrs is empty
-        let default_info = PersonalInfo::default();
+        let biometric_hash = attrs.biometrics.hash().to_vec();
 
-        // Unpack the given attributes
-        let PersonalInfo {
-            ref nonce,
-            ref seed,
-            ref nationality,
-            ref name,
-            ref dob,
-            ref passport_expiry,
-            ref biometrics,
-        } = native_attrs
-            .as_ref()
-            .map(Borrow::borrow)
-            .unwrap_or(&default_info);
-
-        let biometric_hash = biometrics.hash().to_vec();
-
-        // Witness the nonce
-        let nonce = ComNonceVar::<PassportComScheme, PassportComSchemeG, Fr>::new_variable(
-            ns!(cs, "nonce"),
-            || Ok(nonce),
-            mode,
-        )?;
-
-        // Witness all the other variables
-        let seed = FpVar::<Fr>::new_variable(ns!(cs, "seed"), || Ok(seed), mode)?;
+        let seed = FpVar::<Fr>::new_witness(ns!(cs, "seed"), || Ok(attrs.seed))?;
         let nationality =
-            Bytestring::new_variable(ns!(cs, "nationality"), || Ok(nationality.to_vec()), mode)?;
-        let name = Bytestring::new_variable(ns!(cs, "name"), || Ok(name.to_vec()), mode)?;
-        let dob = FpVar::<Fr>::new_variable(ns!(cs, "dob"), || Ok(Fr::from(*dob)), mode)?;
-        let passport_expiry = FpVar::<Fr>::new_variable(
-            ns!(cs, "passport expiry"),
-            || Ok(Fr::from(*passport_expiry)),
-            mode,
-        )?;
+            Bytestring::new_witness(ns!(cs, "nationality"), || Ok(attrs.nationality.to_vec()))?;
+        let name = Bytestring::new_witness(ns!(cs, "name"), || Ok(attrs.name.to_vec()))?;
+        let dob = FpVar::<Fr>::new_witness(ns!(cs, "dob"), || Ok(Fr::from(attrs.dob)))?;
+        let passport_expiry = FpVar::<Fr>::new_witness(ns!(cs, "passport expiry"), || {
+            Ok(Fr::from(attrs.passport_expiry))
+        })?;
         let biometric_hash =
-            Bytestring::new_variable(ns!(cs, "biometric_hash"), || Ok(biometric_hash), mode)?;
+            Bytestring::new_witness(ns!(cs, "biometric_hash"), || Ok(biometric_hash))?;
 
         // Return the witnessed values
         Ok(PersonalInfoVar {
@@ -292,9 +272,7 @@ impl AllocVar<PersonalInfo, Fr> for PersonalInfoVar {
             biometric_hash,
         })
     }
-}
 
-impl AttrsVar<Fr, PersonalInfo, PassportComScheme, PassportComSchemeG> for PersonalInfoVar {
     fn get_com_param(
         &self,
     ) -> Result<ComParamVar<PassportComScheme, PassportComSchemeG, Fr>, SynthesisError> {
@@ -307,10 +285,8 @@ impl AttrsVar<Fr, PersonalInfo, PassportComScheme, PassportComSchemeG> for Perso
         ComParamVar::<_, PassportComSchemeG, _>::new_constant(cs, &*PASSPORT_COM_PARAM)
     }
 
-    fn get_com_nonce(
-        &self,
-    ) -> Result<ComNonceVar<PassportComScheme, PassportComSchemeG, Fr>, SynthesisError> {
-        Ok(self.nonce.clone())
+    fn get_com_nonce(&self) -> &ComNonce {
+        &self.nonce
     }
 }
 

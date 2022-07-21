@@ -11,18 +11,16 @@ use zkcreds::{
     },
     com_forest::{gen_forest_memb_crs, ComForestRoots},
     com_tree::{gen_tree_memb_crs, ComTree},
+    identity_crh::UnitVar,
     link::{link_proofs, verif_link_proof, LinkProofCtx, LinkVerifyingKey, PredPublicInputs},
     multishow::{MultishowChecker, MultishowableAttrs},
     pred::{gen_pred_crs, prove_pred},
-    utils::setup_poseidon_params,
-    ComNonce, ComNonceVar, ComParam, ComParamVar,
+    utils::{setup_poseidon_params, Bls12PoseidonCommitter, Bls12PoseidonCrh, ComNonce},
+    ComNonceVar, ComParam, ComParamVar,
 };
 
 use ark_bls12_381::Bls12_381;
-use ark_crypto_primitives::{
-    commitment::CommitmentScheme,
-    crh::{bowe_hopwood, pedersen, TwoToOneCRH},
-};
+use ark_crypto_primitives::commitment::CommitmentScheme;
 use ark_ec::PairingEngine;
 use ark_ed_on_bls12_381::{constraints::FqVar, EdwardsParameters};
 use ark_ff::{to_bytes, UniformRand};
@@ -35,7 +33,7 @@ use ark_r1cs_std::{
 };
 use ark_relations::{
     ns,
-    r1cs::{Namespace, SynthesisError},
+    r1cs::{ConstraintSystemRef, Namespace, SynthesisError},
 };
 use ark_std::{
     io::Write,
@@ -55,67 +53,27 @@ const POSEIDON_WIDTH: u8 = 5;
 type E = Bls12_381;
 type Fr = <E as PairingEngine>::Fr;
 
-type CompressedPedersenCom<W> = zkcreds::compressed_pedersen::Commitment<EdwardsParameters, W>;
-type CompressedPedersenComG<W> =
-    zkcreds::compressed_pedersen::constraints::CommGadget<EdwardsParameters, FqVar, W>;
-
-#[derive(Clone)]
-struct Window9x63;
-impl pedersen::Window for Window9x63 {
-    const WINDOW_SIZE: usize = 63;
-    const NUM_WINDOWS: usize = 9;
-}
-type TreeH = bowe_hopwood::CRH<EdwardsParameters, Window9x63>;
-type TreeHG = bowe_hopwood::constraints::CRHGadget<EdwardsParameters, FqVar>;
-
-#[derive(Clone)]
-struct CustomWindow;
-impl pedersen::Window for CustomWindow {
-    const WINDOW_SIZE: usize = 128;
-    const NUM_WINDOWS: usize = 3;
-}
-
-type ComScheme = CompressedPedersenCom<CustomWindow>;
-type ComSchemeG = CompressedPedersenComG<CustomWindow>;
-
-lazy_static! {
-    static ref COM_PARAM: <ComScheme as CommitmentScheme>::Parameters = {
-        let mut rng = {
-            let mut seed = [0u8; 32];
-            let mut writer = &mut seed[..];
-            writer.write_all(b"zkcreds-commitment-param").unwrap();
-            StdRng::from_seed(seed)
-        };
-        ComScheme::setup(&mut rng).unwrap()
-    };
-    static ref MERKLE_CRH_PARAM: <TreeH as TwoToOneCRH>::Parameters = {
-        let mut rng = {
-            let mut seed = [0u8; 32];
-            let mut writer = &mut seed[..];
-            writer.write_all(b"zkcreds-merkle-param").unwrap();
-            StdRng::from_seed(seed)
-        };
-        <TreeH as TwoToOneCRH>::setup(&mut rng).unwrap()
-    };
-}
+type ComScheme = Bls12PoseidonCommitter;
+type ComSchemeG = Bls12PoseidonCommitter;
+type TreeH = Bls12PoseidonCrh;
+type TreeHG = Bls12PoseidonCrh;
 
 #[derive(Clone, Default)]
 struct Attrs {
-    nonce: ComNonce<ComScheme>,
+    nonce: ComNonce,
     seed: Fr,
 }
 
 #[derive(Clone)]
 struct AttrsVar {
-    nonce: ComNonceVar<ComScheme, ComSchemeG, Fr>,
+    nonce: ComNonce,
     seed: FpVar<Fr>,
 }
 
 impl Attrs {
     fn new<R: Rng>(rng: &mut R) -> Attrs {
-        let nonce = <ComScheme as CommitmentScheme>::Randomness::rand(rng);
+        let nonce = ComNonce::rand(rng);
         let seed = Fr::rand(rng);
-        let id = u8::rand(rng);
         Attrs { nonce, seed }
     }
 }
@@ -127,10 +85,10 @@ impl AttrsTrait<Fr, ComScheme> for Attrs {
     }
 
     fn get_com_param(&self) -> &ComParam<ComScheme> {
-        &*COM_PARAM
+        &()
     }
 
-    fn get_com_nonce(&self) -> &ComNonce<ComScheme> {
+    fn get_com_nonce(&self) -> &ComNonce {
         &self.nonce
     }
 }
@@ -154,45 +112,25 @@ impl ToBytesGadget<Fr> for AttrsVar {
     }
 }
 
-impl AllocVar<Attrs, Fr> for AttrsVar {
-    fn new_variable<T: Borrow<Attrs>>(
-        cs: impl Into<Namespace<Fr>>,
-        f: impl FnOnce() -> Result<T, SynthesisError>,
-        mode: AllocationMode,
-    ) -> Result<Self, SynthesisError> {
+impl AttrsVarTrait<Fr, Attrs, ComScheme, ComSchemeG> for AttrsVar {
+    fn cs(&self) -> ConstraintSystemRef<Fr> {
+        self.seed.cs()
+    }
+
+    fn witness_attrs(cs: impl Into<Namespace<Fr>>, attrs: &Attrs) -> Result<Self, SynthesisError> {
         let cs = cs.into().cs();
-        let native_attrs = f();
-
-        let default_info = Attrs::default();
-
-        // Unpack the given attributes
-        let Attrs {
-            ref nonce,
-            ref seed,
-        } = native_attrs
-            .as_ref()
-            .map(Borrow::borrow)
-            .unwrap_or(&default_info);
-
-        let nonce = ComNonceVar::<ComScheme, ComSchemeG, Fr>::new_variable(
-            ns!(cs, "nonce"),
-            || Ok(nonce),
-            mode,
-        )?;
-        let seed = FpVar::<Fr>::new_variable(ns!(cs, "seed"), || Ok(*seed), mode)?;
+        let nonce = attrs.nonce.clone();
+        let seed = FpVar::<Fr>::new_witness(ns!(cs, "seed"), || Ok(attrs.seed))?;
 
         Ok(AttrsVar { nonce, seed })
     }
-}
 
-impl AttrsVarTrait<Fr, Attrs, ComScheme, ComSchemeG> for AttrsVar {
     fn get_com_param(&self) -> Result<ComParamVar<ComScheme, ComSchemeG, Fr>, SynthesisError> {
-        let cs = self.nonce.cs();
-        ComParamVar::<_, ComSchemeG, _>::new_constant(cs, &*COM_PARAM)
+        Ok(UnitVar::default())
     }
 
-    fn get_com_nonce(&self) -> Result<ComNonceVar<ComScheme, ComSchemeG, Fr>, SynthesisError> {
-        Ok(self.nonce.clone())
+    fn get_com_nonce(&self) -> &ComNonce {
+        &self.nonce
     }
 }
 
@@ -229,7 +167,7 @@ pub fn bench_multishow(c: &mut Criterion) {
     let multishow_vk = multishow_pk.prepare_verifying_key();
     let tree_pk = gen_tree_memb_crs::<_, E, Attrs, ComScheme, ComSchemeG, TreeH, TreeHG>(
         &mut rng,
-        MERKLE_CRH_PARAM.clone(),
+        (),
         TREE_HEIGHT,
     )
     .unwrap();
@@ -252,17 +190,17 @@ pub fn bench_multishow(c: &mut Criterion) {
         .unwrap();
 
     // Create the tree proof
-    let mut tree = ComTree::empty(MERKLE_CRH_PARAM.clone(), TREE_HEIGHT);
+    let mut tree = ComTree::empty((), TREE_HEIGHT);
     let auth_path = tree.insert(0, &cred);
     c.bench_function("Multishow: proving tree", |b| {
         b.iter(|| {
             auth_path
-                .prove_membership(&mut rng, &tree_pk, &*MERKLE_CRH_PARAM, cred)
+                .prove_membership(&mut rng, &tree_pk, &(), cred)
                 .unwrap()
         })
     });
     let tree_proof = auth_path
-        .prove_membership(&mut rng, &tree_pk, &*MERKLE_CRH_PARAM, cred)
+        .prove_membership(&mut rng, &tree_pk, &(), cred)
         .unwrap();
 
     // Create forest proof
@@ -312,7 +250,7 @@ pub fn bench_multishow(c: &mut Criterion) {
     let monolithic_pk: groth16::ProvingKey<E> =
         gen_monolithic_crs::<_, E, Attrs, AttrsVar, ComScheme, ComSchemeG, TreeH, TreeHG, _>(
             &mut rng,
-            MERKLE_CRH_PARAM.clone(),
+            (),
             TREE_HEIGHT,
             NUM_TREES,
             multishow_checker.clone(),
@@ -324,7 +262,7 @@ pub fn bench_multishow(c: &mut Criterion) {
             prove_monolithic::<_, _, _, AttrsVar, _, ComSchemeG, _, TreeHG, _>(
                 &mut rng,
                 &monolithic_pk,
-                &*MERKLE_CRH_PARAM,
+                &(),
                 &roots,
                 &auth_path,
                 attrs.clone(),
@@ -336,7 +274,7 @@ pub fn bench_multishow(c: &mut Criterion) {
     let proof = prove_monolithic::<_, _, _, AttrsVar, _, ComSchemeG, _, TreeHG, _>(
         &mut rng,
         &monolithic_pk,
-        &*MERKLE_CRH_PARAM,
+        &(),
         &roots,
         &auth_path,
         attrs.clone(),

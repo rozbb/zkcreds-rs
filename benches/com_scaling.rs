@@ -1,7 +1,7 @@
+use zkcreds::utils::{Bls12PoseidonCommitter, Bls12PoseidonCrh};
+
 use ark_bls12_381::Bls12_381;
-use ark_crypto_primitives::crh::{bowe_hopwood, pedersen};
 use ark_ec::PairingEngine;
-use ark_ed_on_bls12_381::{constraints::FqVar, EdwardsParameters};
 
 pub(crate) type E = Bls12_381;
 pub(crate) type Fr = <E as PairingEngine>::Fr;
@@ -9,39 +9,26 @@ pub(crate) type Fr = <E as PairingEngine>::Fr;
 #[derive(Copy, Clone)]
 pub struct EmptyPred;
 
-type CompressedPedersenCom<W> = zkcreds::compressed_pedersen::Commitment<EdwardsParameters, W>;
-type CompressedPedersenComG<W> =
-    zkcreds::compressed_pedersen::constraints::CommGadget<EdwardsParameters, FqVar, W>;
-
-#[derive(Clone)]
-struct Window9x63;
-impl pedersen::Window for Window9x63 {
-    const WINDOW_SIZE: usize = 63;
-    const NUM_WINDOWS: usize = 9;
-}
-type TestTreeH = bowe_hopwood::CRH<EdwardsParameters, Window9x63>;
-type TestTreeHG = bowe_hopwood::constraints::CRHGadget<EdwardsParameters, FqVar>;
+type TestTreeH = Bls12PoseidonCrh;
+type TestTreeHG = Bls12PoseidonCrh;
+type TestComScheme = Bls12PoseidonCommitter;
+type TestComSchemeG = Bls12PoseidonCommitter;
 
 macro_rules! make_show_bench {
     ($num_bytes:expr, $bench_name:ident) => {
         pub mod $bench_name {
             use super::*;
-            use core::borrow::Borrow;
 
             use zkcreds::{
                 attrs::{Attrs, AttrsVar},
                 pred::{gen_pred_crs, prove_birth, PredicateChecker},
-                ComNonce, ComNonceVar, ComParam, ComParamVar,
+                utils::ComNonce,
+                ComParam, ComParamVar,
             };
 
-            use ark_crypto_primitives::{commitment::CommitmentScheme, crh::pedersen};
+            use ark_crypto_primitives::commitment::CommitmentScheme;
             use ark_ff::UniformRand;
-            use ark_r1cs_std::{
-                alloc::{AllocVar, AllocationMode},
-                bits::ToBytesGadget,
-                uint8::UInt8,
-                R1CSVar,
-            };
+            use ark_r1cs_std::{alloc::AllocVar, bits::ToBytesGadget, uint8::UInt8, R1CSVar};
             use ark_relations::{
                 ns,
                 r1cs::{ConstraintSystemRef, Namespace, SynthesisError},
@@ -52,16 +39,6 @@ macro_rules! make_show_bench {
             };
             use criterion::Criterion;
             use lazy_static::lazy_static;
-
-            #[derive(Clone)]
-            struct CustomWindow;
-            impl pedersen::Window for CustomWindow {
-                const WINDOW_SIZE: usize = 128;
-                const NUM_WINDOWS: usize = $num_bytes / 16;
-            }
-
-            type TestComScheme = CompressedPedersenCom<CustomWindow>;
-            type TestComSchemeG = CompressedPedersenComG<CustomWindow>;
 
             lazy_static! {
                 static ref BIG_COM_PARAM: <TestComScheme as CommitmentScheme>::Parameters = {
@@ -77,19 +54,19 @@ macro_rules! make_show_bench {
 
             #[derive(Clone, Default)]
             struct FillerAttrs {
-                nonce: ComNonce<TestComScheme>,
+                nonce: ComNonce,
                 num_bytes: usize,
             }
 
             #[derive(Clone)]
             struct FillerAttrsVar {
-                nonce: ComNonceVar<TestComScheme, TestComSchemeG, Fr>,
+                nonce: ComNonce,
                 bytes: Vec<UInt8<Fr>>,
             }
 
             impl FillerAttrs {
                 fn new<R: Rng>(rng: &mut R, num_bytes: usize) -> FillerAttrs {
-                    let nonce = <TestComScheme as CommitmentScheme>::Randomness::rand(rng);
+                    let nonce = ComNonce::rand(rng);
                     FillerAttrs { nonce, num_bytes }
                 }
             }
@@ -104,7 +81,7 @@ macro_rules! make_show_bench {
                     &*BIG_COM_PARAM
                 }
 
-                fn get_com_nonce(&self) -> &ComNonce<TestComScheme> {
+                fn get_com_nonce(&self) -> &ComNonce {
                     &self.nonce
                 }
             }
@@ -131,33 +108,26 @@ macro_rules! make_show_bench {
                 }
             }
 
-            impl AllocVar<FillerAttrs, Fr> for FillerAttrsVar {
-                fn new_variable<T: Borrow<FillerAttrs>>(
+            impl AttrsVar<Fr, FillerAttrs, TestComScheme, TestComSchemeG> for FillerAttrsVar {
+                fn cs(&self) -> ConstraintSystemRef<Fr> {
+                    self.bytes.cs()
+                }
+
+                fn witness_attrs(
                     cs: impl Into<Namespace<Fr>>,
-                    f: impl FnOnce() -> Result<T, SynthesisError>,
-                    mode: AllocationMode,
+                    attrs: &FillerAttrs,
                 ) -> Result<Self, SynthesisError> {
                     let cs = cs.into().cs();
-                    let native_attr = f().unwrap();
-                    let native_attr = native_attr.borrow();
+                    let nonce = attrs.nonce.clone();
 
-                    let num_bytes = native_attr.num_bytes;
-                    let nonce = ComNonceVar::<TestComScheme, TestComSchemeG, Fr>::new_variable(
-                        ns!(cs, "nonce"),
-                        || Ok(&native_attr.nonce),
-                        mode,
-                    )?;
-
+                    let num_bytes = attrs.num_bytes;
                     let bytes: Vec<UInt8<Fr>> = (0..num_bytes)
-                        .map(|_| UInt8::new_variable(ns!(cs, "byte"), || Ok(0u8), mode))
+                        .map(|_| UInt8::new_witness(ns!(cs, "byte"), || Ok(0u8)))
                         .collect::<Result<Vec<_>, _>>()?;
 
-                    // Return the witnessed values
                     Ok(FillerAttrsVar { nonce, bytes })
                 }
-            }
 
-            impl AttrsVar<Fr, FillerAttrs, TestComScheme, TestComSchemeG> for FillerAttrsVar {
                 fn get_com_param(
                     &self,
                 ) -> Result<ComParamVar<TestComScheme, TestComSchemeG, Fr>, SynthesisError>
@@ -166,11 +136,8 @@ macro_rules! make_show_bench {
                     ComParamVar::<_, TestComSchemeG, _>::new_constant(cs, &*BIG_COM_PARAM)
                 }
 
-                fn get_com_nonce(
-                    &self,
-                ) -> Result<ComNonceVar<TestComScheme, TestComSchemeG, Fr>, SynthesisError>
-                {
-                    Ok(self.nonce.clone())
+                fn get_com_nonce(&self) -> &ComNonce {
+                    &self.nonce
                 }
             }
 

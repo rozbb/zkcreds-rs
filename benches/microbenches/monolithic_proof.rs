@@ -70,7 +70,7 @@ where
         let tree_height = self.tree_prover.height;
 
         // Check that the attrs commitment is consistent
-        let attrs_var = AV::new_witness(ns!(cs, "attrs var"), || Ok(&self.attrs))?;
+        let attrs_var = AV::witness_attrs(ns!(cs, "attrs var"), &self.attrs)?;
         let attrs_com_var = &attrs_var.commit()?;
 
         // Witness the public variables. In ALL zkcreds proofs, it's the commitment to the
