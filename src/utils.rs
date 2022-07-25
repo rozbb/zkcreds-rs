@@ -2,7 +2,6 @@ use crate::identity_crh::UnitVar;
 
 use core::fmt;
 
-use ark_bls12_381::Fr as BlsFr;
 use ark_crypto_primitives::{
     commitment::{constraints::CommitmentGadget, CommitmentScheme},
     Error as ArkError,
@@ -21,6 +20,9 @@ use arkworks_r1cs_gadgets::poseidon::{FieldHasherGadget, PoseidonGadget};
 use arkworks_utils::{bytes_matrix_to_f, bytes_vec_to_f, Curve};
 use lazy_static::lazy_static;
 use rand::Rng;
+
+pub type BlsFr = ark_bls12_381::Fr;
+pub type BlsFrV = FpVar<BlsFr>;
 
 /// A commitment nonce is always just a 256 bit value
 #[derive(Clone, Default, PartialEq, Eq)]
@@ -71,7 +73,7 @@ const POSEIDON_WIDTH: u8 = 5;
 const COM_DOMAIN_SEP: &[u8] = b"pcom";
 const CRH_DOMAIN_SEP: &[u8] = b"pcrh";
 lazy_static! {
-    static ref BLS12_POSEIDON_PARAMS: PoseidonParameters<BlsFr> =
+    pub static ref BLS12_POSEIDON_PARAMS: PoseidonParameters<BlsFr> =
         setup_poseidon_params(Curve::Bls381, 3, POSEIDON_WIDTH);
 }
 
@@ -107,9 +109,9 @@ impl CommitmentScheme for Bls12PoseidonCommitter {
 }
 
 impl CommitmentGadget<Bls12PoseidonCommitter, BlsFr> for Bls12PoseidonCommitter {
-    type OutputVar = FpVar<BlsFr>;
+    type OutputVar = BlsFrV;
     type ParametersVar = UnitVar<BlsFr>;
-    type RandomnessVar = FpVar<BlsFr>;
+    type RandomnessVar = BlsFrV;
 
     // Computes H(domain_sep || randomness || input)
     fn commit(
@@ -126,7 +128,7 @@ impl CommitmentGadget<Bls12PoseidonCommitter, BlsFr> for Bls12PoseidonCommitter 
             input,
         ]
         .concat();
-        let packed_input: Vec<FpVar<BlsFr>> = hash_input
+        let packed_input: Vec<BlsFrV> = hash_input
             .to_constraint_field()
             .expect("could not pack inputs");
 
@@ -178,14 +180,14 @@ impl TwoToOneCRH for Bls12PoseidonCrh {
 // Do the same thing for ZK land
 impl TwoToOneCRHGadget<Bls12PoseidonCrh, BlsFr> for Bls12PoseidonCrh {
     type ParametersVar = UnitVar<BlsFr>;
-    type OutputVar = FpVar<BlsFr>;
+    type OutputVar = BlsFrV;
 
     // Evaluates H(left || right)
     fn evaluate(
         _: &UnitVar<BlsFr>,
         left_input: &[UInt8<BlsFr>],
         right_input: &[UInt8<BlsFr>],
-    ) -> Result<FpVar<BlsFr>, SynthesisError> {
+    ) -> Result<BlsFrV, SynthesisError> {
         // We only use this for Merkle tree hashing over BLS12-381, so just fix the input len to 32
         assert_eq!(left_input.len(), 32);
         assert_eq!(right_input.len(), 32);
@@ -199,7 +201,7 @@ impl TwoToOneCRHGadget<Bls12PoseidonCrh, BlsFr> for Bls12PoseidonCrh {
             right_input,
         ]
         .concat();
-        let packed_input: Vec<FpVar<BlsFr>> = hash_input
+        let packed_input: Vec<BlsFrV> = hash_input
             .to_constraint_field()
             .expect("could not pack inputs");
 

@@ -10,6 +10,7 @@ pub mod pred;
 pub mod proof_data_structures;
 pub mod pseudonymous_show;
 pub mod revealing_multishow;
+pub mod sig;
 pub mod sparse_merkle;
 pub mod test_util;
 pub mod utils;
