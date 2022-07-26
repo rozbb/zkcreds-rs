@@ -156,7 +156,7 @@ where
         attrs_com_var.enforce_equal(&attrs_var.commit()?)?;
 
         // Finally assert the birth predicate is true
-        self.birth_checker.pred(cs, &attrs_var)
+        self.birth_checker.pred(cs, &attrs_com_var, &attrs_var)
     }
 }
 

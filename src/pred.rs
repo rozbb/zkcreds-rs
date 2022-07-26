@@ -12,7 +12,7 @@ use ark_crypto_primitives::{
 };
 use ark_ec::PairingEngine;
 use ark_ff::{PrimeField, ToConstraintField};
-use ark_r1cs_std::{alloc::AllocVar, boolean::Boolean, eq::EqGadget};
+use ark_r1cs_std::{alloc::AllocVar, eq::EqGadget};
 use ark_relations::{
     ns,
     r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError},
@@ -31,7 +31,12 @@ where
     AC::Output: ToConstraintField<ConstraintF>,
 {
     /// Enforces constraints on the given attributes
-    fn pred(self, cs: ConstraintSystemRef<ConstraintF>, attrs: &AV) -> Result<(), SynthesisError>;
+    fn pred(
+        self,
+        cs: ConstraintSystemRef<ConstraintF>,
+        com: &ACG::OutputVar,
+        attrs: &AV,
+    ) -> Result<(), SynthesisError>;
 
     /// This outputs the field elements corresponding to the public inputs of this predicate. This
     /// DOES NOT include `attrs`.
@@ -257,7 +262,7 @@ where
         attrs_com_var.enforce_equal(&attrs_var.commit()?)?;
 
         // Finally assert the predicate is true
-        self.checker.pred(cs, &attrs_var)
+        self.checker.pred(cs, &attrs_com_var, &attrs_var)
     }
 }
 

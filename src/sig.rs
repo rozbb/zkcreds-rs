@@ -14,7 +14,6 @@ use ark_ff::{Field, PrimeField, ToBytes, ToConstraintField, UniformRand};
 use ark_r1cs_std::{
     alloc::AllocVar,
     bits::ToBitsGadget,
-    boolean::Boolean,
     eq::EqGadget,
     fields::{FieldOpsBounds, FieldVar},
     groups::curves::twisted_edwards,
@@ -156,13 +155,13 @@ fn schnorr_digest(r: Jubjub, msg: &BlsFr) -> BlsFr {
 /// Computes a domain-separated digest just for Schnorr signing
 pub(crate) fn schnorr_digest_gadget(
     cs: &mut ConstraintSystemRef<BlsFr>,
-    r: JubjubVar,
-    msg: BlsFrV,
+    r: &JubjubVar,
+    msg: &BlsFrV,
 ) -> Result<BlsFrV, SynthesisError> {
     let hasher = Poseidon::new(BLS12_POSEIDON_PARAMS.clone());
     let hasher_var = PoseidonGadget::from_native(cs, hasher)?;
     let domain_sep = BlsFrV::constant(SCHNORR_DOMAIN_SEP.to_field_elements().unwrap()[0]);
-    let hash_input = [vec![domain_sep], r.affine_coords(), vec![msg]].concat();
+    let hash_input = [vec![domain_sep], r.affine_coords(), vec![msg.clone()]].concat();
     hasher_var.hash(&hash_input)
 }
 
@@ -244,7 +243,7 @@ impl SchnorrPubkeyVar {
     /// zero-knowledge.
     /// The signature is expected to have been embedded from (Fr, Fr) to (Fq, Fq). The reason we do
     /// this is because doing that map in ZK is cumbersome and unnecessary.
-    pub fn verify(&self, msg: BlsFrV, sig: SchnorrSignatureVar) -> Result<(), SynthesisError> {
+    pub fn verify(&self, msg: &BlsFrV, sig: &SchnorrSignatureVar) -> Result<(), SynthesisError> {
         let mut cs = self.0.cs().or(msg.cs()).or(sig.e.cs()).or(sig.s.cs());
 
         // Witness the group generator. This is the same across all signatures
@@ -267,11 +266,12 @@ impl SchnorrPubkeyVar {
         };
 
         // e' is H(r || msg). This should be equal to the given e, up to Fr::size() many bits
-        let e_prime = schnorr_digest_gadget(&mut cs, r, msg)?;
+        let e_prime = schnorr_digest_gadget(&mut cs, &r, msg)?;
 
-        // Show that e' and e agree for all the bits up to the bitlength of the scalar field's modulus.
-        // We check the truncation because we have to use the truncation of e as a scalar field element
-        // (since e is naturally a base field element and too big to be a scalar field element).
+        // Show that e' and e agree for all the bits up to the bitlength of the scalar field's
+        // modulus. We check the truncation because we have to use the truncation of e as a scalar
+        // field element (since e is naturally a base field element and too big to be a scalar
+        // field element).
         let e_prime_bits = e_prime.to_bits_le()?;
         let e_bits = e.to_bits_le()?;
         let scalar_mod_bitlen = JubjubFr::size_in_bits();
@@ -300,11 +300,15 @@ where
     AC::Output: ToConstraintField<BlsFr>,
 {
     /// Returns whether or not the predicate was satisfied
-    fn pred(self, cs: ConstraintSystemRef<BlsFr>, attrs: &AV) -> Result<(), SynthesisError> {
-        let com = attrs.commit()?;
+    fn pred(
+        self,
+        cs: ConstraintSystemRef<BlsFr>,
+        com: &BlsFrV,
+        attrs: &AV,
+    ) -> Result<(), SynthesisError> {
         let sig = SchnorrSignatureVar::new_witness(ns!(cs, "sig"), &self.sig)?;
         let pubkey = SchnorrPubkeyVar::new_input(ns!(cs, "pubkey"), &self.pubkey)?;
-        pubkey.verify(com, sig)
+        pubkey.verify(com, &sig)
     }
 
     /// This outputs the field elements corresponding to the public inputs of this predicate.

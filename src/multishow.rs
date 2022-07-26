@@ -175,7 +175,12 @@ where
     AC::Output: ToConstraintField<ConstraintF>,
 {
     /// Returns whether or not the predicate was satisfied
-    fn pred(self, cs: ConstraintSystemRef<ConstraintF>, attrs: &AV) -> Result<(), SynthesisError> {
+    fn pred(
+        self,
+        cs: ConstraintSystemRef<ConstraintF>,
+        _attrs_com: &ACG::OutputVar,
+        attrs: &AV,
+    ) -> Result<(), SynthesisError> {
         // Witness the Poseidon params
         let params = PoseidonParametersVar::new_constant(ns!(cs, "prf param"), &self.params)?;
 

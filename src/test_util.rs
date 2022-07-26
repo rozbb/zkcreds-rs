@@ -372,6 +372,7 @@ impl
     fn pred(
         self,
         cs: ConstraintSystemRef<Fr>,
+        _attrs_com: &FpVar<Fr>,
         attrs: &NameAndBirthYearVar,
     ) -> Result<(), SynthesisError> {
         // Witness the threshold year as a public input
@@ -403,6 +404,7 @@ impl
     fn pred(
         self,
         cs: ConstraintSystemRef<Fr>,
+        _attrs_com: &FpVar<Fr>,
         attrs: &NameAndBirthYearVar,
     ) -> Result<(), SynthesisError> {
         // Witness the threshold year as a public input
