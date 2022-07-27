@@ -192,7 +192,7 @@ where
     all_tuples.push((&vk.tree_verif_key.vk, &tree_prepared_inputs));
     all_tuples.push((&vk.forest_verif_key.vk, &vk.prepared_roots.0));
 
-    linkg16::verify_link(proof, &all_tuples)
+    linkg16::verify_link_skiptwo(proof, &all_tuples)
 }
 
 #[cfg(test)]
