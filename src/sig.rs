@@ -88,7 +88,7 @@ pub(crate) fn to_canonical_bytes(
 
 type JubjubFr = <Jubjub as ProjectiveCurve>::ScalarField;
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct SchnorrPrivkey(JubjubFr);
 
 #[derive(Clone, Default)]
@@ -281,7 +281,7 @@ impl SchnorrPubkeyVar {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct SigChecker {
     // Public inputs //
     pub pubkey: SchnorrPubkey,
@@ -322,15 +322,20 @@ where
 mod test {
     use super::*;
 
+    use crate::{
+        attrs::Attrs,
+        pred::{gen_pred_crs, prove_birth, verify_birth},
+        test_util::{NameAndBirthYear, NameAndBirthYearVar},
+        utils::{Bls12PoseidonCommitter, Bls12PoseidonCrh},
+    };
+
+    use ark_bls12_381::Bls12_381 as E;
     use ark_ff::UniformRand;
     use ark_std::rand::{rngs::StdRng, SeedableRng};
 
     // Just checks that Schnorr signing doesn't panic
     #[test]
     fn test_sign() {
-        // Try signing 100 times with different randomness. There used to be an issue where the
-        // value of e was invalid and it would panic some of the time. So now we run the test a lot
-        // of times.
         for seed in 0..100 {
             // Make a random privkey and message
             let mut rng = StdRng::seed_from_u64(seed);
@@ -340,5 +345,51 @@ mod test {
             // Sign the random message under the random privkey
             privkey.sign(&mut rng, &msg);
         }
+    }
+
+    #[test]
+    fn test_sigcheck() {
+        let mut rng = ark_std::test_rng();
+
+        let privkey = SchnorrPrivkey::gen(&mut rng);
+        let pubkey = SchnorrPubkey::from(&privkey);
+
+        // Set up the public parameters
+        let placeholder_checker = SigChecker::default();
+        let pk = gen_pred_crs::<
+            _,
+            _,
+            E,
+            _,
+            NameAndBirthYearVar,
+            Bls12PoseidonCommitter,
+            Bls12PoseidonCommitter,
+            Bls12PoseidonCrh,
+            Bls12PoseidonCrh,
+        >(&mut rng, placeholder_checker)
+        .unwrap();
+
+        let person = NameAndBirthYear::new(&mut rng, b"Andrew", 1992);
+        let cred: BlsFr = <NameAndBirthYear as Attrs<_, Bls12PoseidonCommitter>>::commit(&person);
+        let sig = privkey.sign(&mut rng, &cred);
+
+        // User constructs a checker for their predicate
+        let users_checker = SigChecker {
+            pubkey: pubkey.clone(),
+            privkey,
+            sig,
+        };
+
+        // Prove the predicate
+        let proof = prove_birth(&mut rng, &pk, users_checker, person.clone()).unwrap();
+
+        // Now verify the predicate
+        // Make the checker with only the public data
+        let verifiers_checker = SigChecker {
+            pubkey,
+            ..Default::default()
+        };
+        let vk = pk.prepare_verifying_key();
+        assert!(verify_birth(&vk, &proof, &verifiers_checker, &cred).unwrap());
     }
 }
