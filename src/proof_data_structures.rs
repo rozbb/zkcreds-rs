@@ -369,7 +369,7 @@ where
     H::Output: ToConstraintField<E::Fr>,
     HG: TwoToOneCRHGadget<H, E::Fr>,
 {
-    pub(crate) proof: Groth16Proof<E>,
+    pub proof: Groth16Proof<E>,
     pub(crate) _marker: PhantomData<(A, AC, ACG, H, HG)>,
 }
 
@@ -498,7 +498,7 @@ where
     H::Output: ToConstraintField<E::Fr>,
     HG: TwoToOneCRHGadget<H, E::Fr>,
 {
-    pub(crate) proof: Groth16Proof<E>,
+    pub proof: Groth16Proof<E>,
     pub(crate) _marker: PhantomData<(A, AC, ACG, H, HG)>,
 }
 

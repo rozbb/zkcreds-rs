@@ -1,5 +1,5 @@
 use crate::{
-    attrs::{AccountableAttrs, AccountableAttrsVar},
+    attrs::{Attrs, AttrsVar},
     pred::PredicateChecker,
     utils::{BlsFr, BlsFrV, BLS12_POSEIDON_PARAMS},
 };
@@ -166,17 +166,13 @@ pub(crate) fn schnorr_digest_gadget(
 }
 
 impl SchnorrPrivkey {
-    pub(crate) fn gen<R: Rng + ?Sized + CryptoRng>(rng: &mut R) -> SchnorrPrivkey {
+    pub fn gen<R: Rng + ?Sized + CryptoRng>(rng: &mut R) -> SchnorrPrivkey {
         SchnorrPrivkey(JubjubFr::rand(rng))
     }
 
     /// Signs the given message under `privkey`. Return value is `(s, e)` where (using sigma
     /// protocol terminology) `e` is the challenge and `s` is the response.
-    pub(crate) fn sign<R: RngCore + CryptoRng>(
-        &self,
-        rng: &mut R,
-        msg: &BlsFr,
-    ) -> SchnorrSignature {
+    pub fn sign<R: RngCore + CryptoRng>(&self, rng: &mut R, msg: &BlsFr) -> SchnorrSignature {
         // g is the public generator
         // k is the secret nonce
         // g^k is the commitment
@@ -293,8 +289,8 @@ pub struct SigChecker {
 
 impl<A, AV, AC, ACG> PredicateChecker<BlsFr, A, AV, AC, ACG> for SigChecker
 where
-    A: AccountableAttrs<BlsFr, AC>,
-    AV: AccountableAttrsVar<BlsFr, A, AC, ACG>,
+    A: Attrs<BlsFr, AC>,
+    AV: AttrsVar<BlsFr, A, AC, ACG>,
     AC: CommitmentScheme,
     ACG: CommitmentGadget<AC, BlsFr, OutputVar = BlsFrV>,
     AC::Output: ToConstraintField<BlsFr>,
@@ -304,7 +300,7 @@ where
         self,
         cs: ConstraintSystemRef<BlsFr>,
         com: &BlsFrV,
-        attrs: &AV,
+        _attrs: &AV,
     ) -> Result<(), SynthesisError> {
         let sig = SchnorrSignatureVar::new_witness(ns!(cs, "sig"), &self.sig)?;
         let pubkey = SchnorrPubkeyVar::new_input(ns!(cs, "pubkey"), &self.pubkey)?;

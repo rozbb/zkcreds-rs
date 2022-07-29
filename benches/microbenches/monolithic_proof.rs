@@ -111,7 +111,7 @@ where
             &crh_param_var,
             &leaf_param_var,
         )?;
-        self.pred_checker.pred(cs, &attrs_var)
+        self.pred_checker.pred(cs, &attrs_com_var, &attrs_var)
     }
 }
 

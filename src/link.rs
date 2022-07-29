@@ -161,6 +161,42 @@ where
     linkg16::link(rng, &all_pairs, common_inputs)
 }
 
+pub fn link_proofs_notree<R, E, A, AV, AC, ACG, H, HG>(
+    rng: &mut R,
+    ctx: &LinkProofCtx<E, A, AV, AC, ACG, H, HG>,
+) -> LinkedProof<E>
+where
+    R: Rng + CryptoRng,
+    E: PairingEngine,
+    A: Attrs<E::Fr, AC>,
+    AV: AttrsVar<E::Fr, A, AC, ACG>,
+    AC: CommitmentScheme,
+    AC::Output: ToConstraintField<E::Fr>,
+    ACG: CommitmentGadget<AC, E::Fr>,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<E::Fr>,
+    HG: TwoToOneCRHGadget<H, E::Fr>,
+{
+    // Get the number of field elements that the two proofs have in common. This is just
+    // |attrs_com| + |root|
+    let common_inputs = {
+        let attr_com_input = ctx.attrs_com.to_field_elements().unwrap();
+        let root_input = ctx.merkle_root.to_field_elements().unwrap();
+        &[attr_com_input, root_input].concat()
+    };
+
+    // Collect (vk, proof) for all our predicates
+    let pred_pairs: Vec<(&groth16::VerifyingKey<E>, &groth16::Proof<E>)> = ctx
+        .vk
+        .pred_verif_keys
+        .iter()
+        .zip(ctx.pred_proofs.iter())
+        .map(|(vk, proof)| (&vk.vk, &proof.proof))
+        .collect();
+
+    linkg16::link(rng, &pred_pairs, common_inputs)
+}
+
 pub fn verif_link_proof<E, A, AV, AC, ACG, H, HG>(
     proof: &LinkedProof<E>,
     vk: &LinkVerifyingKey<E, A, AV, AC, ACG, H, HG>,
@@ -192,7 +228,33 @@ where
     all_tuples.push((&vk.tree_verif_key.vk, &tree_prepared_inputs));
     all_tuples.push((&vk.forest_verif_key.vk, &vk.prepared_roots.0));
 
-    linkg16::verify_link_skiptwo(proof, &all_tuples)
+    linkg16::verify_link(proof, &all_tuples)
+}
+
+pub fn verif_link_proof_notree<E, A, AV, AC, ACG, H, HG>(
+    proof: &LinkedProof<E>,
+    vk: &LinkVerifyingKey<E, A, AV, AC, ACG, H, HG>,
+) -> Result<bool, SynthesisError>
+where
+    E: PairingEngine,
+    A: Attrs<E::Fr, AC>,
+    AV: AttrsVar<E::Fr, A, AC, ACG>,
+    AC: CommitmentScheme,
+    AC::Output: ToConstraintField<E::Fr>,
+    ACG: CommitmentGadget<AC, E::Fr>,
+    H: TwoToOneCRH,
+    H::Output: ToConstraintField<E::Fr>,
+    HG: TwoToOneCRHGadget<H, E::Fr>,
+{
+    // Collect (vk, prepared_inputs) for all our predicates
+    let pred_tuples = vk
+        .pred_verif_keys
+        .iter()
+        .zip(vk.pred_inputs.0.iter())
+        .map(|(vk, input)| (&vk.vk, input))
+        .collect::<Vec<_>>();
+
+    linkg16::verify_link(proof, &pred_tuples)
 }
 
 #[cfg(test)]

@@ -12,7 +12,10 @@ use zkcreds::{
     com_forest::{gen_forest_memb_crs, ComForestRoots},
     com_tree::{gen_tree_memb_crs, ComTree},
     identity_crh::UnitVar,
-    link::{link_proofs, verif_link_proof, LinkProofCtx, LinkVerifyingKey, PredPublicInputs},
+    link::{
+        link_proofs_notree, verif_link_proof_notree, LinkProofCtx, LinkVerifyingKey,
+        PredPublicInputs,
+    },
     pred::PredicateChecker,
     pred::{gen_pred_crs, prove_pred},
     revealing_multishow::{MultishowableAttrs, RevealingMultishowChecker},
@@ -136,6 +139,7 @@ impl PredicateChecker<Fr, ExpiryAttrs, ExpiryAttrsVar, ComScheme, ComSchemeG> fo
     fn pred(
         self,
         cs: ConstraintSystemRef<Fr>,
+        _attrs_com: &FpVar<Fr>,
         attrs: &ExpiryAttrsVar,
     ) -> Result<(), SynthesisError> {
         // Assert that attrs.expiry > threshold_expiry
@@ -193,9 +197,10 @@ pub fn bench_expiry(c: &mut Criterion) {
                 .unwrap()
         })
     });
-    let tree_proof = auth_path
+    let mut tree_proof = auth_path
         .prove_membership(&mut rng, &tree_pk, &(), cred)
         .unwrap();
+    tree_proof.proof = Default::default();
 
     // Create forest proof
     let root = tree.root();
@@ -208,9 +213,10 @@ pub fn bench_expiry(c: &mut Criterion) {
                 .unwrap()
         })
     });
-    let forest_proof = roots
+    let mut forest_proof = roots
         .prove_membership(&mut rng, &forest_pk, root, cred)
         .unwrap();
+    forest_proof.proof = Default::default();
 
     // Create expiry proof
     c.bench_function("Expiry show: proving expiry", |b| {
@@ -229,6 +235,39 @@ pub fn bench_expiry(c: &mut Criterion) {
         &mut rng,
         &expiry_pk,
         expiry_checker.clone(),
+        attrs.clone(),
+        &auth_path,
+    )
+    .unwrap();
+
+    use zkcreds::sig::{SchnorrPrivkey, SchnorrPubkey, SigChecker};
+    let privkey = SchnorrPrivkey::gen(&mut rng);
+    let pubkey = SchnorrPubkey::from(&privkey);
+    let sig = privkey.sign(&mut rng, &cred);
+    let sig_checker = SigChecker {
+        pubkey: pubkey.clone(),
+        privkey,
+        sig,
+    };
+    let sig_pk =
+        gen_pred_crs::<_, _, E, _, _, _, _, TreeH, TreeHG>(&mut rng, sig_checker.clone()).unwrap();
+    let sig_vk = sig_pk.prepare_verifying_key();
+    c.bench_function("Expiry show: proving sigcheck", |b| {
+        b.iter(|| {
+            prove_pred(
+                &mut rng,
+                &sig_pk,
+                sig_checker.clone(),
+                attrs.clone(),
+                &auth_path,
+            )
+            .unwrap()
+        })
+    });
+    let sig_proof = prove_pred(
+        &mut rng,
+        &sig_pk,
+        sig_checker.clone(),
         attrs.clone(),
         &auth_path,
     )
@@ -289,29 +328,30 @@ pub fn bench_expiry(c: &mut Criterion) {
     // Prepare expiry inputs
     let mut pred_inputs = PredPublicInputs::default();
     pred_inputs.prepare_pred_checker(&expiry_vk, &expiry_checker);
+    pred_inputs.prepare_pred_checker(&sig_vk, &sig_checker);
 
     let link_vk = LinkVerifyingKey::<_, _, ExpiryAttrsVar, _, _, _, _> {
         pred_inputs,
         prepared_roots: roots.prepare(&forest_vk).unwrap(),
         forest_verif_key: forest_vk,
         tree_verif_key: tree_vk,
-        pred_verif_keys: vec![expiry_vk],
+        pred_verif_keys: vec![expiry_vk, sig_vk],
     };
     let link_ctx = LinkProofCtx {
         attrs_com: cred,
         merkle_root: root,
         forest_proof,
         tree_proof,
-        pred_proofs: vec![expiry_proof],
+        pred_proofs: vec![expiry_proof, sig_proof],
         vk: link_vk.clone(),
     };
     c.bench_function("Expiry show: proving linkage", |b| {
-        b.iter(|| link_proofs(&mut rng, &link_ctx))
+        b.iter(|| link_proofs_notree(&mut rng, &link_ctx))
     });
-    let link_proof = link_proofs(&mut rng, &link_ctx);
+    let link_proof = link_proofs_notree(&mut rng, &link_ctx);
     crate::util::record_size("Expiry", &link_proof);
 
     c.bench_function("Expiry show: verifying linkage", |b| {
-        b.iter(|| assert!(verif_link_proof(&link_proof, &link_vk).unwrap()))
+        b.iter(|| assert!(verif_link_proof_notree(&link_proof, &link_vk).unwrap()))
     });
 }
