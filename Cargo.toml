@@ -30,7 +30,6 @@ rand_chacha = "0.3.1"
 [dependencies.linkg16]
 git = "ssh://git@github.com/rozbb/linkg16"
 rev = "78e018b028576e8beb20f421fdcad848e5db15ea"
-#path = "../linkg16"
 
 # We can't use the newer version of ark-crypto-primitives, or its new CRH traits because
 # arkworks-gadgets uses the old CRH traits:
