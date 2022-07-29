@@ -62,6 +62,7 @@ macro_rules! make_show_bench {
             struct FillerAttrsVar {
                 nonce: ComNonce,
                 bytes: Vec<UInt8<Fr>>,
+                cs: ConstraintSystemRef<Fr>,
             }
 
             impl FillerAttrs {
@@ -110,7 +111,7 @@ macro_rules! make_show_bench {
 
             impl AttrsVar<Fr, FillerAttrs, TestComScheme, TestComSchemeG> for FillerAttrsVar {
                 fn cs(&self) -> ConstraintSystemRef<Fr> {
-                    self.bytes.cs()
+                    self.cs.clone()
                 }
 
                 fn witness_attrs(
@@ -125,7 +126,7 @@ macro_rules! make_show_bench {
                         .map(|_| UInt8::new_witness(ns!(cs, "byte"), || Ok(0u8)))
                         .collect::<Result<Vec<_>, _>>()?;
 
-                    Ok(FillerAttrsVar { nonce, bytes })
+                    Ok(FillerAttrsVar { nonce, bytes, cs })
                 }
 
                 fn get_com_param(
