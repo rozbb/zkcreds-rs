@@ -12,7 +12,10 @@ use zkcreds::{
     com_forest::{gen_forest_memb_crs, ComForestRoots},
     com_tree::{gen_tree_memb_crs, ComTree},
     identity_crh::UnitVar,
-    link::{link_proofs, verif_link_proof, LinkProofCtx, LinkVerifyingKey, PredPublicInputs},
+    link::{
+        link_proofs_notree, verif_link_proof_notree, LinkProofCtx, LinkVerifyingKey,
+        PredPublicInputs,
+    },
     multishow::{MultishowChecker, MultishowableAttrs},
     pred::{gen_pred_crs, prove_pred},
     utils::{setup_poseidon_params, Bls12PoseidonCommitter, Bls12PoseidonCrh, ComNonce},
@@ -199,9 +202,10 @@ pub fn bench_multishow(c: &mut Criterion) {
                 .unwrap()
         })
     });
-    let tree_proof = auth_path
+    let mut tree_proof = auth_path
         .prove_membership(&mut rng, &tree_pk, &(), cred)
         .unwrap();
+    tree_proof.proof = Default::default();
 
     // Create forest proof
     let root = tree.root();
@@ -214,9 +218,10 @@ pub fn bench_multishow(c: &mut Criterion) {
                 .unwrap()
         })
     });
-    let forest_proof = roots
+    let mut forest_proof = roots
         .prove_membership(&mut rng, &forest_pk, root, cred)
         .unwrap();
+    forest_proof.proof = Default::default();
 
     // Create multishow proof
     let multishow_checker = MultishowChecker {
@@ -242,6 +247,39 @@ pub fn bench_multishow(c: &mut Criterion) {
         &mut rng,
         &multishow_pk,
         multishow_checker.clone(),
+        attrs.clone(),
+        &auth_path,
+    )
+    .unwrap();
+
+    use zkcreds::sig::{SchnorrPrivkey, SchnorrPubkey, SigChecker};
+    let privkey = SchnorrPrivkey::gen(&mut rng);
+    let pubkey = SchnorrPubkey::from(&privkey);
+    let sig = privkey.sign(&mut rng, &cred);
+    let sig_checker = SigChecker {
+        pubkey: pubkey.clone(),
+        privkey,
+        sig,
+    };
+    let sig_pk =
+        gen_pred_crs::<_, _, E, _, _, _, _, TreeH, TreeHG>(&mut rng, sig_checker.clone()).unwrap();
+    let sig_vk = sig_pk.prepare_verifying_key();
+    c.bench_function("Multishow: proving sigcheck", |b| {
+        b.iter(|| {
+            prove_pred(
+                &mut rng,
+                &sig_pk,
+                sig_checker.clone(),
+                attrs.clone(),
+                &auth_path,
+            )
+            .unwrap()
+        })
+    });
+    let sig_proof = prove_pred(
+        &mut rng,
+        &sig_pk,
+        sig_checker.clone(),
         attrs.clone(),
         &auth_path,
     )
@@ -296,29 +334,30 @@ pub fn bench_multishow(c: &mut Criterion) {
     // Prepare multishow inputs
     let mut pred_inputs = PredPublicInputs::default();
     pred_inputs.prepare_pred_checker(&multishow_vk, &multishow_checker);
+    pred_inputs.prepare_pred_checker(&sig_vk, &sig_checker);
 
     let link_vk = LinkVerifyingKey::<_, _, AttrsVar, _, _, _, _> {
         pred_inputs,
         prepared_roots: roots.prepare(&forest_vk).unwrap(),
         forest_verif_key: forest_vk,
         tree_verif_key: tree_vk,
-        pred_verif_keys: vec![multishow_vk],
+        pred_verif_keys: vec![multishow_vk, sig_vk],
     };
     let link_ctx = LinkProofCtx {
         attrs_com: cred,
         merkle_root: root,
         forest_proof,
         tree_proof,
-        pred_proofs: vec![multishow_proof],
+        pred_proofs: vec![multishow_proof, sig_proof],
         vk: link_vk.clone(),
     };
     c.bench_function("Multishow: proving linkage", |b| {
-        b.iter(|| link_proofs(&mut rng, &link_ctx))
+        b.iter(|| link_proofs_notree(&mut rng, &link_ctx))
     });
-    let link_proof = link_proofs(&mut rng, &link_ctx);
+    let link_proof = link_proofs_notree(&mut rng, &link_ctx);
     crate::util::record_size("Multishow", &link_proof);
 
     c.bench_function("Multishow: verifying linkage", |b| {
-        b.iter(|| assert!(verif_link_proof(&link_proof, &link_vk).unwrap()))
+        b.iter(|| assert!(verif_link_proof_notree(&link_proof, &link_vk).unwrap()))
     });
 }

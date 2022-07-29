@@ -334,6 +334,7 @@ pub fn bench_pseudonymous_show(c: &mut Criterion) {
 
     let mut pred_inputs = PredPublicInputs::default();
     pred_inputs.prepare_pred_checker(&pseudonymous_show_vk, &pseudonymous_show_checker);
+    pred_inputs.prepare_pred_checker(&sig_vk, &sig_checker);
 
     let link_vk = LinkVerifyingKey::<_, _, AttrsVar, _, _, _, _> {
         pred_inputs,
