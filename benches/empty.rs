@@ -9,9 +9,15 @@ use zkcreds::{
     attrs::{Attrs, AttrsVar},
     com_forest::{gen_forest_memb_crs, ComForestRoots},
     com_tree::{gen_tree_memb_crs, ComTree},
-    link::{link_proofs, verif_link_proof, LinkProofCtx, LinkVerifyingKey, PredPublicInputs},
+    identity_crh::UnitVar,
+    link::{
+        link_proofs_notree, verif_link_proof_notree, LinkProofCtx, LinkVerifyingKey,
+        PredPublicInputs,
+    },
     pred::PredicateChecker,
-    ComNonce, ComNonceVar, ComParam, ComParamVar,
+    pred::{gen_pred_crs, prove_pred},
+    utils::{Bls12PoseidonCommitter, Bls12PoseidonCrh, ComNonce},
+    ComParam, ComParamVar,
 };
 
 use ark_bls12_381::Bls12_381;
@@ -25,6 +31,7 @@ use ark_ff::UniformRand;
 use ark_r1cs_std::{
     alloc::{AllocVar, AllocationMode},
     bits::ToBytesGadget,
+    fields::fp::FpVar,
     uint8::UInt8,
     R1CSVar,
 };
@@ -48,6 +55,7 @@ const NUM_TREES: usize = 2usize.pow(LOG2_NUM_TREES);
 type E = Bls12_381;
 type Fr = <E as PairingEngine>::Fr;
 
+/*
 type CompressedPedersenCom<W> =
     zkcreds::compressed_pedersen::PedersenCommitter<EdwardsParameters, W>;
 type CompressedPedersenComG<W> =
@@ -71,6 +79,12 @@ impl pedersen::Window for CustomWindow {
 
 type ComScheme = CompressedPedersenCom<CustomWindow>;
 type ComSchemeG = CompressedPedersenComG<CustomWindow>;
+*/
+
+type ComScheme = Bls12PoseidonCommitter;
+type ComSchemeG = Bls12PoseidonCommitter;
+type TreeH = Bls12PoseidonCrh;
+type TreeHG = Bls12PoseidonCrh;
 
 lazy_static! {
     static ref COM_PARAM: <ComScheme as CommitmentScheme>::Parameters = {
@@ -95,17 +109,18 @@ lazy_static! {
 
 #[derive(Clone, Default)]
 struct EmptyAttrs {
-    nonce: ComNonce<ComScheme>,
+    nonce: ComNonce,
 }
 
 #[derive(Clone)]
 struct EmptyAttrsVar {
-    nonce: ComNonceVar<ComScheme, ComSchemeG, Fr>,
+    nonce: ComNonce,
+    cs: ConstraintSystemRef<Fr>,
 }
 
 impl EmptyAttrs {
     fn new<R: Rng>(rng: &mut R) -> EmptyAttrs {
-        let nonce = <ComScheme as CommitmentScheme>::Randomness::rand(rng);
+        let nonce = ComNonce::rand(rng);
         EmptyAttrs { nonce }
     }
 }
@@ -116,6 +131,7 @@ impl PredicateChecker<Fr, EmptyAttrs, EmptyAttrsVar, ComScheme, ComSchemeG> for 
     fn pred(
         self,
         _cs: ConstraintSystemRef<Fr>,
+        _attrs_com: &FpVar<Fr>,
         _attrs: &EmptyAttrsVar,
     ) -> Result<(), SynthesisError> {
         Ok(())
@@ -133,10 +149,10 @@ impl Attrs<Fr, ComScheme> for EmptyAttrs {
     }
 
     fn get_com_param(&self) -> &ComParam<ComScheme> {
-        &*COM_PARAM
+        &()
     }
 
-    fn get_com_nonce(&self) -> &ComNonce<ComScheme> {
+    fn get_com_nonce(&self) -> &ComNonce {
         &self.nonce
     }
 }
@@ -147,34 +163,27 @@ impl ToBytesGadget<Fr> for EmptyAttrsVar {
     }
 }
 
-impl AllocVar<EmptyAttrs, Fr> for EmptyAttrsVar {
-    fn new_variable<T: Borrow<EmptyAttrs>>(
+impl AttrsVar<Fr, EmptyAttrs, ComScheme, ComSchemeG> for EmptyAttrsVar {
+    fn cs(&self) -> ConstraintSystemRef<Fr> {
+        self.cs.clone()
+    }
+
+    fn get_com_param(&self) -> Result<ComParamVar<ComScheme, ComSchemeG, Fr>, SynthesisError> {
+        Ok(UnitVar::default())
+    }
+
+    fn get_com_nonce(&self) -> &ComNonce {
+        &self.nonce
+    }
+
+    fn witness_attrs(
         cs: impl Into<Namespace<Fr>>,
-        f: impl FnOnce() -> Result<T, SynthesisError>,
-        mode: AllocationMode,
+        attrs: &EmptyAttrs,
     ) -> Result<Self, SynthesisError> {
         let cs = cs.into().cs();
-        let native_attr = f().unwrap();
-        let native_attr = native_attr.borrow();
+        let nonce = attrs.nonce.clone();
 
-        let nonce = ComNonceVar::<ComScheme, ComSchemeG, Fr>::new_variable(
-            ns!(cs, "nonce"),
-            || Ok(&native_attr.nonce),
-            mode,
-        )?;
-
-        Ok(EmptyAttrsVar { nonce })
-    }
-}
-
-impl AttrsVar<Fr, EmptyAttrs, ComScheme, ComSchemeG> for EmptyAttrsVar {
-    fn get_com_param(&self) -> Result<ComParamVar<ComScheme, ComSchemeG, Fr>, SynthesisError> {
-        let cs = self.nonce.cs();
-        ComParamVar::<_, ComSchemeG, _>::new_constant(cs, &*COM_PARAM)
-    }
-
-    fn get_com_nonce(&self) -> Result<ComNonceVar<ComScheme, ComSchemeG, Fr>, SynthesisError> {
-        Ok(self.nonce.clone())
+        Ok(EmptyAttrsVar { nonce, cs })
     }
 }
 
@@ -221,9 +230,10 @@ pub fn bench_empty(c: &mut Criterion) {
                 .unwrap()
         })
     });
-    let tree_proof = auth_path
+    let mut tree_proof = auth_path
         .prove_membership(&mut rng, &tree_pk, &*MERKLE_CRH_PARAM, cred)
         .unwrap();
+    tree_proof.proof = Default::default();
 
     // Create forest proof
     let root = tree.root();
@@ -236,9 +246,43 @@ pub fn bench_empty(c: &mut Criterion) {
                 .unwrap()
         })
     });
-    let forest_proof = roots
+    let mut forest_proof = roots
         .prove_membership(&mut rng, &forest_pk, root, cred)
         .unwrap();
+    forest_proof.proof = Default::default();
+
+    use zkcreds::sig::{SchnorrPrivkey, SchnorrPubkey, SigChecker};
+    let privkey = SchnorrPrivkey::gen(&mut rng);
+    let pubkey = SchnorrPubkey::from(&privkey);
+    let sig = privkey.sign(&mut rng, &cred);
+    let sig_checker = SigChecker {
+        pubkey: pubkey.clone(),
+        privkey,
+        sig,
+    };
+    let sig_pk =
+        gen_pred_crs::<_, _, E, _, _, _, _, TreeH, TreeHG>(&mut rng, sig_checker.clone()).unwrap();
+    let sig_vk = sig_pk.prepare_verifying_key();
+    c.bench_function("Empty show: proving sigcheck", |b| {
+        b.iter(|| {
+            prove_pred(
+                &mut rng,
+                &sig_pk,
+                sig_checker.clone(),
+                attrs.clone(),
+                &auth_path,
+            )
+            .unwrap()
+        })
+    });
+    let sig_proof = prove_pred(
+        &mut rng,
+        &sig_pk,
+        sig_checker.clone(),
+        attrs.clone(),
+        &auth_path,
+    )
+    .unwrap();
 
     let monolithic_pk: groth16::ProvingKey<E> = gen_monolithic_crs::<
         _,
@@ -297,28 +341,31 @@ pub fn bench_empty(c: &mut Criterion) {
         })
     });
 
+    let mut pred_inputs = PredPublicInputs::default();
+    pred_inputs.prepare_pred_checker(&sig_vk, &sig_checker);
+
     let link_vk = LinkVerifyingKey::<_, _, EmptyAttrsVar, _, _, _, _> {
-        pred_inputs: PredPublicInputs::default(),
+        pred_inputs,
         prepared_roots: roots.prepare(&forest_vk).unwrap(),
         forest_verif_key: forest_vk,
         tree_verif_key: tree_vk,
-        pred_verif_keys: Vec::new(),
+        pred_verif_keys: vec![sig_vk],
     };
     let link_ctx = LinkProofCtx {
         attrs_com: cred,
         merkle_root: root,
         forest_proof,
         tree_proof,
-        pred_proofs: vec![],
+        pred_proofs: vec![sig_proof],
         vk: link_vk.clone(),
     };
     c.bench_function("Empty show: proving linkage", |b| {
-        b.iter(|| link_proofs(&mut rng, &link_ctx))
+        b.iter(|| link_proofs_notree(&mut rng, &link_ctx))
     });
-    let link_proof = link_proofs(&mut rng, &link_ctx);
+    let link_proof = link_proofs_notree(&mut rng, &link_ctx);
     record_size("Empty", &link_proof);
 
     c.bench_function("Empty show: verifying linkage", |b| {
-        b.iter(|| assert!(verif_link_proof(&link_proof, &link_vk).unwrap()))
+        b.iter(|| assert!(verif_link_proof_notree(&link_proof, &link_vk).unwrap()))
     });
 }
