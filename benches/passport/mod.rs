@@ -26,9 +26,9 @@ use crate::passport::{
 use zkcreds::{
     attrs::Attrs,
     link::{link_proofs, verif_link_proof, LinkProofCtx, LinkVerifyingKey, PredPublicInputs},
+    poseidon_utils::setup_poseidon_params,
     pred::{prove_birth, prove_pred, verify_birth, PredicateChecker},
     revealing_multishow::{MultishowableAttrs, RevealingMultishowChecker},
-    utils::setup_poseidon_params,
     Com,
 };
 
@@ -55,7 +55,7 @@ const TWENTY_ONE_YEARS_AGO: u32 = TODAY - 210000;
 const ISSUING_STATE: [u8; STATE_ID_LEN] = *b"USA";
 
 fn load_dump() -> PassportDump {
-    let file = File::open("benches/passport/michaels_passport.json").unwrap();
+    let file = File::open("benches/passport/passport_dump.json").unwrap();
     serde_json::from_reader(file).unwrap()
 }
 

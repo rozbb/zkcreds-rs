@@ -1,3 +1,6 @@
+//! Defines structures for holding Merkle forests, i.e., a set of Merkle trees. This is used in
+//! credential issuance.
+
 use crate::{
     attrs::Attrs,
     com_tree::ComTree,

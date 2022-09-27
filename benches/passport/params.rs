@@ -56,12 +56,12 @@ pub(crate) type E = Bls12_381;
 pub(crate) type Fr = <E as PairingEngine>::Fr;
 
 // Pick a two-to-one CRH
-pub(crate) type H = zkcreds::utils::Bls12PoseidonCrh;
-pub(crate) type HG = zkcreds::utils::Bls12PoseidonCrh;
+pub(crate) type H = zkcreds::poseidon_utils::Bls12PoseidonCrh;
+pub(crate) type HG = zkcreds::poseidon_utils::Bls12PoseidonCrh;
 
 // Pick a commitment scheme
-pub(crate) type PassportComScheme = zkcreds::utils::Bls12PoseidonCommitter;
-pub(crate) type PassportComSchemeG = zkcreds::utils::Bls12PoseidonCommitter;
+pub(crate) type PassportComScheme = zkcreds::poseidon_utils::Bls12PoseidonCommitter;
+pub(crate) type PassportComSchemeG = zkcreds::poseidon_utils::Bls12PoseidonCommitter;
 
 pub(crate) type ComTree = zkcreds::com_tree::ComTree<Fr, H, PassportComScheme>;
 pub(crate) type ComForest = zkcreds::com_forest::ComForest<Fr, H, PassportComScheme>;

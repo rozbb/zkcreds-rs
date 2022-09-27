@@ -5,8 +5,8 @@ use zkcreds::{
     attrs::Attrs,
     com_forest::{gen_forest_memb_crs, ComForestRoots},
     com_tree::{gen_tree_memb_crs, ComTree},
+    poseidon_utils::{Bls12PoseidonCommitter, Bls12PoseidonCrh},
     test_util::{NameAndBirthYear, MERKLE_CRH_PARAM},
-    utils::{Bls12PoseidonCommitter, Bls12PoseidonCrh},
     Com,
 };
 

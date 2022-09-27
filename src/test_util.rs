@@ -1,10 +1,12 @@
+//! Defines some structs for testing purposes
+
 use core::borrow::Borrow;
 
 use crate::{
     attrs::{AccountableAttrs, AccountableAttrsVar, Attrs, AttrsVar},
-    identity_crh::UnitVar,
+    poseidon_utils::{Bls12PoseidonCommitter, ComNonce},
     pred::PredicateChecker,
-    utils::{Bls12PoseidonCommitter, ComNonce},
+    zk_utils::UnitVar,
     Bytestring, Com, ComNonceVar, ComParam, ComParamVar,
 };
 

@@ -1,3 +1,5 @@
+//! Defines proving and verifying keys for predicates, tree membership, and forest membership
+
 use crate::attrs::{Attrs, AttrsVar};
 
 use core::marker::PhantomData;

@@ -1,3 +1,5 @@
+//! Defines some placeholder Python functions
+
 use pyo3::prelude::*;
 
 // TODO: Expose Python wrapper functions for `zkcreds` API (maybe also passport module?)

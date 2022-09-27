@@ -1,3 +1,6 @@
+//! Defines functions for proving and verifying _birth predicates_, i.e., the predicates that one
+//! must prove in order to convince the issuer to issue the credential in question.
+
 use crate::{
     attrs::{Attrs, AttrsVar},
     pred::PredicateChecker,

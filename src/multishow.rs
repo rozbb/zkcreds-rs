@@ -1,3 +1,5 @@
+//! Defines a trait that allows service providers to implement rate limiting on their services
+
 use crate::{
     attrs::{AccountableAttrs, AccountableAttrsVar},
     pred::PredicateChecker,
@@ -35,7 +37,9 @@ pub struct PresentationTokenVar<ConstraintF: PrimeField> {
     hidden_ctr: FpVar<ConstraintF>,
 }
 
-/// Implements `compute_presentation_token` for all AccountableAttrs
+/// This trait allows a user to create a "presentation token" every time they show their
+/// credential. This can be used for rate limiting if the verifier requires that `ctr` is bounded
+/// for every `epoch`.
 pub trait MultishowableAttrs<ConstraintF, AC>
 where
     ConstraintF: PrimeField,
@@ -51,7 +55,6 @@ where
     ) -> Result<PresentationToken<ConstraintF>, ArkError>;
 }
 
-/// Implements `compute_presentation_token` for all AccountableAttrs
 impl<ConstraintF, A, AC> MultishowableAttrs<ConstraintF, AC> for A
 where
     ConstraintF: PrimeField,
@@ -223,12 +226,12 @@ mod test {
     use super::*;
     use crate::{
         attrs::Attrs,
+        poseidon_utils::setup_poseidon_params,
         pred::{gen_pred_crs, prove_birth, verify_birth},
         test_util::{
             NameAndBirthYear, NameAndBirthYearVar, TestComSchemePedersen, TestComSchemePedersenG,
             TestTreeH, TestTreeHG,
         },
-        utils::setup_poseidon_params,
     };
 
     use ark_bls12_381::Bls12_381 as E;

@@ -1,3 +1,5 @@
+//! Defines functions and structures for linking predicate proofs into a single "linkage proof"
+
 use crate::{
     attrs::{Attrs, AttrsVar},
     com_forest::PreparedRoots,

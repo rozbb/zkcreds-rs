@@ -1,3 +1,5 @@
+//! Some helpful utilities for making zero-knowledge circuits in arkworks
+
 use core::{borrow::Borrow, marker::PhantomData};
 
 use ark_crypto_primitives::{
@@ -36,7 +38,7 @@ impl CRH for IdentityCRH {
     }
 }
 
-// This CRH is the identity function in its input
+/// This CRH is the identity function in its input
 pub struct IdentityCRHGadget;
 impl<ConstraintF: PrimeField> CRHGadget<IdentityCRH, ConstraintF> for IdentityCRHGadget {
     /// A `Bytestring` is just a wrapper around `Vec<UInt8<F>>`
@@ -54,7 +56,7 @@ impl<ConstraintF: PrimeField> CRHGadget<IdentityCRH, ConstraintF> for IdentityCR
     }
 }
 
-// The unit type for circuit variables. This contains no data.
+/// The unit type for circuit variables. This contains no data.
 #[derive(Clone, Debug, Default)]
 pub struct UnitVar<ConstraintF: PrimeField>(PhantomData<ConstraintF>);
 

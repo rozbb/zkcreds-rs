@@ -1,3 +1,5 @@
+//! Defines a trait that allows service providers to implement pseudonyms on their services
+
 use crate::{
     attrs::{AccountableAttrs, AccountableAttrsVar},
     pred::PredicateChecker,
@@ -33,7 +35,8 @@ pub struct PresentationTokenVar<ConstraintF: PrimeField> {
     pseudonym: FpVar<ConstraintF>,
 }
 
-/// Implements `compute_presentation_token` for all AccountableAttrs
+/// This trait allows a user to create a "presentation token" every time they show their
+/// credential. This token is constant, and uniquely identifies this credential.
 pub trait PseudonymousAttrs<ConstraintF, AC>
 where
     ConstraintF: PrimeField,
@@ -47,7 +50,6 @@ where
     ) -> Result<PresentationToken<ConstraintF>, ArkError>;
 }
 
-/// Implements `compute_presentation_token` for all AccountableAttrs
 impl<ConstraintF, A, AC> PseudonymousAttrs<ConstraintF, AC> for A
 where
     ConstraintF: PrimeField,
@@ -185,12 +187,12 @@ mod test {
     use super::*;
     use crate::{
         attrs::Attrs,
+        poseidon_utils::setup_poseidon_params,
         pred::{gen_pred_crs, prove_birth, verify_birth},
         test_util::{
             NameAndBirthYear, NameAndBirthYearVar, TestComSchemePedersen, TestComSchemePedersenG,
             TestTreeH, TestTreeHG,
         },
-        utils::setup_poseidon_params,
     };
 
     use ark_bls12_381::Bls12_381 as E;

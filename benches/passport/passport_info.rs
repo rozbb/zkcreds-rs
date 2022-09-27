@@ -11,7 +11,7 @@ use core::borrow::Borrow;
 use sha2::{Digest, Sha256};
 use zkcreds::{
     attrs::{AccountableAttrs, AccountableAttrsVar, Attrs, AttrsVar},
-    utils::ComNonce,
+    poseidon_utils::ComNonce,
     Bytestring, ComParam, ComParamVar,
 };
 

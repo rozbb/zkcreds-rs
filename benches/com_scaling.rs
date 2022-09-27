@@ -1,4 +1,4 @@
-use zkcreds::utils::{Bls12PoseidonCommitter, Bls12PoseidonCrh};
+use zkcreds::poseidon_utils::{Bls12PoseidonCommitter, Bls12PoseidonCrh};
 
 use ark_bls12_381::Bls12_381;
 use ark_ec::PairingEngine;
@@ -21,8 +21,8 @@ macro_rules! make_show_bench {
 
             use zkcreds::{
                 attrs::{Attrs, AttrsVar},
+                poseidon_utils::ComNonce,
                 pred::{gen_pred_crs, prove_birth, PredicateChecker},
-                utils::ComNonce,
                 ComParam, ComParamVar,
             };
 

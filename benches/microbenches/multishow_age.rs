@@ -3,10 +3,10 @@ use zkcreds::{
     com_forest::{gen_forest_memb_crs, ComForestRoots},
     com_tree::{gen_tree_memb_crs, ComTree},
     link::{link_proofs, verif_link_proof, LinkProofCtx, LinkVerifyingKey, PredPublicInputs},
+    poseidon_utils::{setup_poseidon_params, Bls12PoseidonCommitter, Bls12PoseidonCrh},
     pred::{gen_pred_crs, prove_pred},
     revealing_multishow::{MultishowableAttrs, RevealingMultishowChecker},
     test_util::{AgeChecker, NameAndBirthYear, NameAndBirthYearVar},
-    utils::{setup_poseidon_params, Bls12PoseidonCommitter, Bls12PoseidonCrh},
 };
 
 use ark_bls12_381::{Bls12_381 as E, Fr};

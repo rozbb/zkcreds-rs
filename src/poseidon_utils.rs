@@ -1,4 +1,7 @@
-use crate::identity_crh::UnitVar;
+//! Defines some structs and functions for commitments and hashes based on the Poseidon hash
+//! function.
+
+use crate::zk_utils::UnitVar;
 
 use core::fmt;
 

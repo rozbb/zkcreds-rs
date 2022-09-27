@@ -3,8 +3,8 @@
 use zkcreds::{
     com_forest::{ComForestRoots, ForestMembershipProver},
     com_tree::{default_auth_path, ComTreePath, TreeMembershipProver},
-    identity_crh::{IdentityCRHGadget, UnitVar},
     sparse_merkle::constraints::SparseMerkleTreePathVar,
+    zk_utils::{IdentityCRHGadget, UnitVar},
 };
 
 use core::marker::PhantomData;

@@ -1,11 +1,13 @@
+//! Defines a Merkle tree which holds credentials (formally "commitments to attribute sets")
+
 use crate::{
     attrs::Attrs,
-    identity_crh::{IdentityCRH, IdentityCRHGadget, UnitVar},
     proof_data_structures::{TreeProof, TreeProvingKey},
     sparse_merkle::{
         constraints::SparseMerkleTreePathVar, SparseMerkleTree, SparseMerkleTreePath,
         SparseMerkleTreeWireFormat,
     },
+    zk_utils::{IdentityCRH, IdentityCRHGadget, UnitVar},
 };
 
 use core::marker::PhantomData;
@@ -460,11 +462,11 @@ where
 mod test {
     use super::*;
     use crate::{
+        poseidon_utils::{Bls12PoseidonCommitter, Bls12PoseidonCrh},
         test_util::{
             NameAndBirthYear, TestComSchemePedersen, TestComSchemePedersenG, TestTreeH, TestTreeHG,
             MERKLE_CRH_PARAM,
         },
-        utils::{Bls12PoseidonCommitter, Bls12PoseidonCrh},
     };
 
     use ark_bls12_381::Bls12_381 as E;

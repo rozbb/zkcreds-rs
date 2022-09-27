@@ -3,22 +3,22 @@ pub mod birth;
 pub mod com_forest;
 pub mod com_tree;
 pub mod compressed_pedersen;
-pub mod identity_crh;
 pub mod link;
 pub mod multishow;
+pub mod poseidon_utils;
 pub mod pred;
 pub mod proof_data_structures;
 pub mod pseudonymous_show;
 pub mod revealing_multishow;
 pub mod sparse_merkle;
 pub mod test_util;
-pub mod utils;
+pub mod zk_utils;
 
 #[cfg(feature = "python")]
 pub mod python_exports;
 
 pub type Error = Box<dyn ark_std::error::Error>;
-pub use identity_crh::Bytestring;
+pub use zk_utils::Bytestring;
 
 use ark_crypto_primitives::commitment::{constraints::CommitmentGadget, CommitmentScheme};
 

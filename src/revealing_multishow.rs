@@ -1,3 +1,6 @@
+//! Defines a trait that allows service providers to implement rate limiting on their services.
+//! If the user exceeds the limit, it will have deanonymized itself.
+
 use crate::{
     attrs::{AccountableAttrs, AccountableAttrsVar},
     pred::PredicateChecker,
@@ -15,11 +18,8 @@ use ark_relations::{
     ns,
     r1cs::{ConstraintSystemRef, SynthesisError},
 };
-use arkworks_native_gadgets::poseidon::{
-    sbox::PoseidonSbox, FieldHasher, Poseidon, PoseidonParameters,
-};
+use arkworks_native_gadgets::poseidon::{FieldHasher, Poseidon, PoseidonParameters};
 use arkworks_r1cs_gadgets::poseidon::{FieldHasherGadget, PoseidonGadget, PoseidonParametersVar};
-use arkworks_utils::{bytes_matrix_to_f, bytes_vec_to_f, Curve};
 
 // Domain separators for all our uses of Poseidon
 const PRF1_DOMAIN_SEP: u8 = 123;
@@ -47,7 +47,10 @@ pub struct PresentationTokenVar<ConstraintF: PrimeField> {
     hidden_line_point: FpVar<ConstraintF>,
 }
 
-/// Implements `compute_presentation_token` for all AccountableAttrs
+/// This trait allows a user to create a "presentation token" every time they show their
+/// credential. This can be used for rate limiting if the verifier requires that `ctr` is bounded
+/// for every `epoch`. When `ctr` repeats within an epoch, the presentation token will reveal the
+/// `id` value of the associated [`AccountableAttrs`].
 pub trait MultishowableAttrs<ConstraintF, AC>
 where
     ConstraintF: PrimeField,
@@ -64,7 +67,6 @@ where
     ) -> Result<PresentationToken<ConstraintF>, ArkError>;
 }
 
-/// Implements `compute_presentation_token` for all AccountableAttrs
 impl<ConstraintF, A, AC> MultishowableAttrs<ConstraintF, AC> for A
 where
     ConstraintF: PrimeField,
@@ -341,12 +343,12 @@ mod test {
     use super::*;
     use crate::{
         attrs::Attrs,
+        poseidon_utils::setup_poseidon_params,
         pred::{gen_pred_crs, prove_birth, verify_birth},
         test_util::{
             NameAndBirthYear, NameAndBirthYearVar, TestComSchemePedersen, TestComSchemePedersenG,
             TestTreeH, TestTreeHG,
         },
-        utils::setup_poseidon_params,
     };
 
     use ark_bls12_381::{Bls12_381 as E, Fr};

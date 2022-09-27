@@ -11,11 +11,11 @@ use zkcreds::{
     },
     com_forest::{gen_forest_memb_crs, ComForestRoots},
     com_tree::{gen_tree_memb_crs, ComTree},
-    identity_crh::UnitVar,
     link::{link_proofs, verif_link_proof, LinkProofCtx, LinkVerifyingKey, PredPublicInputs},
+    poseidon_utils::{setup_poseidon_params, Bls12PoseidonCommitter, Bls12PoseidonCrh, ComNonce},
     pred::{gen_pred_crs, prove_pred},
     pseudonymous_show::{PseudonymousAttrs, PseudonymousShowChecker},
-    utils::{setup_poseidon_params, Bls12PoseidonCommitter, Bls12PoseidonCrh, ComNonce},
+    zk_utils::UnitVar,
     ComNonceVar, ComParam, ComParamVar,
 };
 

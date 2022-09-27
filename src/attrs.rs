@@ -1,4 +1,7 @@
-use crate::utils::ComNonce;
+//! Defines traits that describe _attributes_, i.e., the data that credentials are intended to
+//! commit to and hide.
+
+use crate::poseidon_utils::ComNonce;
 
 use ark_crypto_primitives::commitment::{constraints::CommitmentGadget, CommitmentScheme};
 use ark_ff::{PrimeField, ToConstraintField};

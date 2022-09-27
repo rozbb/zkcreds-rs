@@ -1,3 +1,5 @@
+//! Defines traits for creating and proving predicates over attributes
+
 use crate::{
     attrs::{Attrs, AttrsVar},
     com_tree::ComTreePath,

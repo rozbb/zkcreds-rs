@@ -4,9 +4,9 @@ use zkcreds::{
     attrs::{Attrs, AttrsVar},
     com_forest::{ComForestRoots, ForestMembershipProver},
     com_tree::{default_auth_path, ComTreePath, TreeMembershipProver},
-    identity_crh::{IdentityCRHGadget, UnitVar},
     pred::PredicateChecker,
     sparse_merkle::constraints::SparseMerkleTreePathVar,
+    zk_utils::{IdentityCRHGadget, UnitVar},
 };
 
 use core::marker::PhantomData;
