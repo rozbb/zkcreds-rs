@@ -41,7 +41,7 @@ The passport benchmarks will error if you do not provide a valid (USA only, curr
 
 ### Passport benches
 
-In order to run the benchmarks in `bench/passport`, you need to have a JSON dump of a passport. You can create this from your own US passport by installing the Android app [here](XXX link to passport github) (a prebuilt debug APK can be found in the root directory). Once you have your passport dump in the clipboard, send it to yourself, put it in a file named `passport_dump.json`, and move it to this repo in `benches/passport/passport_dump.json`.
+In order to run the benchmarks in `bench/passport`, you need to have a JSON dump of a passport. You can create this from your own US passport by installing the Android app [here](https://github.com/rozbb/passport-reader/) (prebuilt APKs can be found in the root directory). Once you have your passport dump in the clipboard, send it to yourself, put it in a file named `passport_dump.json`, and move it to this repo in `benches/passport/passport_dump.json`.
 
 ## License
 
