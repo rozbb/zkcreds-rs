@@ -9,9 +9,9 @@ A cryptographic library for designing anonymous credential systems in a flexible
 
 While the core library is written in Rust, this repository also includes an associated Python wrapper module for some of the higher-level interfaces. See [`src/lib.rs`](src/lib.rs), [`python-examples`](python-examples), and Web Demo below for more details.
 
-## Development
+## Development and Examples
 
-For an overview of this library and usage snippets, see the wiki [here](XXX).
+For an overview of this library and usage snippets, see the wiki [here](https://github.com/rozbb/zkcreds-rs/wiki).
 
 ## Web Demo
 
