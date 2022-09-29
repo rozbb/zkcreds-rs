@@ -25,13 +25,15 @@ $ python3 -m venv .env
 $ source .env/bin/activate
 $ pip install maturin
 
-# Compile Rust binaries and intall as Python (PyO3) bindings
+# Compile Rust binaries and install as Python (PyO3) bindings
 $ maturin develop
 # Local webserver provides a high-level demo
 $ python3 python-examples/web-demo.py
 ```
 
 Interact with the demo to get an idea for how arbitrary attribute fields can be formulated into a credential, and how this credential can be issued and subsequently shown without revealing any more than the fact that it satisfies the given criteria.
+
+**NOTE**: The Python wrapper is currently incomplete, and as such the high-level web demo will be available in a future version.
 
 ## Benchmarks
 
