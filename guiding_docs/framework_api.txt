@@ -1,0 +1,340 @@
+/************************** LEGEND **************************/
+
+`trait A: B` means that trait A inherits from trait B
+
+When I write `{ ... }` as a function def, it means that it's implemented
+
+
+/************************** TYPES **************************/
+
+type BlsFr = // the scalar field of BLS12-381;
+type Com = BlsFr // A commitment is just a field elem
+type ComVar = FpVar<BlsFr> // ZK version of a Com
+type ComNonce = BlsFr // Commitment randomness
+type ComNonceVar = FpVar<BlsFr> // ZK version of a ComNonce
+
+type ComTree; // Commitment tree
+type ComTreePath; // an authpath in a commitment tree
+type ComTreeRoot;
+struct ComTreeRoots(Vec<ComTreeRoot>); // A small repr of a forest; useful for proofs
+struct ComForest(Vec<ComTree>);
+
+type PredVerifyingKey;
+type PredProvingKey;
+type PredPublicInputs;
+type PredProof;
+
+type ForestVerifyingKey;
+type ForestProvingKey;
+type ForestProof;
+type PreparedRoots;
+
+type TreeVerifyingKey;
+type TreeProvingKey;
+type TreeProof;
+
+struct LinkageProofCtx {
+    attrs_com: Com,
+    merkle_root: ComTreeRoot,
+    forest_proof: ForestProof,
+    tree_proof: TreeProof,
+    pred_proofs: Vec<PredProof>,
+    link_vk: LinkageVerifier,
+}
+struct LinkageVerifyingKey {
+    pred_inputs: PredPublicInputs,
+    prepared_roots: PreparedRoots,
+    forest_vk: ForestVerifyingKey,
+    tree_vk: TreeVerifyingKey,
+    pred_vks: Vec<PredVerifyingKey>,
+}
+struct LinkedProof;
+
+// Multishow types
+type MultishowPresentationToken;
+type MultishowPresentationTokenVar;
+struct MultishowChecker(MultishowPresentationToken);
+
+// Revealing multishow types
+type RMultishowPresentationToken;
+type RMultishowPresentationTokenVar;
+struct RMultishowChecker(RMultishowPresentationToken);
+
+// Pseudonymous show types
+type PsuedonymPresentationToken;
+type PsuedonymPresentationTokenVar;
+struct PseudonymChecker(PseudonymPresentationToken);
+
+/************************** TRAITS **************************/
+
+// This is implemented by any attribute set
+pub trait Attrs: Default {
+    fn to_bytes(&self) -> Vec<u8>;
+    fn get_com_nonce(&self) -> ComNonce;
+
+    fn commit(&self) -> Com {
+        // autoimplemented
+    }
+}
+
+// The circuit version of Attrs
+pub trait AttrsVar<A: Attrs>: AllocVar<A, BlsFr> + ToBytesGadget<BlsFr> {
+    fn to_bytes(&self) -> Result<Vec<UInt8<BlsFr>>, Error>;
+    fn get_com_nonce(&self) -> Result<ComNonceVar, Error>;
+
+    fn commit(&self) -> Result<ComVar, Error> {
+        // autoimplemented
+    }
+}
+
+// A predicate
+pub trait PredicateChecker<A: Attrs, AV: AttrsVar<A>> {
+    // Runs the predicate
+    fn pred(self, cs: ConstraintSystemRef<BlsFr>, attrs: &AV) -> Result<(), Error>;
+
+    // Gets the public inputs of this predicate instance
+    fn public_inputs(&self) -> Vec<BlsFr>;
+
+    // Generates the CRS for this predicate
+    fn gen_crs<R: Rng>(&self, rng: &mut R) -> Result<PredProvingKey, Error>;
+
+    // Proves a predicate as a standalone gadget. This will be linked later
+    fn prove_pred<R>(
+        &self,
+        rng: &mut R,
+        pk: &PredProvingKey,
+        attrs: A,
+        auth_path: &ComTreePath,
+    ) -> Result<PredProof, Error> {
+        // autoimplemented
+    }
+
+    // Proves a birth predicate. No linkage happens
+    fn prove_birth<R>(
+        &self,
+        rng: &mut R,
+        pk: &PredProvingKey,
+        attrs: A,
+    ) -> Result<PredProof, Error> {
+        // autoimplemented
+    }
+
+    // Verifies a birth predicate
+    fn verify_birth<R>(
+        &self,
+        vk: &PredVerifyingKey,
+        proof: &PredProof,
+        attrs_com: Com,
+    ) -> Result<(), Error> {
+        // autoimplemented
+    }
+}
+
+// This is implemented by any attribute set that has an identifier and also a rate-limit key
+pub trait AccountableAttrs: Attrs {
+    fn get_id(&self) -> BlsFr;
+    fn get_rate_limit_key(&self) -> BlsFr;
+}
+
+// The circuit version of AccountableAttrsVar
+pub trait AccountableAttrsVar<A: Attrs>: AttrsVar<A> {
+    fn get_id(&self) -> FpVar<BlsFr>;
+    fn get_rate_limit_key(&self) -> FpVar<BlsFr>;
+}
+
+// This is implemented by any attribute that can be multi-showed
+pub trait MultishowableAttrs: Attrs {
+    fn compute_presentation_token(
+        &self,
+        epoch: u64,
+        ctr: u16,
+    ) -> Result<PresentationToken, Error>;
+}
+
+// The circuit version of MultishowableAttrs
+pub trait MultishowableAttrsVar: AttrsVar {
+    fn compute_presentation_token(
+        &self,
+        epoch: &FpVar<BlsFr>,
+        ctr: &FpVar<BlsFr>,
+    ) -> Result<PresentationTokenVar, Error>;
+}
+
+// This is implemented by any attribute that can be multi-showed
+pub trait RMultishowableAttrs: Attrs {
+    fn compute_presentation_token(
+        &self,
+        epoch: u64,
+        ctr: u16,
+        nonce: BlsFr,
+    ) -> Result<PresentationToken, Error>;
+}
+
+// The circuit version of RMultishowableAttrs
+pub trait RMultishowableAttrsVar: AttrsVar {
+    fn compute_presentation_token(
+        &self,
+        epoch: &FpVar<BlsFr>,
+        ctr: &FpVar<BlsFr>,
+        nonce: &FpVar<BlsFr>,
+    ) -> Result<PresentationTokenVar, Error>;
+}
+
+// This is implemented by any attribute that can be multi-showed
+pub trait PsuedonymousAttrs: Attrs {
+    fn compute_presentation_token(&self) -> Result<PresentationToken, Error>;
+}
+
+// The circuit version of PsuedonymousAttrs
+pub trait PsuedonymousAttrsVar: AttrsVar {
+    fn compute_presentation_token(&self) -> Result<PresentationTokenVar, Error>;
+}
+
+/************************** IMPLS **************************/
+
+impl PredicateChecker<A, AV> for MultiShowChecker
+where
+    A: Attrs,
+    AV: AttrsVar<A>,
+{ ... }
+
+impl PredicateChecker<A, AV> for RMultiShowChecker
+where
+    A: Attrs,
+    AV: AttrsVar<A>,
+{ ... }
+
+impl PredicateChecker<A, AV> for PsuedonymChecker
+where
+    A: Attrs,
+    AV: AttrsVar<A>,
+{ ... }
+
+// Generate the CRS for forest membership proofs
+fn gen_forest_member_crs<R: Rng + CryptoRng>(
+    rng: &mut R,
+    num_trees: usize,
+) -> Result<ForestProvingKey, Error> { ... }
+
+// Generate the CRS for tree membership proofs
+fn gen_tree_member_crs<R: Rng + CryptoRng>(
+    rng: &mut R,
+    height: u32,
+) -> Result<TreeProvingKey, Error> { ... }
+
+impl ComForest {
+    fn roots(&self) -> ComTreeRoots { ... }
+
+    fn public_inputs(&self) -> Vec<BlsFr> { ... }
+
+    fn prepare_inputs(
+        &self,
+        vk: &ForestVerifyingKey,
+    ) -> Result<PreparedRoots, Error> { ... }
+
+}
+
+impl ComTreeRoots {
+    fn prove_membership(
+        &self,
+        rng: &mut R,
+        pk: &ForestProvingKey,
+        member_root: &ComForestRoot,
+        attrs_com: &Com,
+    ) -> Result<ForestProof, Error> { ... }
+}
+
+impl ComTree {
+    fn root(&self) -> ComTreeRoot { ... }
+    fn empty(tree_height: u32) -> ComTree { ... }
+    fn insert(&mut self, idx: u64, com: &Com) -> ComTreePath { ... }
+    fn remove(&mut self, idx: u64) { ... }
+}
+
+impl ComTreePath {
+    fn root(&self) -> ComTreeRoot { ... }
+    fn prove_membership(
+        &self,
+        rng: &mut R,
+        pk: &TreeProvingKey,
+        attrs_com: &Com
+    ) -> TreeProof { ... }
+}
+
+impl LinkageProofCtx {
+    fn link_proofs<R: Rng + CryptoRng>(rng: &mut R) -> LinkedProof { ... }
+}
+
+impl PredPublicInputs {
+    // Prepares the given predicate's public inputs and adds them to this `PredPublicInputs`
+    // internal list of inputs
+    fn prepare_and_add<A, AV, P>(&mut self, pred_vk: &PredVerifyingKey, checker: &P)
+    where
+        A: Attrs,
+        AV: AttrsVar<A>,
+        P: PredicateChecker<A, AV>
+    { ... }
+}
+
+impl<A: AccountableAttrs> MultishowableAttrs for A { ... }
+
+impl<A, AV> MultishowableAttrsVar for AV
+where
+    A: AccountableAttrs,
+    AV: AccountableAttrsVar<A>,
+{ ... }
+
+impl<A: AccountableAttrs> RMultishowableAttrs for A { ... }
+
+impl<A, AV> RMultishowableAttrsVar for AV
+where
+    A: AccountableAttrs,
+    AV: AccountableAttrsVar<A>,
+{ ... }
+
+impl<A: AccountableAttrs> PsueodnymousAttrs for A { ... }
+
+impl<A, AV> PsueodnymousAttrsVar for AV
+where
+    A: AccountableAttrs,
+    AV: AccountableAttrsVar<A>,
+{ ... }
+
+
+/****** NOTES *******/
+
+birth -> issuereq?
+link -> precompute and then Show?
+make a CrsTable struct??
+make AttrsVar, AccountableAttrsVar, not parameterized by the underlying Attr
+Make PredicateChecker parameterized over A, and give it an associated type AttrsVar: AllocVar<A>.
+Make MembershipProof = (TreeProof, ForestProof);
+Make a prove_merkle_membership function
+remove nonce from attrsvar?
+remove poseidon params from multishow?
+remove root comnonce and comnoncevar
+
+define link prover and verifier like this. Also make a set_pred function to override previous pred values. Order should be defined by the given string, not by order of add_pred
+
+    let link_prover = LinkProver::new()
+        .with_crs(&crs_table)
+        .with_cred(cred)
+        .in_forest(forest_proof, &roots)
+        .in_tree(tree_proof, &my_root)
+        .add_pred("age", age_proof, age_pub_inputs)
+        .add_pred("expiry", expiry_proof, expiry_pub_inputs)
+        .add_pred("face", face_proof, face_pub_inputs);
+    let link_proof = link_prover.prove(&mut rng);
+
+    // later
+
+    let age_pub_inputs = AgeChecker::new(TWENTY_ONE_YEARS_AGO).public_inputs();
+    let expiry_pub_inputs = ExpiryChecker::new(TODAY).public_inputs();
+    let face_pub_inputs = FaceChecker::new(face.hash()).public_inputs();
+
+    let link_verifier = LinkVerifier::new()
+        .with_crs(&crs_table)
+        .in_forest(&roots)
+        .add_pred("age", age_pub_inputs)
+        .add_pred("expiry", expiry_pub_inputs)
+        .add_pred("face", face_pub_inputs);
