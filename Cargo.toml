@@ -28,7 +28,7 @@ pyo3 = { version = "0.16.5", features = ["extension-module"], optional = true }
 rand_chacha = "0.3.1"
 
 [dependencies.linkg16]
-git = "ssh://git@github.com/rozbb/linkg16"
+git = "https://github.com/rozbb/linkg16.git"
 rev = "a405a8501c9fa1b69f6ec1c9e39fb6885dc74233"
 
 # We can't use the newer version of ark-crypto-primitives, or its new CRH traits because
